@@ -30,7 +30,8 @@
 git clone https://github.com/your-username/marketmaker-orderflow.git
 cd marketmaker-orderflow
 cp .env.example .env
-docker-compose up --build```
+docker-compose up --build
+```
 > ⚠️ **Перед запуском необходимо указать в `.env` данные API и параметры стратегии.**
 
 ---
