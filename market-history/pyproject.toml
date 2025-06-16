@@ -1,0 +1,27 @@
+[tool.poetry]
+name = "savetok"
+version = "0.1.0"
+description = ""
+authors = ["Rustam <rustam.95.ur@gmail.com>"]
+readme = "README.md"
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "^3.12"
+fastapi = {extras = ["standard"], version = "^0.115.12"}
+redis = "^6.0.0"
+pydantic-settings = "^2.9.1"
+alembic = "^1.15.2"
+asyncpg = "^0.30.0"
+sqlalchemy = {extras = ["asyncio", "greenlet"], version = "^2.0.40"}
+
+
+[tool.poetry.group.dev.dependencies]
+isort = "^5.13.2"
+flake8 = "^7.1.1"
+pre-commit = "^3.8.0"
+black = "^24.8.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

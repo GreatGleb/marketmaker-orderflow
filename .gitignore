@@ -1,0 +1,12 @@
+.idea
+*.env*
+node_modules
+postgres
+.DS_Store
+.docker/*
+!.docker/.gitkeep
+!.docker/Dockerfile
+__pycache__/
+*.py[cod]
+python-scripts-*.json
+*.http

@@ -1,0 +1,86 @@
+services:
+  web:
+    image: nginx:latest
+    container_name: marketmaker_restapi_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - market-history
+    networks:
+      - marketmaker_network
+
+  db:
+    image: supabase/postgres:15.1.0.117
+    container_name: marketmaker_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - marketmaker_network
+
+  meta:
+    image: ghcr.io/supabase/postgres-meta:v0.75.0
+    container_name: marketmaker_meta
+    environment:
+      PG_META_PORT: 8080
+      PG_META_DB_HOST: db
+      PG_META_DB_NAME: postgres
+      PG_META_DB_USER: postgres
+      PG_META_DB_PASSWORD: secret
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db
+    networks:
+      - marketmaker_network
+
+  studio:
+    image: supabase/studio:latest
+    container_name: marketmaker_studio
+    restart: unless-stopped
+    environment:
+      STUDIO_PG_META_URL: http://meta:8080
+      SUPABASE_URL: http://localhost:8000
+      SUPABASE_REST_URL: http://localhost:8000/rest/v1/
+      SUPABASE_ANON_KEY: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwiaWF0IjoxNjQxNzY5MjAwLCJleHAiOjE3OTk1MzU2MDAsInJvbGUiOiJhbm9uIn0.dc_X5iR_VP_qT0zsiyj_I_OZ2T9FtRU2BBNWN8Bu4GE
+      SUPABASE_SERVICE_KEY: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwiaWF0IjoxNjQxNzY5MjAwLCJleHAiOjE3OTk1MzU2MDAsInJvbGUiOiJzZXJ2aWNlX3JvbGUifQ.M2i_7qxC8YW_YHQb_O_TH_TsnqE9UvwC_A7nfeIwJ7U
+    ports:
+      - "3000:3000"
+    depends_on:
+      - db
+      - meta
+    networks:
+      - marketmaker_network
+
+  market-history:
+    build: ./market-history
+    container_name: marketmaker_market_history
+    command: fastapi run main.py --port 8000 --reload
+    volumes:
+      - ./market-history:/opt/services/app/src:Z
+    env_file:
+      - ./market-history/.env
+    ports:
+      - "8000"
+    expose:
+      - "8000"
+    depends_on:
+        - db
+    networks:
+        - marketmaker_network
+
+volumes:
+  postgres_data:
+
+networks:
+  marketmaker_network:
+    driver: bridge
