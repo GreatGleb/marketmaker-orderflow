@@ -283,3 +283,18 @@ class AssetsVolumeVolatility(BaseId):
     volatility_percentage: Mapped[float] = mapped_column(
         types.Numeric, nullable=False, comment="Volatility percentage"
     )
+
+
+class WatchedPair(BaseId):
+    __tablename__ = "watched_pair"
+
+    exchange_pair_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("exchange_pair_specs.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        comment="Foreign key to exchange_pair_specs",
+    )
+
+    exchange_pair: Mapped[Optional[ExchangePairSpec]] = relationship(
+        backref="watched_pairs", lazy="joined"
+    )
