@@ -170,7 +170,7 @@ class ExchangePairSpec(BaseId):
     )
 
 
-class AssetsHistory(Base):
+class AssetsHistory(BaseId):
     __tablename__ = "assets_history"
 
     id: Mapped[int] = mapped_column(
@@ -243,4 +243,43 @@ class AssetsHistory(Base):
 
     statistics_close_time: Mapped[Optional[int]] = mapped_column(
         types.BigInteger, nullable=True, comment="Statistics close time (C)"
+    )
+
+
+class AssetsVolumeVolatility(BaseId):
+    __tablename__ = "assets_volume_volatility"
+
+    exchange_pair_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("exchange_pair_specs.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        comment="Foreign key to exchange_pair_specs",
+    )
+
+    exchange_pair: Mapped[Optional[ExchangePairSpec]] = relationship(
+        backref="volume_volatility_history", lazy="joined"
+    )
+
+    volume_24h_base: Mapped[float] = mapped_column(
+        types.Numeric, nullable=False, comment="Base asset 24h volume"
+    )
+
+    volume_24h_quote: Mapped[float] = mapped_column(
+        types.Numeric, nullable=False, comment="Quote asset 24h volume"
+    )
+
+    weighted_avg_price_24h: Mapped[float] = mapped_column(
+        types.Numeric, nullable=False, comment="Weighted average price in 24h"
+    )
+
+    price_high: Mapped[Optional[float]] = mapped_column(
+        types.Numeric, nullable=True, comment="High 24h price"
+    )
+
+    price_low: Mapped[Optional[float]] = mapped_column(
+        types.Numeric, nullable=True, comment="Low 24h price"
+    )
+
+    volatility_percentage: Mapped[float] = mapped_column(
+        types.Numeric, nullable=False, comment="Volatility percentage"
     )
