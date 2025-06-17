@@ -225,11 +225,11 @@ class AssetHistory(BaseId):
         comment="Weighted average price in 24h (w)",
     )
 
-    high_24h: Mapped[Optional[float]] = mapped_column(
+    price_high_24h: Mapped[Optional[float]] = mapped_column(
         types.Numeric, nullable=True, comment="24h high price (h)"
     )
 
-    low_24h: Mapped[Optional[float]] = mapped_column(
+    price_low_24h: Mapped[Optional[float]] = mapped_column(
         types.Numeric, nullable=True, comment="24h low price (l)"
     )
 
@@ -272,11 +272,11 @@ class AssetVolumeVolatility(BaseId):
         types.Numeric, nullable=False, comment="Weighted average price in 24h"
     )
 
-    price_high: Mapped[Optional[float]] = mapped_column(
+    price_high_24h: Mapped[Optional[float]] = mapped_column(
         types.Numeric, nullable=True, comment="High 24h price"
     )
 
-    price_low: Mapped[Optional[float]] = mapped_column(
+    price_low_24h: Mapped[Optional[float]] = mapped_column(
         types.Numeric, nullable=True, comment="Low 24h price"
     )
 
