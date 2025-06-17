@@ -28,13 +28,13 @@ async def save_filtered_assets(session: AsyncSession, data: list[dict]):
         if symbol not in symbols_set:
             continue
 
-        exchange_pair_id = symbol_to_id[symbol]
+        asset_exchange_id = symbol_to_id[symbol]
 
         record_data = {
             "symbol": symbol,
             "source": "BINANCE",
             "last_price": item.get("c"),
-            "exchange_pair_id": exchange_pair_id,
+            "asset_exchange_id": asset_exchange_id,
             "price_change_24h": item.get("p"),
             "price_change_percent_24h": item.get("P"),
             "base_asset_volume_24h": item.get("v"),

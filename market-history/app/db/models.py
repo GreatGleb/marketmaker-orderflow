@@ -56,8 +56,8 @@ class AssetPair(BaseId):
     )
 
 
-class ExchangePairSpec(BaseId):
-    __tablename__ = "exchange_pair_specs"
+class AssetExchangeSpec(BaseId):
+    __tablename__ = "asset_exchange_specs"
 
     source: Mapped[str] = mapped_column(
         types.String(255),
@@ -177,14 +177,14 @@ class AssetsHistory(BaseId):
         types.Integer, primary_key=True, index=True, comment="Primary key"
     )
 
-    exchange_pair_id: Mapped[Optional[int]] = mapped_column(
-        ForeignKey("exchange_pair_specs.id", ondelete="SET NULL"),
+    asset_exchange_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("asset_exchange_specs.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
-        comment="Foreign key to exchange_pair_specs",
+        comment="Foreign key to asset_exchange_specs",
     )
 
-    exchange_pair: Mapped[Optional[ExchangePairSpec]] = relationship(
+    asset_exchange: Mapped[Optional[AssetExchangeSpec]] = relationship(
         backref="assets_history", lazy="joined"
     )
 
@@ -249,14 +249,14 @@ class AssetsHistory(BaseId):
 class AssetsVolumeVolatility(BaseId):
     __tablename__ = "assets_volume_volatility"
 
-    exchange_pair_id: Mapped[Optional[int]] = mapped_column(
-        ForeignKey("exchange_pair_specs.id", ondelete="SET NULL"),
+    asset_exchange_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("asset_exchange_specs.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
-        comment="Foreign key to exchange_pair_specs",
+        comment="Foreign key to asset_exchange_specs",
     )
 
-    exchange_pair: Mapped[Optional[ExchangePairSpec]] = relationship(
+    asset_exchange: Mapped[Optional[AssetExchangeSpec]] = relationship(
         backref="volume_volatility_history", lazy="joined"
     )
 
@@ -288,13 +288,13 @@ class AssetsVolumeVolatility(BaseId):
 class WatchedPair(BaseId):
     __tablename__ = "watched_pair"
 
-    exchange_pair_id: Mapped[Optional[int]] = mapped_column(
-        ForeignKey("exchange_pair_specs.id", ondelete="SET NULL"),
+    asset_exchange_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("asset_exchange_specs.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
-        comment="Foreign key to exchange_pair_specs",
+        comment="Foreign key to asset_exchange_specs",
     )
 
-    exchange_pair: Mapped[Optional[ExchangePairSpec]] = relationship(
+    asset_exchange: Mapped[Optional[AssetExchangeSpec]] = relationship(
         backref="watched_pairs", lazy="joined"
     )

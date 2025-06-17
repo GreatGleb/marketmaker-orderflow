@@ -3,7 +3,7 @@ from sqlalchemy import select, or_, func, exists
 
 from app.config import settings
 from app.db.base import DatabaseSessionManager
-from app.db.models import AssetPair, ExchangePairSpec, WatchedPair
+from app.db.models import AssetPair, AssetExchangeSpec, WatchedPair
 
 
 async def seed_usdt_watched_pairs():
@@ -24,29 +24,29 @@ async def seed_usdt_watched_pairs():
             return
 
         # Шаг 2: Найти exchange_pair_specs, ссылающиеся на эти asset_pairs
-        exchange_pair_stmt = select(ExchangePairSpec.id).where(
-            ExchangePairSpec.asset_pairs_id.in_(asset_pair_ids)
+        asset_exchange_stmt = select(AssetExchangeSpec.id).where(
+            AssetExchangeSpec.asset_pairs_id.in_(asset_pair_ids)
         )
-        exchange_pairs_result = await session.execute(exchange_pair_stmt)
-        exchange_pair_ids = [
-            row[0] for row in exchange_pairs_result.fetchall()
+        asset_exchange_result = await session.execute(asset_exchange_stmt)
+        asset_exchange_ids = [
+            row[0] for row in asset_exchange_result.fetchall()
         ]
 
-        if not exchange_pair_ids:
-            print("🚫 No exchange_pair_specs for asset_pairs found")
+        if not asset_exchange_ids:
+            print("🚫 No asset_exchange_specs for asset_pairs found")
             return
 
         # Шаг 3: Добавить в watched_pairs (если ещё не добавлены)
         added_count = 0
-        for ex_id in exchange_pair_ids:
+        for ex_id in asset_exchange_ids:
             exists_stmt = select(
-                exists().where(WatchedPair.exchange_pair_id == ex_id)
+                exists().where(WatchedPair.asset_exchange_id == ex_id)
             )
             result = await session.execute(exists_stmt)
             already_exists = result.scalar()
 
             if not already_exists:
-                session.add(WatchedPair(exchange_pair_id=ex_id))
+                session.add(WatchedPair(asset_exchange_id=ex_id))
                 added_count += 1
 
         await session.commit()

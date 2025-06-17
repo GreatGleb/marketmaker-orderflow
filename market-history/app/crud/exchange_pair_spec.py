@@ -1,13 +1,13 @@
-from app.db.models import ExchangePairSpec
+from app.db.models import AssetExchangeSpec
 
 from app.crud.base import BaseCrud
 
 
-class ExchangePairSpecCrud(BaseCrud[ExchangePairSpec]):
+class AssetExchangeSpecCrud(BaseCrud[AssetExchangeSpec]):
     def __init__(self, session):
-        super().__init__(session, ExchangePairSpec)
+        super().__init__(session, AssetExchangeSpec)
 
-    async def create(self, data: dict) -> ExchangePairSpec:
-        spec = ExchangePairSpec(**data)
+    async def create(self, data: dict) -> AssetExchangeSpec:
+        spec = AssetExchangeSpec(**data)
         self.session.add(spec)
         return spec

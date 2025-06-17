@@ -4,7 +4,7 @@ from datetime import datetime
 
 from app.config import settings
 from app.crud.asset_pair import AssetPairCrud
-from app.crud.exchange_pair_spec import ExchangePairSpecCrud
+from app.crud.exchange_pair_spec import AssetExchangeSpecCrud
 from app.db.base import DatabaseSessionManager
 
 
@@ -21,7 +21,7 @@ async def seed_binance_data():
     dsm = DatabaseSessionManager.create(settings.DB_URL)
     async with dsm.get_session() as session:
         asset_crud = AssetPairCrud(session)
-        spec_crud = ExchangePairSpecCrud(session)
+        spec_crud = AssetExchangeSpecCrud(session)
 
         data = await fetch_binance_data()
         symbols = data.get("symbols", [])
