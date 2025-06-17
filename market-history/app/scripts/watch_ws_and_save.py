@@ -13,27 +13,28 @@ from app.crud.watched_pair import WatchedPairCrud
 WS_URL = "wss://fstream.binance.com/ws/!ticker@arr"
 
 
-async def fetch_watched_symbols(session: AsyncSession) -> set[str]:
-    watched_crud = WatchedPairCrud(session)
-    watched = await watched_crud.get_all_with_exchange_symbols()
-    return set(watched)  # set of 'symbol' strings
-
-
-async def save_filtered_assets(
-    session: AsyncSession, data: list[dict], symbols_set: set[str]
-):
+async def save_filtered_assets(session: AsyncSession, data: list[dict]):
     history_crud = AssetsHistoryCrud(session)
+    watched_crud = WatchedPairCrud(session)
+
+    symbol_to_id = await watched_crud.get_symbol_to_id_map()
+    symbols_set = set(symbol_to_id.keys())
+
     records = []
 
     for item in data:
         symbol = item.get("s")
+
         if symbol not in symbols_set:
             continue
+
+        exchange_pair_id = symbol_to_id[symbol]
 
         record_data = {
             "symbol": symbol,
             "source": "BINANCE",
             "last_price": item.get("c"),
+            "exchange_pair_id": exchange_pair_id,
             "price_change_24h": item.get("p"),
             "price_change_percent_24h": item.get("P"),
             "base_asset_volume_24h": item.get("v"),
@@ -54,9 +55,6 @@ async def save_filtered_assets(
 
 
 async def run_websocket_listener():
-    dsm = DatabaseSessionManager.create(settings.DB_URL)
-    async with dsm.get_session() as session:
-        symbols_set = await fetch_watched_symbols(session)
 
     async with websockets.connect(WS_URL) as websocket:
         dsm = DatabaseSessionManager.create(settings.DB_URL)
@@ -66,7 +64,10 @@ async def run_websocket_listener():
                     message = await websocket.recv()
                     data = json.loads(message)
                     if isinstance(data, list):
-                        await save_filtered_assets(session, data, symbols_set)
+                        await save_filtered_assets(
+                            session,
+                            data,
+                        )
                 except Exception as e:
                     print(f"❌ Error: {e}")
                     await asyncio.sleep(3)
