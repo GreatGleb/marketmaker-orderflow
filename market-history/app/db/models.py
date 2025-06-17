@@ -170,8 +170,8 @@ class AssetExchangeSpec(BaseId):
     )
 
 
-class AssetsHistory(BaseId):
-    __tablename__ = "assets_history"
+class AssetHistory(BaseId):
+    __tablename__ = "asset_history"
 
     id: Mapped[int] = mapped_column(
         types.Integer, primary_key=True, index=True, comment="Primary key"
@@ -185,7 +185,7 @@ class AssetsHistory(BaseId):
     )
 
     asset_exchange: Mapped[Optional[AssetExchangeSpec]] = relationship(
-        backref="assets_history", lazy="joined"
+        backref="asset_history", lazy="joined"
     )
 
     symbol: Mapped[str] = mapped_column(
@@ -246,8 +246,8 @@ class AssetsHistory(BaseId):
     )
 
 
-class AssetsVolumeVolatility(BaseId):
-    __tablename__ = "assets_volume_volatility"
+class AssetVolumeVolatility(BaseId):
+    __tablename__ = "asset_volume_volatility"
 
     asset_exchange_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("asset_exchange_specs.id", ondelete="SET NULL"),

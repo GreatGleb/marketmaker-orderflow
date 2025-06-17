@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db.base import DatabaseSessionManager
-from app.crud.assets_history import AssetsHistoryCrud
+from app.crud.asset_history import AssetHistoryCrud
 from app.crud.watched_pair import WatchedPairCrud
 
 
@@ -14,7 +14,7 @@ WS_URL = "wss://fstream.binance.com/ws/!ticker@arr"
 
 
 async def save_filtered_assets(session: AsyncSession, data: list[dict]):
-    history_crud = AssetsHistoryCrud(session)
+    history_crud = AssetHistoryCrud(session)
     watched_crud = WatchedPairCrud(session)
 
     symbol_to_id = await watched_crud.get_symbol_to_id_map()
