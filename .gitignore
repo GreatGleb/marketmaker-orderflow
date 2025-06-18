@@ -10,3 +10,4 @@ __pycache__/
 *.py[cod]
 python-scripts-*.json
 *.http
+celerybeat-schedule

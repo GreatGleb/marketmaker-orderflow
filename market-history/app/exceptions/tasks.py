@@ -1,0 +1,2 @@
+class TaskNeedsRetry(Exception):
+    pass

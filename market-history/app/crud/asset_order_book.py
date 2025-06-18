@@ -1,4 +1,5 @@
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy import delete
 
 from app.db.models import AssetOrderBook
 from app.crud.base import BaseCrud
@@ -14,3 +15,10 @@ class AssetOrderBookCrud(BaseCrud[AssetOrderBook]):
 
         stmt = insert(AssetOrderBook).values(items)
         await self.session.execute(stmt)
+
+    async def delete_older_than(self, cutoff_timestamp: int) -> None:
+        stmt = delete(AssetOrderBook).where(
+            AssetOrderBook.transaction_time < cutoff_timestamp
+        )
+        await self.session.execute(stmt)
+        await self.session.commit()

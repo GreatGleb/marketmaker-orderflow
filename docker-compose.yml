@@ -78,9 +78,74 @@ services:
     networks:
         - marketmaker_network
 
+  market-history-celery-worker:
+    build: ./market-history
+    container_name: market_history_celery_worker
+    command: celery -A app.tasks worker -l info
+    volumes:
+      - ./market-history:/opt/services/app/src:Z
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - C_FORCE_ROOT=true
+    depends_on:
+      - redis
+    env_file:
+      - ./market-history/.env
+    networks:
+      - redis_network
+      - marketmaker_network
+
+  market-history-celery-beat:
+    build: ./market-history
+    container_name: market_history_celery_beat
+    command: celery -A app.tasks beat -l info
+    volumes:
+      - ./market-history:/opt/services/app/src:Z
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - C_FORCE_ROOT=true
+    depends_on:
+      - redis
+    env_file:
+      - ./market-history/.env
+    networks:
+      - redis_network
+      - marketmaker_network
+
+  flower:
+    container_name: marketmaker_flower
+    image: mher/flower
+    command: celery flower
+    environment:
+      CELERY_BROKER_URL: redis://redis
+      CELERY_RESULT_BACKEND: redis://redis
+    expose:
+      - 5555
+    depends_on:
+      - redis
+    ports:
+      - "5555:5555"
+    networks:
+      - redis_network
+
+  redis:
+    image: redis:latest
+    container_name: marketmaker_redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_volume:/data
+    networks:
+      - redis_network
+
 volumes:
   postgres_data:
+  redis_volume:
 
 networks:
   marketmaker_network:
+    driver: bridge
+  redis_network:
     driver: bridge
