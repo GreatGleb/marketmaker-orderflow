@@ -298,3 +298,26 @@ class WatchedPair(BaseId):
     asset_exchange: Mapped[Optional[AssetExchangeSpec]] = relationship(
         backref="watched_pairs", lazy="joined"
     )
+
+
+class AssetOrderBook(BaseId):
+    __tablename__ = "asset_order_book"
+
+    asset_exchange_id: Mapped[int] = mapped_column(
+        ForeignKey("asset_exchange_specs.id"), nullable=False
+    )
+    asset_exchange: Mapped[Optional[AssetExchangeSpec]] = relationship(
+        backref="asset_order_books", lazy="joined"
+    )
+
+    transaction_time: Mapped[int] = mapped_column(
+        comment="Transaction time from Binance (T)"
+    )
+
+    bids: Mapped[list] = mapped_column(
+        types.JSON, nullable=False, comment="List of bid [price, quantity]"
+    )
+
+    asks: Mapped[list] = mapped_column(
+        types.JSON, nullable=False, comment="List of ask [price, quantity]"
+    )
