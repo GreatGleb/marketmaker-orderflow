@@ -311,7 +311,7 @@ class AssetOrderBook(BaseId):
     )
 
     transaction_time: Mapped[int] = mapped_column(
-        comment="Transaction time from Binance (T)"
+        types.BigInteger, comment="Transaction time from Binance (T)"
     )
 
     bids: Mapped[list] = mapped_column(
