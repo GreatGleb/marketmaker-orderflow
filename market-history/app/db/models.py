@@ -234,7 +234,9 @@ class AssetHistory(BaseId):
     )
 
     event_time: Mapped[datetime] = mapped_column(
-        types.DateTime, nullable=False, comment="Event time (E)"
+        types.DateTime(timezone=True),
+        nullable=False,
+        comment="Event time (E)",
     )
 
     statistics_open_time: Mapped[Optional[int]] = mapped_column(
