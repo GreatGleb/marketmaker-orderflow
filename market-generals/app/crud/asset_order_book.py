@@ -1,7 +1,8 @@
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy import delete
+from sqlalchemy import delete, select
+from sqlalchemy.orm import joinedload
 
-from app.db.models import AssetOrderBook
+from app.db.models import AssetOrderBook, AssetExchangeSpec
 from app.crud.base import BaseCrud
 
 
@@ -22,3 +23,15 @@ class AssetOrderBookCrud(BaseCrud[AssetOrderBook]):
         )
         await self.session.execute(stmt)
         await self.session.commit()
+
+    async def get_latest_by_symbol(self, symbol: str) -> AssetOrderBook | None:
+        stmt = (
+            select(AssetOrderBook)
+            .join(AssetOrderBook.asset_exchange)
+            .options(joinedload(AssetOrderBook.asset_exchange))
+            .where(AssetExchangeSpec.symbol == symbol)
+            .order_by(AssetOrderBook.transaction_time.desc())
+            .limit(1)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()

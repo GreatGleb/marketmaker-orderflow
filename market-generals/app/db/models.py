@@ -10,7 +10,6 @@ from sqlalchemy.orm import (
     declarative_base,
 )
 
-
 Base = declarative_base()
 
 
@@ -322,4 +321,61 @@ class AssetOrderBook(BaseId):
 
     asks: Mapped[list] = mapped_column(
         types.JSON, nullable=False, comment="List of ask [price, quantity]"
+    )
+
+
+class TestOrder(BaseId):
+    __tablename__ = "test_orders"
+
+    asset_symbol: Mapped[str] = mapped_column(
+        nullable=False, index=True, comment="Trading symbol like BTCUSDT"
+    )
+
+    balance: Mapped[float] = mapped_column(
+        types.Numeric, nullable=False, comment="Starting balance for the order"
+    )
+    order_type: Mapped[str] = mapped_column(
+        nullable=False, comment="Order type: buy/sell"
+    )
+
+    open_price: Mapped[float] = mapped_column(
+        types.Numeric, nullable=False, comment="Opening price of the asset"
+    )
+    open_time: Mapped[datetime] = mapped_column(
+        types.DateTime(timezone=True),
+        default=func.now(),
+        nullable=False,
+        comment="Time of order open",
+    )
+    open_fee: Mapped[float] = mapped_column(
+        types.Numeric,
+        nullable=False,
+        comment="Fee charged at order open (0.02%)",
+    )
+
+    stop_loss_price: Mapped[float] = mapped_column(
+        types.Numeric, nullable=False, comment="Stop-loss price"
+    )
+
+    close_price: Mapped[Optional[float]] = mapped_column(
+        types.Numeric, nullable=True, comment="Closing price"
+    )
+    close_time: Mapped[Optional[datetime]] = mapped_column(
+        types.DateTime(timezone=True),
+        nullable=True,
+        comment="Time of order close",
+    )
+    close_fee: Mapped[Optional[float]] = mapped_column(
+        types.Numeric,
+        nullable=True,
+        comment="Fee charged at order close (0.05%)",
+    )
+
+    profit_loss: Mapped[Optional[float]] = mapped_column(
+        types.Numeric, nullable=True, comment="Profit or loss after all fees"
+    )
+    is_active: Mapped[bool] = mapped_column(
+        default=True,
+        nullable=False,
+        comment="Whether the order is still active",
     )
