@@ -64,7 +64,7 @@ services:
   market-generals:
     build: ./market-generals
     container_name: marketmaker_market_history
-    command: fastapi run main.py --port 8000 --reload
+    command: ./boot.sh
     volumes:
       - ./market-generals:/opt/services/app/src:Z
     env_file:
