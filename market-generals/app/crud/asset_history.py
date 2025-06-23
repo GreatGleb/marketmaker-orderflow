@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from sqlalchemy import delete
 from sqlalchemy.dialects.postgresql import insert
 
@@ -96,7 +98,7 @@ class AssetHistoryCrud(BaseCrud[AssetHistory]):
 
         return row if row else None
 
-    async def get_latest_price(self, symbol: str) -> float | None:
+    async def get_latest_price(self, symbol: str) -> Decimal | None:
         stmt = (
             select(AssetHistory.last_price)
             .where(AssetHistory.symbol == symbol)
