@@ -43,7 +43,7 @@ class DatabaseSessionManager:
     def __init__(self, host):
         self._engine: AsyncEngine = create_async_engine(
             host,
-            echo=True,
+            echo=False,
             query_cache_size=0,
             connect_args={"statement_cache_size": 0},
         )
