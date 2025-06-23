@@ -68,11 +68,12 @@ async def simulate_bot(session, balance: float = 1000.0):
         return
 
     tick_size = Decimal(str(step_sizes["tick_size"]))
+    min_move_size = 5 * tick_size
 
     stop_loss = (
-        current_price - tick_size
+        current_price - min_move_size
         if trade_type == TradeType.BUY
-        else current_price + tick_size
+        else current_price + min_move_size
     )
 
     # 6. Рассчитать комиссию за открытие
@@ -98,21 +99,33 @@ async def simulate_bot(session, balance: float = 1000.0):
 
     # 8. Следим за ценой и поднимаем stop-loss
     while True:
-        await asyncio.sleep(2)  # можно увеличить интервал
+        await asyncio.sleep(0.1)  # можно увеличить интервал
         updated_price = await asset_crud.get_latest_price(symbol)
         if updated_price is None:
             continue
 
+        stop_loss = (
+            updated_price - min_move_size
+            if trade_type == TradeType.BUY
+            else updated_price + min_move_size
+        )
+
+        last_profit_price = (
+            order.stop_loss_price + min_move_size
+            if trade_type == TradeType.BUY
+            else order.stop_loss_price - min_move_size
+        )
+
         if trade_type == TradeType.BUY:
             if updated_price <= order.stop_loss_price:
                 break
-            if updated_price > order.open_price:
-                order.stop_loss_price = updated_price
+            if updated_price > last_profit_price:
+                order.stop_loss_price = stop_loss
         else:
             if updated_price >= order.stop_loss_price:
                 break
-            if updated_price < order.open_price:
-                order.stop_loss_price = updated_price
+            if updated_price < last_profit_price:
+                order.stop_loss_price = stop_loss
 
     # 9. Закрытие ордера
     close_time = datetime.now(UTC)
@@ -145,7 +158,7 @@ async def simulate_bot(session, balance: float = 1000.0):
         profit_loss=pnl,
     )
 
-    print(f"🔴 Ордер закрыт. PnL: {pnl:.4f}")
+    print(f"🔴 Ордер закрыт. PnL: {pnl:.4f}, цена закрытия: {close_price:.4f}")
 
 
 is_bot_running = True
