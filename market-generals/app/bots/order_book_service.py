@@ -24,7 +24,7 @@ class TradeType(str, enum.Enum):
 
 async def simulate_bot(session, balance: float = 1000.0):
     now = datetime.now(UTC)
-    five_minutes_ago = now - timedelta(days=15)
+    five_minutes_ago = now - timedelta(minutes=5)
 
     # 1. Найти наиболее волатильную пару
     asset_crud = AssetHistoryCrud(session)
