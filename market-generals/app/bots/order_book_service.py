@@ -24,7 +24,7 @@ class TradeType(str, enum.Enum):
 
 async def simulate_bot(session, balance: float = 1000.0):
     now = datetime.now(UTC)
-    five_minutes_ago = now - timedelta(minutes=5)
+    five_minutes_ago = now - timedelta(days=15)
 
     # 1. Найти наиболее волатильную пару
     asset_crud = AssetHistoryCrud(session)
@@ -120,17 +120,22 @@ async def simulate_bot(session, balance: float = 1000.0):
     close_commission = balance * COMMISSION_CLOSE
 
     if trade_type == TradeType.BUY:
-        pnl = (
-            (close_price - order.open_price) * Decimal(balance)
-            - Decimal(open_commission)
-            - Decimal(close_commission)
-        )
+        amount = Decimal(balance) / Decimal(order.open_price)
+
+        revenue = amount * Decimal(close_price)
+
+        total_commission = Decimal(open_commission) + Decimal(close_commission)
+
+        pnl = revenue - Decimal(balance) - total_commission
+
     else:
-        pnl = (
-            (order.open_price - close_price) * Decimal(balance)
-            - Decimal(open_commission)
-            - Decimal(close_commission)
-        )
+        total_commission = Decimal(open_commission) + Decimal(close_commission)
+
+        amount = Decimal(balance) / Decimal(order.open_price)
+
+        cost = amount * Decimal(close_price)
+
+        pnl = Decimal(balance) - cost - total_commission
 
     await sim_order_crud.close_order(
         order_id=order.id,

@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 from typing import Optional
@@ -33,7 +35,7 @@ class TestOrderCrud(BaseCrud[TestOrder]):
         close_price: float,
         close_time,
         close_fee: float,
-        profit_loss: float,
+        profit_loss: Decimal,
     ) -> None:
         stmt = (
             update(TestOrder)
