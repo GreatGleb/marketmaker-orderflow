@@ -55,24 +55,33 @@ async def save_order_books(session: AsyncSession, messages: list[dict]):
 async def run_order_book_listener():
     dsm = DatabaseSessionManager.create(settings.DB_URL)
 
-    async with dsm.get_session() as session:
-        watched_crud = WatchedPairCrud(session)
-        symbol_to_id = await watched_crud.get_symbol_to_id_map()
+    while True:
+        try:
+            async with dsm.get_session() as session:
+                watched_crud = WatchedPairCrud(session)
+                symbol_to_id = await watched_crud.get_symbol_to_id_map()
 
-    ws_url = build_stream_url(list(symbol_to_id.keys()))
+            ws_url = build_stream_url(list(symbol_to_id.keys()))
 
-    async with websockets.connect(ws_url) as websocket:
-        dsm = DatabaseSessionManager.create(settings.DB_URL)
-        async with dsm.get_session() as session:
-            while True:
-                try:
-                    message = await websocket.recv()
-                    data = json.loads(message)
+            async with websockets.connect(
+                ws_url, ping_interval=20, ping_timeout=10
+            ) as websocket:
+                print("✅ WebSocket connected")
 
-                    await save_order_books(session, [data])
-                except Exception as e:
-                    print(f"❌ WebSocket error: {e}")
-                    await asyncio.sleep(3)
+                dsm = DatabaseSessionManager.create(settings.DB_URL)
+                async with dsm.get_session() as session:
+                    while True:
+                        message = await websocket.recv()
+                        data = json.loads(message)
+
+                        await save_order_books(session, [data])
+
+        except websockets.ConnectionClosed as e:
+            print(f"🔁 WebSocket closed: {e}. Reconnecting in 3s...")
+            await asyncio.sleep(3)
+        except Exception as e:
+            print(f"❌ Unexpected error: {e}")
+            await asyncio.sleep(3)
 
 
 if __name__ == "__main__":
