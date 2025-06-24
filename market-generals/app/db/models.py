@@ -394,13 +394,6 @@ class TestBot(BaseId):
         comment="Balance for trading",
     )
 
-    entry_offset_ticks: Mapped[int] = mapped_column(
-        types.Integer,
-        nullable=False,
-        default=0,
-        comment="Entry rejection in ticks (from best_bid/ask)",
-    )
-
     exit_offset_ticks: Mapped[int] = mapped_column(
         types.Integer,
         nullable=False,
