@@ -7,14 +7,16 @@ from decimal import Decimal
 from app.crud.asset_history import AssetHistoryCrud
 from app.crud.asset_order_book import AssetOrderBookCrud
 from app.crud.exchange_pair_spec import AssetExchangeSpecCrud
+from app.crud.test_bot import TestBotCrud
 from app.crud.test_orders import TestOrderCrud
 from app.db.base import DatabaseSessionManager
 from app.config import settings
+from app.db.models import TestBot
 
 UTC = timezone.utc
 
-COMMISSION_OPEN = 0.0002  # 0.02%
-COMMISSION_CLOSE = 0.0005  # 0.05%
+COMMISSION_OPEN = Decimal(0.0002)  # 0.02%
+COMMISSION_CLOSE = Decimal(0.0005)  # 0.05%
 
 
 class TradeType(str, enum.Enum):
@@ -22,7 +24,7 @@ class TradeType(str, enum.Enum):
     SELL = "SELL"
 
 
-async def simulate_bot(session, balance: float = 1000.0):
+async def simulate_bot(session, bot_config: TestBot):
     now = datetime.now(UTC)
     five_minutes_ago = now - timedelta(minutes=5)
 
@@ -36,7 +38,7 @@ async def simulate_bot(session, balance: float = 1000.0):
         print("Нет волатильных пар")
         return
 
-    symbol = most_volatile.symbol
+    symbol = bot_config.symbol
     current_price = most_volatile.last_price
 
     # 2. Получить актуальный ордербук
@@ -68,13 +70,15 @@ async def simulate_bot(session, balance: float = 1000.0):
         return
 
     tick_size = Decimal(str(step_sizes["tick_size"]))
-    min_move_size = 5 * tick_size
+    min_move_size = Decimal(bot_config.stop_loss_ticks) * tick_size
 
     stop_loss = (
         current_price - min_move_size
         if trade_type == TradeType.BUY
         else current_price + min_move_size
     )
+
+    balance = bot_config.balance
 
     # 6. Рассчитать комиссию за открытие
     open_commission = balance * COMMISSION_OPEN
@@ -88,8 +92,9 @@ async def simulate_bot(session, balance: float = 1000.0):
             "balance": Decimal(balance),
             "open_price": Decimal(current_price),
             "open_time": now,
-            "open_fee": Decimal(current_price) * Decimal(COMMISSION_OPEN),
+            "open_fee": Decimal(current_price) * COMMISSION_OPEN,
             "stop_loss_price": Decimal(stop_loss),
+            "bot_id": bot_config.id,
         }
     )
     print(
@@ -104,16 +109,18 @@ async def simulate_bot(session, balance: float = 1000.0):
         if updated_price is None:
             continue
 
+        stop_loss_step = Decimal(bot_config.stop_loss_ticks) * tick_size
         stop_loss = (
-            updated_price - min_move_size
+            current_price - stop_loss_step
             if trade_type == TradeType.BUY
-            else updated_price + min_move_size
+            else current_price + stop_loss_step
         )
 
+        exit_step = Decimal(bot_config.exit_offset_ticks) * tick_size
         last_profit_price = (
-            order.stop_loss_price + min_move_size
+            order.stop_loss_price + exit_step
             if trade_type == TradeType.BUY
-            else order.stop_loss_price - min_move_size
+            else order.stop_loss_price - exit_step
         )
 
         if trade_type == TradeType.BUY:
@@ -154,7 +161,7 @@ async def simulate_bot(session, balance: float = 1000.0):
         order_id=order.id,
         close_price=close_price,
         close_time=close_time,
-        close_fee=order.open_price * Decimal(COMMISSION_OPEN),
+        close_fee=order.open_price * COMMISSION_OPEN,
         profit_loss=pnl,
     )
 
@@ -164,16 +171,36 @@ async def simulate_bot(session, balance: float = 1000.0):
 is_bot_running = True
 
 
-async def simulate_bot_loop():
-    global is_bot_running  # noqa
+# async def simulate_bot_loop():
+#     global is_bot_running  # noqa
+#
+#     dsm = DatabaseSessionManager.create(settings.DB_URL)
+#
+#     while is_bot_running:
+#         async with dsm.get_session() as session:
+#             await simulate_bot(session=session)
+#
+#         await asyncio.sleep(5)
 
+
+async def simulate_multiple_bots():
     dsm = DatabaseSessionManager.create(settings.DB_URL)
 
-    while is_bot_running:
-        async with dsm.get_session() as session:
-            await simulate_bot(session=session)
+    async with dsm.get_session() as session:
+        bot_crud = TestBotCrud(session)
+        bots = await bot_crud.get_active_bots()
 
-        await asyncio.sleep(5)
+    tasks = []
+
+    for bot in bots:
+
+        async def _run_bot(bot_config=bot):
+            async with dsm.get_session() as session:
+                await simulate_bot(session=session, bot_config=bot_config)
+
+        tasks.append(asyncio.create_task(_run_bot()))
+
+    await asyncio.gather(*tasks)
 
 
 def input_listener():
@@ -196,7 +223,7 @@ def main():
     input_thread.start()
 
     # Запуск бота
-    asyncio.run(simulate_bot_loop())
+    asyncio.run(simulate_multiple_bots())
 
     print("✅ Бот полностью завершён.")
 

@@ -379,3 +379,39 @@ class TestOrder(BaseId):
         nullable=False,
         comment="Whether the order is still active",
     )
+    bot_id: Mapped[int] = mapped_column(
+        ForeignKey("test_bots.id"), nullable=True
+    )
+
+
+class TestBot(BaseId):
+    __tablename__ = "test_bots"
+
+    symbol: Mapped[str] = mapped_column(nullable=False)
+    balance: Mapped[float] = mapped_column(
+        types.Numeric(precision=20, scale=10),
+        nullable=False,
+        comment="Balance for trading",
+    )
+
+    entry_offset_ticks: Mapped[int] = mapped_column(
+        types.Integer,
+        nullable=False,
+        default=0,
+        comment="Entry rejection in ticks (from best_bid/ask)",
+    )
+
+    exit_offset_ticks: Mapped[int] = mapped_column(
+        types.Integer,
+        nullable=False,
+        default=10,
+        comment="Target Profit/Close in Ticks",
+    )
+
+    stop_loss_ticks: Mapped[int] = mapped_column(
+        types.Integer, nullable=False, default=5, comment="Stop-loss in ticks"
+    )
+
+    is_active: Mapped[bool] = mapped_column(
+        types.Boolean, default=True, nullable=False, comment="Is active bot"
+    )

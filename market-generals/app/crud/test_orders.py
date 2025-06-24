@@ -32,7 +32,7 @@ class TestOrderCrud(BaseCrud[TestOrder]):
     async def close_order(
         self,
         order_id: int,
-        close_price: float,
+        close_price: Decimal,
         close_time,
         close_fee: float,
         profit_loss: Decimal,
