@@ -24,26 +24,19 @@ class TradeType(str, enum.Enum):
     SELL = "SELL"
 
 
-async def simulate_bot(session, bot_config: TestBot):
-    now = datetime.now(UTC)
-    five_minutes_ago = now - timedelta(minutes=5)
-
-    # 1. Найти наиболее волатильную пару
-    asset_crud = AssetHistoryCrud(session)
-    most_volatile = await asset_crud.get_most_volatile_since(
-        since=five_minutes_ago
-    )
-
-    if not most_volatile:
-        print("Нет волатильных пар")
-        return
+async def simulate_bot(
+    session, bot_config: TestBot, current_price, shared_data
+):
 
     symbol = bot_config.symbol
-    current_price = most_volatile.last_price
+    data = shared_data.get(symbol)
+
+    if not data:
+        print(f"❌ Нет данных по символу {symbol}")
+        return
 
     # 2. Получить актуальный ордербук
-    order_book_crud = AssetOrderBookCrud(session)
-    order_book = await order_book_crud.get_latest_by_symbol(symbol)
+    order_book = data["order_book"]
 
     if not order_book or not order_book.bids or not order_book.asks:
         print("Нет данных в order book")
@@ -61,15 +54,11 @@ async def simulate_bot(session, bot_config: TestBot):
         print("Цена не достигла ближайших bid/ask")
         return
 
-    # 4. Получить шаг цены
-    exchange_crud = AssetExchangeSpecCrud(session)
-    step_sizes = await exchange_crud.get_step_size_by_symbol(symbol)
-
-    if not step_sizes or not step_sizes["tick_size"]:
+    if not data["tick_size"]:
         print("❌ Не найден шаг цены (tick_size)")
         return
 
-    tick_size = Decimal(str(step_sizes["tick_size"]))
+    tick_size = Decimal(str(data["tick_size"]))
     min_move_size = Decimal(bot_config.stop_loss_ticks) * tick_size
 
     stop_loss = (
@@ -85,13 +74,14 @@ async def simulate_bot(session, bot_config: TestBot):
 
     # 7. Создать ордер
     sim_order_crud = TestOrderCrud(session)
+
     order = await sim_order_crud.create(
         {
             "asset_symbol": symbol,
             "order_type": trade_type,
             "balance": Decimal(balance),
             "open_price": Decimal(current_price),
-            "open_time": now,
+            "open_time": datetime.now(UTC),
             "open_fee": Decimal(current_price) * COMMISSION_OPEN,
             "stop_loss_price": Decimal(stop_loss),
             "bot_id": bot_config.id,
@@ -104,6 +94,7 @@ async def simulate_bot(session, bot_config: TestBot):
 
     # 8. Следим за ценой и поднимаем stop-loss
     while True:
+        asset_crud = AssetHistoryCrud(session)
         await asyncio.sleep(0.1)  # можно увеличить интервал
         updated_price = await asset_crud.get_latest_price(symbol)
         if updated_price is None:
@@ -186,17 +177,58 @@ is_bot_running = True
 async def simulate_multiple_bots():
     dsm = DatabaseSessionManager.create(settings.DB_URL)
 
+    shared_data = {}
+
     async with dsm.get_session() as session:
         bot_crud = TestBotCrud(session)
-        bots = await bot_crud.get_active_bots()
+
+        # 1. Найти наиболее волатильную пару
+        asset_crud = AssetHistoryCrud(session)
+
+        now = datetime.now(UTC)
+        five_minutes_ago = now - timedelta(minutes=5)
+
+        most_volatile = await asset_crud.get_most_volatile_since(
+            since=five_minutes_ago
+        )
+
+        if not most_volatile:
+            print("Нет волатильных пар")
+            return
+
+        active_bots = await bot_crud.get_active_bots()
+        order_book_crud = AssetOrderBookCrud(session)
+        exchange_crud = AssetExchangeSpecCrud(session)
+
+        symbols = {bot.symbol for bot in active_bots}
+
+        for symbol in symbols:
+            order_book = await order_book_crud.get_latest_by_symbol(symbol)
+            step_sizes = await exchange_crud.get_step_size_by_symbol(symbol)
+
+            shared_data[symbol] = {
+                "order_book": order_book,
+                "tick_size": (
+                    Decimal(str(step_sizes.get("tick_size")))
+                    if step_sizes
+                    else None
+                ),
+            }
+
+    current_price = most_volatile.last_price
 
     tasks = []
 
-    for bot in bots:
+    for bot in active_bots:
 
         async def _run_bot(bot_config=bot):
             async with dsm.get_session() as session:
-                await simulate_bot(session=session, bot_config=bot_config)
+                await simulate_bot(
+                    session=session,
+                    bot_config=bot_config,
+                    shared_data=shared_data,
+                    current_price=current_price,
+                )
 
         tasks.append(asyncio.create_task(_run_bot()))
 
