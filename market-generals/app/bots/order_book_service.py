@@ -158,6 +158,13 @@ async def simulate_bot(
 
     print(f"🔴 Ордер закрыт. PnL: {pnl:.4f}, цена закрытия: {close_price:.4f}")
 
+    await simulate_bot(
+        session=session,
+        bot_config=bot_config,
+        shared_data=shared_data,
+        current_price=current_price,
+    )
+
 
 is_bot_running = True
 
@@ -221,12 +228,15 @@ async def simulate_multiple_bots():
 
     for bot in active_bots:
 
-        async def _run_bot(bot_config=bot):
+        async def _run_bot(bot_config=bot, data=None):
+            if data is None:
+                data = shared_data
+
             async with dsm.get_session() as session:
                 await simulate_bot(
                     session=session,
                     bot_config=bot_config,
-                    shared_data=shared_data,
+                    shared_data=data,
                     current_price=current_price,
                 )
 
