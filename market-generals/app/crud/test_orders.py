@@ -17,6 +17,7 @@ class TestOrderCrud(BaseCrud[TestOrder]):
         order = TestOrder(**data)
         self.session.add(order)
         await self.session.flush()
+        await self.session.commit()
         return order
 
     async def get_active_by_symbol(self, symbol: str) -> Optional[TestOrder]:

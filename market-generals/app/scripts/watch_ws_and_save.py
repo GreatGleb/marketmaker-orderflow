@@ -8,7 +8,7 @@ from app.config import settings
 from app.db.base import DatabaseSessionManager
 from app.crud.asset_history import AssetHistoryCrud
 from app.crud.watched_pair import WatchedPairCrud
-
+from app.dependencies import redis_context
 
 WS_URL = "wss://fstream.binance.com/ws/!ticker@arr"
 
@@ -22,32 +22,36 @@ async def save_filtered_assets(session: AsyncSession, data: list[dict]):
 
     records = []
 
-    for item in data:
-        symbol = item.get("s")
+    async with redis_context() as redis:
 
-        if symbol not in symbols_set:
-            continue
+        for item in data:
+            symbol = item.get("s")
 
-        asset_exchange_id = symbol_to_id[symbol]
+            if symbol not in symbols_set:
+                continue
 
-        record_data = {
-            "symbol": symbol,
-            "source": "BINANCE",
-            "last_price": item.get("c"),
-            "asset_exchange_id": asset_exchange_id,
-            "price_change_24h": item.get("p"),
-            "price_change_percent_24h": item.get("P"),
-            "base_asset_volume_24h": item.get("v"),
-            "quote_asset_volume_24h": item.get("q"),
-            "weighted_avg_price_24h": item.get("w"),
-            "price_high_24h": item.get("h"),
-            "price_low_24h": item.get("l"),
-            "event_time": datetime.fromtimestamp(item.get("E") / 1000),
-            "statistics_open_time": item.get("O"),
-            "statistics_close_time": item.get("C"),
-        }
+            asset_exchange_id = symbol_to_id[symbol]
+            last_price = item.get("c")
 
-        records.append(record_data)
+            record_data = {
+                "symbol": symbol,
+                "source": "BINANCE",
+                "last_price": last_price,
+                "asset_exchange_id": asset_exchange_id,
+                "price_change_24h": item.get("p"),
+                "price_change_percent_24h": item.get("P"),
+                "base_asset_volume_24h": item.get("v"),
+                "quote_asset_volume_24h": item.get("q"),
+                "weighted_avg_price_24h": item.get("w"),
+                "price_high_24h": item.get("h"),
+                "price_low_24h": item.get("l"),
+                "event_time": datetime.fromtimestamp(item.get("E") / 1000),
+                "statistics_open_time": item.get("O"),
+                "statistics_close_time": item.get("C"),
+            }
+
+            records.append(record_data)
+        await redis.set(f"price:{symbol}", last_price)
 
     await history_crud.bulk_create(records)
     await session.commit()

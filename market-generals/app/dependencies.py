@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 import redis
 
 from functools import lru_cache, partial
@@ -47,3 +49,10 @@ async def api_key_auth(x_api_key: str = Header(...)):
         status_code=status.HTTP_403_FORBIDDEN,
         detail="Invalid or missing API Key",
     )
+
+
+@asynccontextmanager
+async def redis_context():
+    rsm = RedisSessionManager.create("redis://:@redis:6379/0")
+    async with rsm as manager:
+        yield manager.connection
