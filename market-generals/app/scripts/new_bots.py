@@ -26,8 +26,8 @@ async def create_bots(symbol="BTCUSDT"):
                 }
                 new_bots.append(bot_data)
 
-            await bot_crud.bulk_create(new_bots)
-            await session.commit()
+        await bot_crud.bulk_create(new_bots)
+        await session.commit()
         print("✅ Успешно создано ботов.")
 
 
