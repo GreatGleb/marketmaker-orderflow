@@ -408,3 +408,11 @@ class TestBot(BaseId):
     is_active: Mapped[bool] = mapped_column(
         types.Boolean, default=True, nullable=False, comment="Is active bot"
     )
+
+    total_profit: Mapped[float] = mapped_column(
+        types.Numeric(precision=20, scale=10),
+        default=0,
+        server_default="0",
+        nullable=False,
+        comment="Total profit",
+    )

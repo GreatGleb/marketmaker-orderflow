@@ -42,8 +42,6 @@ async def simulate_bot(session, bot_config: TestBot, shared_data, redis):
         print(f"❌ Нет данных по символу {symbol}")
         return
 
-    print(f"▶️ Старт симуляции бота {bot_config.id} для {symbol}")
-
     while True:
         order_book = data["order_book"]
         tick_size = data["tick_size"]
@@ -132,11 +130,16 @@ async def simulate_bot(session, bot_config: TestBot, shared_data, redis):
                     "is_active": False,
                 }
             )
+            bot_config.total_profit = (
+                bot_config.total_profit or Decimal(0)
+            ) + pnl
+
             await session.commit()
             print(
-                f"🔴 Ордер закрыт. PnL: {pnl:.4f}, "
-                f"цена закрытия: {close_price:.4f}"
+                f"💰 Бот {bot_config.id}: "
+                f"общая прибыль {bot_config.total_profit:.4f}"
             )
+
         except Exception as e:
             print(f"❌ Ошибка при создании ордера: {e}")
 

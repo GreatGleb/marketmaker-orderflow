@@ -51,7 +51,7 @@ async def save_filtered_assets(session: AsyncSession, data: list[dict]):
             }
 
             records.append(record_data)
-        await redis.set(f"price:{symbol}", last_price)
+            await redis.set(f"price:{symbol}", last_price)
 
     await history_crud.bulk_create(records)
     await session.commit()
