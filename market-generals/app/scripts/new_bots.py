@@ -20,7 +20,7 @@ async def create_bots(symbol="BTCUSDT"):
                 bot_data = {
                     "symbol": symbol,
                     "balance": Decimal("1000.0"),
-                    "exit_offset_ticks": exit_val,
+                    "take_profit_ticks": exit_val,
                     "stop_loss_ticks": entry,
                     "is_active": True,
                 }

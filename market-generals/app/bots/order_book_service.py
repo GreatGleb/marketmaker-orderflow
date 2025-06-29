@@ -42,41 +42,25 @@ async def simulate_bot(session, bot_config: TestBot, shared_data, redis):
         print(f"❌ Нет данных по символу {symbol}")
         return
 
+    tick_size = data["tick_size"]
+
     while True:
-        order_book = data["order_book"]
-        tick_size = data["tick_size"]
-
-        if (
-            not order_book
-            or not order_book.bids
-            or not order_book.asks
-            or not tick_size
-        ):
-            print("❌ Нет стакана или шага цены")
-            return
-
-        best_bid = float(order_book.bids[0][0])
-        best_ask = float(order_book.asks[0][0])
-
         current_price = await get_price_from_redis(redis, symbol)
-        entry_offset_ticks = (
-            Decimal(bot_config.entry_offset_ticks)
-            if hasattr(bot_config, "entry_offset_ticks")
-            else Decimal(3)
+        best_bid = float(data["order_book"].bids[0][0])
+        best_ask = float(data["order_book"].asks[0][0])
+
+        trade_type = TradeType.BUY if best_ask >= best_bid else TradeType.SELL
+        entry_price = (
+            current_price + tick_size
+            if trade_type == TradeType.BUY
+            else current_price - tick_size
         )
-        entry_offset = entry_offset_ticks * tick_size
 
-        # Выбор направления и расчёт цены входа
-        if best_ask >= best_bid:
-            trade_type = TradeType.BUY
-            entry_price = current_price + entry_offset
-        else:
-            trade_type = TradeType.SELL
-            entry_price = current_price - entry_offset
+        print(
+            f"⏳ Бот {bot_config.id} | {trade_type} | "
+            f"Текущая: {current_price:.4f} | Ждём: {entry_price:.4f}"
+        )
 
-        print(f"⏳ Ждём пробития уровня: {trade_type} по {entry_price:.4f}")
-
-        # Ждём пробоя цены
         while True:
             updated_price = await get_price_from_redis(redis, symbol)
             if trade_type == TradeType.BUY and updated_price >= entry_price:
@@ -85,63 +69,93 @@ async def simulate_bot(session, bot_config: TestBot, shared_data, redis):
                 break
             await asyncio.sleep(0.1)
 
-        # После входа
         current_price = updated_price
+        open_time = datetime.now(UTC)
         balance = bot_config.balance
-        open_commission = balance * COMMISSION_OPEN
-        close_commission = balance * COMMISSION_CLOSE
+        open_fee = balance * COMMISSION_OPEN
+        close_fee = balance * COMMISSION_CLOSE
 
+        amount = balance / current_price
+        take_profit_ticks = Decimal(bot_config.take_profit_ticks)
         stop_loss_ticks = Decimal(bot_config.stop_loss_ticks)
-        exit_offset_ticks = Decimal(bot_config.exit_offset_ticks)
 
-        stop_loss = (
+        tp_price = (
+            current_price + take_profit_ticks * tick_size
+            if trade_type == TradeType.BUY
+            else current_price - take_profit_ticks * tick_size
+        )
+        sl_price = (
             current_price - stop_loss_ticks * tick_size
             if trade_type == TradeType.BUY
             else current_price + stop_loss_ticks * tick_size
         )
 
-        if trade_type == TradeType.BUY:
-            amount = balance / current_price
-            close_price = current_price + exit_offset_ticks * tick_size
-            revenue = amount * close_price
-            pnl = revenue - balance - open_commission - close_commission
-        else:
-            amount = balance / current_price
-            close_price = current_price - exit_offset_ticks * tick_size
-            cost = amount * close_price
-            pnl = balance - cost - open_commission - close_commission
+        print(
+            f"🔎 Бот {bot_config.id} | {trade_type} | Вход: {current_price:.4f}"
+        )
 
-        sim_order_crud = TestOrderCrud(session)
+        while True:
+            price = await get_price_from_redis(redis, symbol)
+
+            if trade_type == TradeType.BUY:
+                if price >= tp_price:
+                    close_price = tp_price
+                    reason = "TP"
+                    break
+                elif price <= sl_price:
+                    close_price = sl_price
+                    reason = "SL"
+                    break
+            else:
+                if price <= tp_price:
+                    close_price = tp_price
+                    reason = "TP"
+                    break
+                elif price >= sl_price:
+                    close_price = sl_price
+                    reason = "SL"
+                    break
+
+            await asyncio.sleep(0.1)
+
+        if trade_type == TradeType.BUY:
+            revenue = amount * close_price
+            pnl = revenue - balance - open_fee - close_fee
+        else:
+            cost = amount * close_price
+            pnl = balance - cost - open_fee - close_fee
+
         try:
-            await sim_order_crud.create(
+            await TestOrderCrud(session).create(
                 {
                     "asset_symbol": symbol,
                     "order_type": trade_type,
                     "balance": balance,
                     "open_price": current_price,
-                    "open_time": datetime.now(UTC),
-                    "open_fee": open_commission,
-                    "stop_loss_price": stop_loss,
+                    "open_time": open_time,
+                    "open_fee": open_fee,
+                    "stop_loss_price": sl_price,
                     "bot_id": bot_config.id,
                     "close_price": close_price,
                     "close_time": datetime.now(UTC),
-                    "close_fee": close_commission,
+                    "close_fee": close_fee,
                     "profit_loss": pnl,
                     "is_active": False,
                 }
             )
-            bot_config.total_profit = (
-                bot_config.total_profit or Decimal(0)
-            ) + pnl
-
             await session.commit()
+
             print(
-                f"💰 Бот {bot_config.id}: "
-                f"общая прибыль {bot_config.total_profit:.4f}"
+                f"💬 Бот {bot_config.id} | {trade_type} | "
+                f"Entry: {current_price:.4f} | "
+                f"Close: {close_price:.4f} | Amount: {amount:.6f} | "
+                f"PnL: {pnl:.4f} | TP_ticks: "
+                f"{take_profit_ticks} | "
+                f"SL_ticks: {stop_loss_ticks} | Reason: {reason}"
             )
 
         except Exception as e:
-            print(f"❌ Ошибка при создании ордера: {e}")
+            print(f"❌ Ошибка при записи ордера бота {bot_config.id}: {e}")
 
 
 async def simulate_multiple_bots():

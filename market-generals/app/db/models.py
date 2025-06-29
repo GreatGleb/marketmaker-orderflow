@@ -394,7 +394,7 @@ class TestBot(BaseId):
         comment="Balance for trading",
     )
 
-    exit_offset_ticks: Mapped[int] = mapped_column(
+    take_profit_ticks: Mapped[int] = mapped_column(
         types.Integer,
         nullable=False,
         default=10,
@@ -415,4 +415,12 @@ class TestBot(BaseId):
         server_default="0",
         nullable=False,
         comment="Total profit",
+    )
+
+    successful_stop_lose_ticks: Mapped[int] = mapped_column(
+        types.Integer,
+        nullable=False,
+        default=10,
+        comment="Stop-loss in ticks after trade "
+        "becomes profitable (used to secure partial profit)",
     )
