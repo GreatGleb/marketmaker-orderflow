@@ -413,12 +413,19 @@ class TestOrder(BaseId):
         nullable=False,
         comment="Stop ticks",
     )
-    take_profit_ticks: Mapped[int] = mapped_column(
+    stop_success_ticks: Mapped[int] = mapped_column(
         types.Integer,
         nullable=False,
         server_default="0",
         default=10,
         comment="Target Profit/Close in Ticks",
+    )
+    start_updown_ticks: Mapped[int] = mapped_column(
+        types.Integer,
+        default=0,
+        server_default="0",
+        nullable=False,
+        comment="Start updown ticks",
     )
 
 
@@ -432,7 +439,7 @@ class TestBot(BaseId):
         comment="Balance for trading",
     )
 
-    take_profit_ticks: Mapped[int] = mapped_column(
+    stop_success_ticks: Mapped[int] = mapped_column(
         types.Integer,
         nullable=False,
         default=10,
@@ -477,4 +484,12 @@ class TestBot(BaseId):
         server_default="0",
         nullable=False,
         comment="Stop ticks",
+    )
+
+    start_updown_ticks: Mapped[int] = mapped_column(
+        types.Integer,
+        default=0,
+        server_default="0",
+        nullable=False,
+        comment="Start updown ticks",
     )

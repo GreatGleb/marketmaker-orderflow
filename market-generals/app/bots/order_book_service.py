@@ -4,7 +4,6 @@ import threading
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from app.crud.asset_order_book import AssetOrderBookCrud
 from app.crud.exchange_pair_spec import AssetExchangeSpecCrud
 from app.crud.test_bot import TestBotCrud
 from app.crud.test_orders import TestOrderCrud
@@ -45,84 +44,49 @@ async def simulate_bot(session, bot_config: TestBot, shared_data, redis):
     tick_size = data["tick_size"]
 
     while True:
-        current_price = await get_price_from_redis(redis, symbol)
-        best_bid = float(data["order_book"].bids[0][0])
-        best_ask = float(data["order_book"].asks[0][0])
+        initial_price = await get_price_from_redis(redis, symbol)
 
-        trade_type = None
-        if current_price >= best_ask:
-            trade_type = TradeType.BUY
-        elif current_price <= best_bid:
-            trade_type = TradeType.SELL
-
-        if not trade_type:
-            await asyncio.sleep(0.1)
-            continue
-
-        # Вычисляем цену входа и стоп откат
-        entry_offset = bot_config.start_ticks * tick_size
-        stop_entry_offset = bot_config.stop_ticks * tick_size
-
-        entry_price = (
-            current_price + entry_offset
-            if trade_type == TradeType.BUY
-            else current_price - entry_offset
+        entry_price_buy = (
+            initial_price + bot_config.start_updown_ticks * tick_size
         )
-        cancel_entry_price = (
-            current_price - stop_entry_offset
-            if trade_type == TradeType.BUY
-            else current_price + stop_entry_offset
+        entry_price_sell = (
+            initial_price - bot_config.start_updown_ticks * tick_size
         )
 
         print(
-            f"⏳ Бот {bot_config.id} | {trade_type} "
-            f"| Текущая: {current_price:.4f} | Ждём: {entry_price:.4f}"
+            f"⏳ Бот {bot_config.id} | Ожидаем входа:"
+            f" BUY ≥ {entry_price_buy:.4f}, SELL ≤ {entry_price_sell:.4f}"
         )
 
-        # Ждём входа в позицию
         while True:
-            updated_price = await get_price_from_redis(redis, symbol)
+            current_price = await get_price_from_redis(redis, symbol)
 
-            if trade_type == TradeType.BUY:
-                if updated_price >= entry_price:
-                    break
-                if updated_price <= cancel_entry_price:
-                    print(
-                        f"❌ Бот {bot_config.id} | BUY | "
-                        f"Вход отменён, цена ушла ниже допустимого порога"
-                    )
-                    await asyncio.sleep(0.1)
-                    continue
-            else:
-                if updated_price <= entry_price:
-                    break
-                if updated_price >= cancel_entry_price:
-                    print(
-                        f"❌ Бот {bot_config.id} | SELL | "
-                        f"Вход отменён, цена ушла выше допустимого порога"
-                    )
-                    await asyncio.sleep(0.1)
-                    continue
+            if current_price >= entry_price_buy:
+                trade_type = TradeType.BUY
+                entry_price = current_price
+                break
+            elif current_price <= entry_price_sell:
+                trade_type = TradeType.SELL
+                entry_price = current_price
+                break
 
             await asyncio.sleep(0.1)
 
-        # Вход выполнен
-        open_price = updated_price
+        open_price = entry_price
         stop_loss_price = (
             open_price - bot_config.stop_loss_ticks * tick_size
             if trade_type == TradeType.BUY
             else open_price + bot_config.stop_loss_ticks * tick_size
         )
         take_profit_price = (
-            open_price + bot_config.take_profit_ticks * tick_size
+            open_price + bot_config.stop_success_ticks * tick_size
             if trade_type == TradeType.BUY
-            else open_price - bot_config.take_profit_ticks * tick_size
+            else open_price - bot_config.stop_success_ticks * tick_size
         )
 
         print(
-            f"🔎 Бот {bot_config.id} | {trade_type} "
-            f"| Вход по: {open_price:.4f}, SL: {stop_loss_price:.4f}, "
-            f"TP: {take_profit_price:.4f}"
+            f"🔎 Бот {bot_config.id} | {trade_type} | Вход: {open_price:.4f} | "
+            f"SL: {stop_loss_price:.4f} | TP: {take_profit_price:.4f}"
         )
 
         order = TestOrder(
@@ -140,7 +104,6 @@ async def simulate_bot(session, bot_config: TestBot, shared_data, redis):
                     break
                 if updated_price <= order.stop_loss_price:
                     break
-                # Прибыльная зона — подтягиваем SL
                 if updated_price - open_price >= tick_size:
                     new_sl = (
                         updated_price
@@ -153,7 +116,6 @@ async def simulate_bot(session, bot_config: TestBot, shared_data, redis):
                     break
                 if updated_price >= order.stop_loss_price:
                     break
-                # Прибыльная зона — подтягиваем SL
                 if open_price - updated_price >= tick_size:
                     new_sl = (
                         updated_price
@@ -172,6 +134,7 @@ async def simulate_bot(session, bot_config: TestBot, shared_data, redis):
         total_commission = Decimal(balance) * Decimal(
             COMMISSION_OPEN + COMMISSION_CLOSE
         )
+
         pnl = (
             revenue - Decimal(balance) - total_commission
             if trade_type == TradeType.BUY
@@ -181,19 +144,12 @@ async def simulate_bot(session, bot_config: TestBot, shared_data, redis):
         )
 
         print(
-            f"💬 Бот {bot_config.id} | {trade_type} | "
-            f"Entry: {open_price:.4f} | Close: {close_price:.4f} | "
-            f"Amount: {amount:.6f} | PnL: {pnl:.4f} | "
-            f"TP_ticks: {bot_config.take_profit_ticks} | "
-            f"SL_ticks: {bot_config.stop_loss_ticks} | "
-            f"Start_ticks: {bot_config.start_ticks} | "
-            f"Stop_ticks: {bot_config.stop_ticks}"
+            f"💬 Бот {bot_config.id} | {trade_type} "
+            f"| Entry: {open_price:.4f} | "
+            f"Close: {close_price:.4f} | PnL: {pnl:.4f}"
         )
-
+        successful_stop_lose_ticks = bot_config.successful_stop_lose_ticks
         try:
-            successful_stop_lose_ticks = (
-                bot_config.successful_stop_lose_ticks,
-            )
             await TestOrderCrud(session).create(
                 {
                     "asset_symbol": symbol,
@@ -209,14 +165,14 @@ async def simulate_bot(session, bot_config: TestBot, shared_data, redis):
                     "close_fee": order.open_price * Decimal(COMMISSION_CLOSE),
                     "profit_loss": pnl,
                     "is_active": False,
-                    "start_ticks": bot_config.start_ticks,
+                    "start_ticks": bot_config.start_updown_ticks,
                     "stop_ticks": bot_config.stop_ticks,
                     "stop_loss_ticks": bot_config.stop_loss_ticks,
+                    "stop_success_ticks": bot_config.stop_success_ticks,
                     "successful_stop_lose_ticks": successful_stop_lose_ticks,
                 }
             )
             await session.commit()
-
         except Exception as e:
             print(f"❌ Ошибка при записи ордера бота {bot_config.id}: {e}")
 
@@ -229,16 +185,14 @@ async def simulate_multiple_bots():
         bot_crud = TestBotCrud(session)
 
         active_bots = await bot_crud.get_active_bots()
-        order_book_crud = AssetOrderBookCrud(session)
         exchange_crud = AssetExchangeSpecCrud(session)
 
         symbols = {bot.symbol for bot in active_bots}
 
         for symbol in symbols:
-            order_book = await order_book_crud.get_latest_by_symbol(symbol)
             step_sizes = await exchange_crud.get_step_size_by_symbol(symbol)
             shared_data[symbol] = {
-                "order_book": order_book,
+                # "order_book": order_book,
                 "tick_size": (
                     Decimal(str(step_sizes.get("tick_size")))
                     if step_sizes
