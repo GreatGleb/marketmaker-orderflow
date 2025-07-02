@@ -382,14 +382,6 @@ class TestOrder(BaseId):
     bot_id: Mapped[int] = mapped_column(
         ForeignKey("test_bots.id"), nullable=True
     )
-    successful_stop_lose_ticks: Mapped[int] = mapped_column(
-        types.Integer,
-        nullable=False,
-        default=10,
-        server_default="0",
-        comment="Stop-loss in ticks after trade "
-        "becomes profitable (used to secure partial profit)",
-    )
 
     start_ticks: Mapped[int] = mapped_column(
         types.Integer,
@@ -399,13 +391,6 @@ class TestOrder(BaseId):
         comment="Start ticks",
     )
 
-    stop_ticks: Mapped[int] = mapped_column(
-        types.Integer,
-        default=0,
-        server_default="0",
-        nullable=False,
-        comment="Stop ticks",
-    )
     stop_loss_ticks = mapped_column(
         types.Integer,
         default=0,
@@ -462,28 +447,12 @@ class TestBot(BaseId):
         comment="Total profit",
     )
 
-    successful_stop_lose_ticks: Mapped[int] = mapped_column(
-        types.Integer,
-        nullable=False,
-        default=10,
-        comment="Stop-loss in ticks after trade "
-        "becomes profitable (used to secure partial profit)",
-    )
-
     start_ticks: Mapped[int] = mapped_column(
         types.Integer,
         default=0,
         server_default="0",
         nullable=False,
         comment="Start ticks",
-    )
-
-    stop_ticks: Mapped[int] = mapped_column(
-        types.Integer,
-        default=0,
-        server_default="0",
-        nullable=False,
-        comment="Stop ticks",
     )
 
     start_updown_ticks: Mapped[int] = mapped_column(

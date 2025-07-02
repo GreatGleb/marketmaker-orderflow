@@ -106,8 +106,7 @@ async def simulate_bot(session, bot_config: TestBot, shared_data, redis):
                     break
                 if updated_price - open_price >= tick_size:
                     new_sl = (
-                        updated_price
-                        - bot_config.successful_stop_lose_ticks * tick_size
+                        updated_price - bot_config.stop_loss_ticks * tick_size
                     )
                     if new_sl > float(order.stop_loss_price):
                         order.stop_loss_price = Decimal(new_sl)
@@ -118,8 +117,7 @@ async def simulate_bot(session, bot_config: TestBot, shared_data, redis):
                     break
                 if open_price - updated_price >= tick_size:
                     new_sl = (
-                        updated_price
-                        + bot_config.successful_stop_lose_ticks * tick_size
+                        updated_price + bot_config.stop_loss_ticks * tick_size
                     )
                     if new_sl < float(order.stop_loss_price):
                         order.stop_loss_price = Decimal(new_sl)
@@ -148,7 +146,6 @@ async def simulate_bot(session, bot_config: TestBot, shared_data, redis):
             f"| Entry: {open_price:.4f} | "
             f"Close: {close_price:.4f} | PnL: {pnl:.4f}"
         )
-        successful_stop_lose_ticks = bot_config.successful_stop_lose_ticks
         try:
             await TestOrderCrud(session).create(
                 {
@@ -166,10 +163,8 @@ async def simulate_bot(session, bot_config: TestBot, shared_data, redis):
                     "profit_loss": pnl,
                     "is_active": False,
                     "start_ticks": bot_config.start_updown_ticks,
-                    "stop_ticks": bot_config.stop_ticks,
                     "stop_loss_ticks": bot_config.stop_loss_ticks,
                     "stop_success_ticks": bot_config.stop_success_ticks,
-                    "successful_stop_lose_ticks": successful_stop_lose_ticks,
                 }
             )
             await session.commit()
