@@ -185,7 +185,7 @@ async def simulate_bot(session, redis, bot_config: TestBot, shared_data):
                     "close_fee": order.open_price * Decimal(COMMISSION_CLOSE),
                     "profit_loss": pnl,
                     "is_active": False,
-                    "start_ticks": bot_config.start_updown_ticks,
+                    "start_updown_ticks": bot_config.start_updown_ticks,
                     "stop_loss_ticks": bot_config.stop_loss_ticks,
                     "stop_success_ticks": bot_config.stop_success_ticks,
                 }
@@ -210,7 +210,7 @@ async def set_volatile_pairs():
 
                 symbol = most_volatile.symbol
                 await redis.set("most_volatile_symbol", symbol)
-                print('most_volatile_symbol updated')
+                print(f"most_volatile_symbol updated: {symbol}")
                 await asyncio.sleep(60)
 
 async def simulate_multiple_bots():
