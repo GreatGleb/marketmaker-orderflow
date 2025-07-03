@@ -91,6 +91,7 @@ async def simulate_bot(session, bot_config: TestBot, shared_data, redis):
 
         order = TestOrder(
             stop_loss_price=Decimal(stop_loss_price),
+            stop_success_ticks=stop_success_ticks,
             open_price=open_price,
             open_time=datetime.now(UTC),
             open_fee=Decimal(open_price) * Decimal(COMMISSION_OPEN),
@@ -100,7 +101,13 @@ async def simulate_bot(session, bot_config: TestBot, shared_data, redis):
             updated_price = await get_price_from_redis(redis, symbol)
 
             if trade_type == TradeType.BUY:
-                if updated_price >= take_profit_price:
+                if updated_price > open_price:
+                    potential_trailing_profit_sl = updated_price - Decimal(order.stop_success_ticks) * tick_size
+                    if potential_trailing_profit_sl > take_profit_price:
+                        take_profit_price = potential_trailing_profit_sl
+                        print(f"BUY: Trailing stop-win updated to {take_profit_price}")
+                if updated_price <= take_profit_price:
+                    print(f"BUY order closed by TRAILING STOP-WIN at {updated_price}")
                     break
                 if updated_price <= order.stop_loss_price:
                     break
@@ -111,7 +118,13 @@ async def simulate_bot(session, bot_config: TestBot, shared_data, redis):
                     if new_sl > float(order.stop_loss_price):
                         order.stop_loss_price = Decimal(new_sl)
             else:
-                if updated_price <= take_profit_price:
+                if updated_price < order.open_price:
+                    potential_trailing_profit_sl = updated_price + Decimal(order.stop_success_ticks) * tick_size
+                    if potential_trailing_profit_sl < take_profit_price:
+                        take_profit_price = potential_trailing_profit_sl
+                        print(f"SELL: Trailing stop-win updated to {take_profit_price}")
+                if updated_price >= take_profit_price:
+                    print(f"SELL order closed by TRAILING STOP-WIN at {updated_price}")
                     break
                 if updated_price >= order.stop_loss_price:
                     break
