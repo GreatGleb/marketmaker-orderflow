@@ -32,6 +32,16 @@ async def get_price_from_redis(redis, symbol: str) -> Decimal:
             print(f"❌ Redis error: {e}")
         await asyncio.sleep(0.1)
 
+async def _wait_for_entry_price(redis_conn, symbol, entry_price_buy, entry_price_sell):
+    while True:
+        current_price = await get_price_from_redis(redis_conn, symbol)
+
+        if current_price >= entry_price_buy:
+            return (TradeType.BUY, current_price)
+        elif current_price <= entry_price_sell:
+            return (TradeType.SELL, current_price)
+
+        await asyncio.sleep(0.1)
 
 async def simulate_bot(session, bot_config: TestBot, shared_data, redis):
     symbol = bot_config.symbol
@@ -58,19 +68,21 @@ async def simulate_bot(session, bot_config: TestBot, shared_data, redis):
             f" BUY ≥ {entry_price_buy:.4f}, SELL ≤ {entry_price_sell:.4f}"
         )
 
-        while True:
-            current_price = await get_price_from_redis(redis, symbol)
+        timeoutOccurred = False
 
-            if current_price >= entry_price_buy:
-                trade_type = TradeType.BUY
-                entry_price = current_price
-                break
-            elif current_price <= entry_price_sell:
-                trade_type = TradeType.SELL
-                entry_price = current_price
-                break
+        try:
+            trade_type, entry_price = await asyncio.wait_for(
+                _wait_for_entry_price(
+                    redis, symbol, entry_price_buy, entry_price_sell
+                ),
+                timeout=60
+            )
+        except asyncio.TimeoutError:
+            timeoutOccurred = True
 
-            await asyncio.sleep(0.1)
+        if timeoutOccurred or not trade_type or not entry_price:
+            print(f"Bot {bot_config.id}; A minute has passed, entry conditions have not been met")
+            return False
 
         open_price = entry_price
         stop_loss_price = (
