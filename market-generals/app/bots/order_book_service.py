@@ -1,9 +1,10 @@
 import asyncio
 import enum
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
+from app.crud.asset_history import AssetHistoryCrud
 from app.crud.exchange_pair_spec import AssetExchangeSpecCrud
 from app.crud.test_bot import TestBotCrud
 from app.crud.test_orders import TestOrderCrud
@@ -43,12 +44,13 @@ async def _wait_for_entry_price(redis_conn, symbol, entry_price_buy, entry_price
 
         await asyncio.sleep(0.1)
 
-async def simulate_bot(session, bot_config: TestBot, shared_data, redis):
-    symbol = bot_config.symbol
+async def simulate_bot(session, redis, bot_config: TestBot, shared_data):
+    symbol = await redis.get("most_volatile_symbol")
+    # symbol = bot_config.symbol
     data = shared_data.get(symbol)
 
     if not data:
-        print(f"❌ Нет данных по символу {symbol}")
+        # print(f"❌ Нет данных по символу {symbol}")
         return
 
     tick_size = data["tick_size"]
@@ -106,7 +108,7 @@ async def simulate_bot(session, bot_config: TestBot, shared_data, redis):
             stop_success_ticks=bot_config.stop_success_ticks,
             open_price=open_price,
             open_time=datetime.now(UTC),
-            open_fee=Decimal(open_price) * Decimal(COMMISSION_OPEN),
+            open_fee=(Decimal(bot_config.balance) * Decimal(COMMISSION_OPEN)),
         )
 
         while True:
@@ -153,18 +155,14 @@ async def simulate_bot(session, bot_config: TestBot, shared_data, redis):
         close_price = await get_price_from_redis(redis, symbol)
         balance = bot_config.balance
         amount = Decimal(balance) / Decimal(open_price)
-        revenue = amount * Decimal(close_price)
-        total_commission = Decimal(balance) * Decimal(
-            COMMISSION_OPEN + COMMISSION_CLOSE
-        )
+        commission_open = amount * open_price * COMMISSION_OPEN
+        commission_close = amount * close_price * COMMISSION_CLOSE
+        total_commission = commission_open + commission_close
 
-        pnl = (
-            revenue - Decimal(balance) - total_commission
-            if trade_type == TradeType.BUY
-            else Decimal(balance)
-            - (amount * Decimal(close_price))
-            - total_commission
-        )
+        if trade_type == TradeType.BUY:
+            pnl = (amount * close_price) - (amount * open_price) - total_commission
+        elif trade_type == TradeType.SELL:
+            pnl = (amount * open_price) - (amount * close_price) - total_commission
 
         print(
             f"💬 Бот {bot_config.id} | {trade_type} "
@@ -196,6 +194,24 @@ async def simulate_bot(session, bot_config: TestBot, shared_data, redis):
         except Exception as e:
             print(f"❌ Ошибка при записи ордера бота {bot_config.id}: {e}")
 
+async def set_volatile_pairs():
+    dsm = DatabaseSessionManager.create(settings.DB_URL)
+    async with dsm.get_session() as session:
+        async with redis_context() as redis:
+            while True:
+                now = datetime.now(UTC)
+                five_minutes_ago = now - timedelta(minutes=5)
+
+                # 1. Найти наиболее волатильную пару
+                asset_crud = AssetHistoryCrud(session)
+                most_volatile = await asset_crud.get_most_volatile_since(
+                    since=five_minutes_ago
+                )
+
+                symbol = most_volatile.symbol
+                await redis.set("most_volatile_symbol", symbol)
+                print('most_volatile_symbol updated')
+                await asyncio.sleep(60)
 
 async def simulate_multiple_bots():
     dsm = DatabaseSessionManager.create(settings.DB_URL)
@@ -203,11 +219,12 @@ async def simulate_multiple_bots():
 
     async with dsm.get_session() as session:
         bot_crud = TestBotCrud(session)
-
         active_bots = await bot_crud.get_active_bots()
         exchange_crud = AssetExchangeSpecCrud(session)
 
-        symbols = {bot.symbol for bot in active_bots}
+        asset_crud = AssetHistoryCrud(session)
+        # symbols = {active_bot.symbol for active_bot in active_bots}
+        symbols = await asset_crud.get_all_active_pairs()
 
         for symbol in symbols:
             step_sizes = await exchange_crud.get_step_size_by_symbol(symbol)
@@ -223,7 +240,6 @@ async def simulate_multiple_bots():
     async with redis_context() as redis:
         tasks = []
         for bot in active_bots:
-
             async def _run_loop(bot_config=bot):
                 while True:
                     async with dsm.get_session() as session:
@@ -252,12 +268,17 @@ def input_listener():
             break
 
 
-def main():
+async def main():
     input_thread = threading.Thread(target=input_listener)
     input_thread.start()
-    asyncio.run(simulate_multiple_bots())
+
+    await asyncio.gather(
+        simulate_multiple_bots(),
+        set_volatile_pairs()
+    )
+
     print("✅ Все боты завершены.")
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

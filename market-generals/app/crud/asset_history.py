@@ -3,7 +3,7 @@ from decimal import Decimal
 from sqlalchemy import delete
 from sqlalchemy.dialects.postgresql import insert
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import aliased
 from sqlalchemy import select, func
@@ -107,3 +107,32 @@ class AssetHistoryCrud(BaseCrud[AssetHistory]):
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def get_all_active_pairs(self):
+        UTC = timezone.utc
+        now = datetime.now(UTC)
+        five_minutes_ago = now - timedelta(minutes=5)
+
+        since = five_minutes_ago
+        ah_new = aliased(AssetHistory)
+
+        sub_query_new = (
+            select(
+                ah_new.symbol, func.max(ah_new.event_time).label("max_time")
+            )
+            .where(ah_new.event_time >= since)
+            .group_by(ah_new.symbol)
+            .subquery()
+        )
+
+        new_prices = (
+            select(AssetHistory.symbol, AssetHistory.last_price)
+            .join(
+                sub_query_new,
+                (AssetHistory.symbol == sub_query_new.c.symbol)
+                & (AssetHistory.event_time == sub_query_new.c.max_time),
+            )
+        )
+
+        result = await self.session.execute(new_prices)
+        return result.scalars().all()
