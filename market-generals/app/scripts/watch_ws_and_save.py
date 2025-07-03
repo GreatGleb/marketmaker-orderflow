@@ -13,7 +13,7 @@ from app.dependencies import redis_context
 WS_URL = "wss://fstream.binance.com/ws/!ticker@arr"
 
 
-async def save_filtered_assets(session: AsyncSession, data: list[dict]):
+async def save_filtered_assets(session: AsyncSession, redis, data: list[dict]):
     history_crud = AssetHistoryCrud(session)
     watched_crud = WatchedPairCrud(session)
 
@@ -22,36 +22,36 @@ async def save_filtered_assets(session: AsyncSession, data: list[dict]):
 
     records = []
 
-    async with redis_context() as redis:
+    for item in data:
+        symbol = item.get("s")
 
-        for item in data:
-            symbol = item.get("s")
+        if symbol not in symbols_set:
+            continue
 
-            if symbol not in symbols_set:
-                continue
+        asset_exchange_id = symbol_to_id[symbol]
+        last_price = item.get("c")
 
-            asset_exchange_id = symbol_to_id[symbol]
-            last_price = item.get("c")
+        record_data = {
+            "symbol": symbol,
+            "source": "BINANCE",
+            "last_price": last_price,
+            "asset_exchange_id": asset_exchange_id,
+            "price_change_24h": item.get("p"),
+            "price_change_percent_24h": item.get("P"),
+            "base_asset_volume_24h": item.get("v"),
+            "quote_asset_volume_24h": item.get("q"),
+            "weighted_avg_price_24h": item.get("w"),
+            "price_high_24h": item.get("h"),
+            "price_low_24h": item.get("l"),
+            "event_time": datetime.fromtimestamp(item.get("E") / 1000),
+            "statistics_open_time": item.get("O"),
+            "statistics_close_time": item.get("C"),
+        }
 
-            record_data = {
-                "symbol": symbol,
-                "source": "BINANCE",
-                "last_price": last_price,
-                "asset_exchange_id": asset_exchange_id,
-                "price_change_24h": item.get("p"),
-                "price_change_percent_24h": item.get("P"),
-                "base_asset_volume_24h": item.get("v"),
-                "quote_asset_volume_24h": item.get("q"),
-                "weighted_avg_price_24h": item.get("w"),
-                "price_high_24h": item.get("h"),
-                "price_low_24h": item.get("l"),
-                "event_time": datetime.fromtimestamp(item.get("E") / 1000),
-                "statistics_open_time": item.get("O"),
-                "statistics_close_time": item.get("C"),
-            }
-
-            records.append(record_data)
-            await redis.set(f"price:{symbol}", last_price)
+        records.append(record_data)
+        print(f"price:{symbol}")
+        print(last_price)
+        await redis.set(f"price:{symbol}", last_price)
 
     await history_crud.bulk_create(records)
     await session.commit()
@@ -59,19 +59,20 @@ async def save_filtered_assets(session: AsyncSession, data: list[dict]):
 
 
 async def run_websocket_listener():
-
     async with websockets.connect(WS_URL) as websocket:
         dsm = DatabaseSessionManager.create(settings.DB_URL)
         async with dsm.get_session() as session:
             while True:
                 try:
-                    message = await websocket.recv()
-                    data = json.loads(message)
-                    if isinstance(data, list):
-                        await save_filtered_assets(
-                            session,
-                            data,
-                        )
+                    async with redis_context() as redis:
+                        message = await websocket.recv()
+                        data = json.loads(message)
+                        if isinstance(data, list):
+                            await save_filtered_assets(
+                                session,
+                                redis,
+                                data,
+                            )
                 except Exception as e:
                     print(f"❌ Error: {e}")
                     await asyncio.sleep(3)

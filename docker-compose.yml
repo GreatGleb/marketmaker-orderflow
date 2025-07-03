@@ -80,6 +80,7 @@ services:
         - db
     networks:
         - marketmaker_network
+        - redis_network
 
   market-generals-celery-worker:
     build: ./market-generals
