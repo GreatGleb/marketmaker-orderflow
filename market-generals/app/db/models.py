@@ -383,14 +383,6 @@ class TestOrder(BaseId):
         ForeignKey("test_bots.id"), nullable=True
     )
 
-    start_ticks: Mapped[int] = mapped_column(
-        types.Integer,
-        default=0,
-        server_default="0",
-        nullable=False,
-        comment="Start ticks",
-    )
-
     stop_loss_ticks = mapped_column(
         types.Integer,
         default=0,
@@ -445,14 +437,6 @@ class TestBot(BaseId):
         server_default="0",
         nullable=False,
         comment="Total profit",
-    )
-
-    start_ticks: Mapped[int] = mapped_column(
-        types.Integer,
-        default=0,
-        server_default="0",
-        nullable=False,
-        comment="Start ticks",
     )
 
     start_updown_ticks: Mapped[int] = mapped_column(
