@@ -91,7 +91,7 @@ async def simulate_bot(session, bot_config: TestBot, shared_data, redis):
 
         order = TestOrder(
             stop_loss_price=Decimal(stop_loss_price),
-            stop_success_ticks=stop_success_ticks,
+            stop_success_ticks=bot_config.stop_success_ticks,
             open_price=open_price,
             open_time=datetime.now(UTC),
             open_fee=Decimal(open_price) * Decimal(COMMISSION_OPEN),
@@ -215,16 +215,16 @@ async def simulate_multiple_bots():
             async def _run_loop(bot_config=bot):
                 while True:
                     async with dsm.get_session() as session:
-                        # try:
-                        await simulate_bot(
-                            session=session,
-                            bot_config=bot_config,
-                            shared_data=shared_data,
-                            redis=redis,
-                        )
-                        # except Exception as e:
-                        #     print(f"❌ Ошибка в боте {bot_config.id}: {e}")
-                        #     await asyncio.sleep(1)
+                        try:
+                            await simulate_bot(
+                                session=session,
+                                bot_config=bot_config,
+                                shared_data=shared_data,
+                                redis=redis,
+                            )
+                        except Exception as e:
+                            print(f"❌ Ошибка в боте {bot_config.id}: {e}")
+                            await asyncio.sleep(1)
 
             tasks.append(asyncio.create_task(_run_loop()))
         await asyncio.gather(*tasks)
