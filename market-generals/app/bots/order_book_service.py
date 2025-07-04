@@ -49,14 +49,16 @@ def calculate_take_profit_price(bot_config, tick_size, open_price, trade_type):
 
     desired_net_profit_value = Decimal(bot_config.stop_success_ticks) * tick_size
 
-    if trade_type == TradeType.BUY:
-        numerator = desired_net_profit_value + (open_price * amount * (Decimal('1') + COMMISSION_OPEN))
-        denominator = amount * (Decimal('1') - COMMISSION_CLOSE)
-        take_profit_price = numerator / denominator
+    if trade_type == 'buy':
+        commission_open_cost = amount * open_price * COMMISSION_OPEN
+        base_take_profit = open_price + desired_net_profit_value + commission_open_cost
+        commission_close_cost = amount * base_take_profit * COMMISSION_CLOSE
+        take_profit_price = base_take_profit + commission_close_cost
     else:
-        numerator = (open_price * amount * (Decimal('1') - COMMISSION_OPEN)) - desired_net_profit_value
-        denominator = amount * (Decimal('1') + COMMISSION_CLOSE)
-        take_profit_price = numerator / denominator
+        commission_open_cost = amount * open_price * COMMISSION_OPEN
+        base_take_profit = open_price - desired_net_profit_value - commission_open_cost
+        commission_close_cost = amount * base_take_profit * COMMISSION_CLOSE
+        take_profit_price = base_take_profit - commission_close_cost
 
     take_profit_price = take_profit_price.quantize(tick_size, rounding=ROUND_HALF_UP)
 
