@@ -22,7 +22,6 @@ class TradeType(str, enum.Enum):
     BUY = "BUY"
     SELL = "SELL"
 
-
 async def get_price_from_redis(redis, symbol: str) -> Decimal:
     while True:
         try:
@@ -59,9 +58,18 @@ def calculate_take_profit_price(bot_config, tick_size, open_price, trade_type):
         denominator = amount * (Decimal('1') + COMMISSION_CLOSE)
         take_profit_price = numerator / denominator
 
-    take_profit_price = (take_profit_price / tick_size).quantize(Decimal('1'), rounding=ROUND_HALF_UP) * tick_size
+    take_profit_price = take_profit_price.quantize(tick_size, rounding=ROUND_HALF_UP)
 
     return take_profit_price
+
+def calculate_stop_lose_price(bot_config, tick_size, open_price, trade_type):
+    stop_loss_price = (
+        open_price - bot_config.stop_loss_ticks * tick_size
+        if trade_type == TradeType.BUY
+        else open_price + bot_config.stop_loss_ticks * tick_size
+    )
+
+    return stop_loss_price
 
 async def simulate_bot(session, redis, bot_config: TestBot, shared_data):
     symbol = await redis.get("most_volatile_symbol")
@@ -106,11 +114,7 @@ async def simulate_bot(session, redis, bot_config: TestBot, shared_data):
             return False
 
         open_price = entry_price
-        stop_loss_price = (
-            open_price - bot_config.stop_loss_ticks * tick_size
-            if trade_type == TradeType.BUY
-            else open_price + bot_config.stop_loss_ticks * tick_size
-        )
+        stop_loss_price = calculate_stop_lose_price(bot_config, tick_size, open_price, trade_type)
         take_profit_price = calculate_take_profit_price(bot_config, tick_size, open_price, trade_type)
 
         print(
@@ -128,43 +132,31 @@ async def simulate_bot(session, redis, bot_config: TestBot, shared_data):
 
         while True:
             updated_price = await get_price_from_redis(redis, symbol)
+            new_tk_p = calculate_take_profit_price(bot_config, tick_size, updated_price, trade_type)
+            new_sl_p = calculate_stop_lose_price(bot_config, tick_size, updated_price, trade_type)
 
             if trade_type == TradeType.BUY:
-                if updated_price > open_price:
-                    potential_trailing_profit_sl = updated_price - Decimal(order.stop_success_ticks) * tick_size
-                    if potential_trailing_profit_sl > take_profit_price:
-                        take_profit_price = potential_trailing_profit_sl
-                        # print(f"Бот {bot_config.id} | BUY: Trailing stop-win updated to {take_profit_price}")
+                if new_tk_p > take_profit_price:
+                    take_profit_price = new_tk_p
+                elif new_sl_p > order.stop_loss_price:
+                    order.stop_loss_price = new_sl_p
                 if updated_price <= take_profit_price:
                     print(f"Бот {bot_config.id} | 📈✅ BUY order closed by STOP-WIN at {updated_price}")
                     break
                 if updated_price <= order.stop_loss_price:
                     print(f"Бот {bot_config.id} | 📉⛔ BUY order closed by STOP-LOSE at {updated_price}")
                     break
-                if updated_price - open_price >= tick_size:
-                    new_sl = (
-                        updated_price - bot_config.stop_loss_ticks * tick_size
-                    )
-                    if new_sl > float(order.stop_loss_price):
-                        order.stop_loss_price = Decimal(new_sl)
             else:
-                if updated_price < order.open_price:
-                    potential_trailing_profit_sl = updated_price + Decimal(order.stop_success_ticks) * tick_size
-                    if potential_trailing_profit_sl < take_profit_price:
-                        take_profit_price = potential_trailing_profit_sl
-                        # print(f"Бот {bot_config.id} | SELL: Trailing stop-win updated to {take_profit_price}")
+                if new_tk_p < take_profit_price:
+                    take_profit_price = new_tk_p
+                elif new_sl_p < order.stop_loss_price:
+                    order.stop_loss_price = new_sl_p
                 if updated_price >= take_profit_price:
                     print(f"Бот {bot_config.id} | 📈✅ SELL order closed by STOP-WIN at {updated_price}")
                     break
                 if updated_price >= order.stop_loss_price:
                     print(f"Бот {bot_config.id} | 📉⛔ SELL order closed by STOP-LOSE at {updated_price}")
                     break
-                if open_price - updated_price >= tick_size:
-                    new_sl = (
-                        updated_price + bot_config.stop_loss_ticks * tick_size
-                    )
-                    if new_sl < float(order.stop_loss_price):
-                        order.stop_loss_price = Decimal(new_sl)
 
             await asyncio.sleep(0.1)
 
