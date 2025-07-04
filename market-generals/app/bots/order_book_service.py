@@ -49,12 +49,13 @@ def calculate_take_profit_price(bot_config, tick_size, open_price, trade_type):
     if trade_type == 'buy':
         commission_open_cost = 1 + COMMISSION_OPEN
         commission_close_cost = 1 - COMMISSION_CLOSE
+        base_take_profit = open_price * commission_open_cost - desired_net_profit_value
+        take_profit_price = base_take_profit / commission_close_cost
     else:
         commission_open_cost = 1 - COMMISSION_OPEN
         commission_close_cost = 1 + COMMISSION_CLOSE
-
-    base_take_profit = open_price * commission_open_cost + desired_net_profit_value
-    take_profit_price = base_take_profit / commission_close_cost
+        base_take_profit = open_price * commission_open_cost - desired_net_profit_value
+        take_profit_price = base_take_profit / commission_close_cost
 
     take_profit_price = take_profit_price.quantize(tick_size, rounding=ROUND_HALF_UP)
 
