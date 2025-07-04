@@ -44,21 +44,18 @@ async def _wait_for_entry_price(redis_conn, symbol, entry_price_buy, entry_price
         await asyncio.sleep(0.1)
 
 def calculate_take_profit_price(bot_config, tick_size, open_price, trade_type):
-    balance = bot_config.balance
-    amount = Decimal(balance) / Decimal(open_price)
-
     desired_net_profit_value = Decimal(bot_config.stop_success_ticks) * tick_size
 
     if trade_type == 'buy':
-        commission_open_cost = amount * open_price * COMMISSION_OPEN
-        base_take_profit = open_price + desired_net_profit_value + commission_open_cost
-        commission_close_cost = amount * base_take_profit * COMMISSION_CLOSE
-        take_profit_price = base_take_profit + commission_close_cost
+        commission_open_cost = 1 + COMMISSION_OPEN
+        commission_close_cost = 1 - COMMISSION_CLOSE
+        base_take_profit = open_price * commission_open_cost + desired_net_profit_value
+        take_profit_price = base_take_profit / commission_close_cost
     else:
-        commission_open_cost = amount * open_price * COMMISSION_OPEN
-        base_take_profit = open_price - desired_net_profit_value - commission_open_cost
-        commission_close_cost = amount * base_take_profit * COMMISSION_CLOSE
-        take_profit_price = base_take_profit - commission_close_cost
+        commission_open_cost = 1 - COMMISSION_OPEN
+        commission_close_cost = 1 + COMMISSION_CLOSE
+        base_take_profit = open_price * commission_open_cost + desired_net_profit_value
+        take_profit_price = base_take_profit / commission_close_cost
 
     take_profit_price = take_profit_price.quantize(tick_size, rounding=ROUND_HALF_UP)
 
@@ -143,7 +140,7 @@ async def simulate_bot(session, redis, bot_config: TestBot, shared_data):
                 elif new_sl_p > order.stop_loss_price:
                     order.stop_loss_price = new_sl_p
                 if updated_price <= take_profit_price:
-                    print(f"Бот {bot_config.id} | 📈✅ BUY order closed by STOP-WIN at {updated_price}")
+                    print(f"Бот {bot_config.id} | 📈✅ BUY order closed by STOP-WIN at {updated_price}, Take profit: {take_profit_price}")
                     break
                 if updated_price <= order.stop_loss_price:
                     print(f"Бот {bot_config.id} | 📉⛔ BUY order closed by STOP-LOSE at {updated_price}")
@@ -154,7 +151,7 @@ async def simulate_bot(session, redis, bot_config: TestBot, shared_data):
                 elif new_sl_p < order.stop_loss_price:
                     order.stop_loss_price = new_sl_p
                 if updated_price >= take_profit_price:
-                    print(f"Бот {bot_config.id} | 📈✅ SELL order closed by STOP-WIN at {updated_price}")
+                    print(f"Бот {bot_config.id} | 📈✅ SELL order closed by STOP-WIN at {updated_price}, Take profit: {take_profit_price}")
                     break
                 if updated_price >= order.stop_loss_price:
                     print(f"Бот {bot_config.id} | 📉⛔ SELL order closed by STOP-LOSE at {updated_price}")
