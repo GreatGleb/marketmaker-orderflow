@@ -136,7 +136,7 @@ async def simulate_bot(session, redis, bot_config: TestBot, shared_data):
                         take_profit_price = potential_trailing_profit_sl
                         # print(f"Бот {bot_config.id} | BUY: Trailing stop-win updated to {take_profit_price}")
                 if updated_price <= take_profit_price:
-                    print(f"Бот {bot_config.id} | 📈✅ BUY order closed by TRAILING STOP-WIN at {updated_price}")
+                    print(f"Бот {bot_config.id} | 📈✅ BUY order closed by STOP-WIN at {updated_price}")
                     break
                 if updated_price <= order.stop_loss_price:
                     print(f"Бот {bot_config.id} | 📉⛔ BUY order closed by STOP-LOSE at {updated_price}")
@@ -217,12 +217,12 @@ async def set_volatile_pairs():
         async with redis_context() as redis:
             while True:
                 now = datetime.now(UTC)
-                five_minutes_ago = now - timedelta(minutes=5)
+                time_ago = now - timedelta(minutes=1)
 
                 # 1. Найти наиболее волатильную пару
                 asset_crud = AssetHistoryCrud(session)
                 most_volatile = await asset_crud.get_most_volatile_since(
-                    since=five_minutes_ago
+                    since=time_ago
                 )
 
                 if most_volatile:
