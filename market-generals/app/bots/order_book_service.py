@@ -2,7 +2,7 @@ import asyncio
 import enum
 import threading
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from app.crud.asset_history import AssetHistoryCrud
 from app.crud.exchange_pair_spec import AssetExchangeSpecCrud
@@ -44,6 +44,25 @@ async def _wait_for_entry_price(redis_conn, symbol, entry_price_buy, entry_price
 
         await asyncio.sleep(0.1)
 
+def calculate_take_profit_price(bot_config, tick_size, open_price, trade_type):
+    balance = bot_config.balance
+    amount = Decimal(balance) / Decimal(open_price)
+
+    desired_net_profit_value = Decimal(bot_config.stop_success_ticks) * tick_size
+
+    if trade_type == TradeType.BUY:
+        numerator = desired_net_profit_value + (open_price * amount * (Decimal('1') + COMMISSION_OPEN))
+        denominator = amount * (Decimal('1') - COMMISSION_CLOSE)
+        take_profit_price = numerator / denominator
+    else:
+        numerator = (open_price * amount * (Decimal('1') - COMMISSION_OPEN)) - desired_net_profit_value
+        denominator = amount * (Decimal('1') + COMMISSION_CLOSE)
+        take_profit_price = numerator / denominator
+
+    take_profit_price = (take_profit_price / tick_size).quantize(Decimal('1'), rounding=ROUND_HALF_UP) * tick_size
+
+    return take_profit_price
+
 async def simulate_bot(session, redis, bot_config: TestBot, shared_data):
     symbol = await redis.get("most_volatile_symbol")
     # symbol = bot_config.symbol
@@ -65,10 +84,10 @@ async def simulate_bot(session, redis, bot_config: TestBot, shared_data):
             initial_price - bot_config.start_updown_ticks * tick_size
         )
 
-        print(
-            f"⏳ Бот {bot_config.id} | Ожидаем входа:"
-            f" BUY ≥ {entry_price_buy:.4f}, SELL ≤ {entry_price_sell:.4f}"
-        )
+        # print(
+        #     f"⏳ Бот {bot_config.id} | Ожидаем входа:"
+        #     f" BUY ≥ {entry_price_buy:.4f}, SELL ≤ {entry_price_sell:.4f}"
+        # )
 
         timeoutOccurred = False
 
@@ -77,13 +96,13 @@ async def simulate_bot(session, redis, bot_config: TestBot, shared_data):
                 _wait_for_entry_price(
                     redis, symbol, entry_price_buy, entry_price_sell
                 ),
-                timeout=60
+                timeout=300
             )
         except asyncio.TimeoutError:
             timeoutOccurred = True
 
         if timeoutOccurred or not trade_type or not entry_price:
-            print(f"Bot {bot_config.id}; A minute has passed, entry conditions have not been met")
+            # print(f"Bot {bot_config.id}; A minute has passed, entry conditions have not been met")
             return False
 
         open_price = entry_price
@@ -92,11 +111,7 @@ async def simulate_bot(session, redis, bot_config: TestBot, shared_data):
             if trade_type == TradeType.BUY
             else open_price + bot_config.stop_loss_ticks * tick_size
         )
-        take_profit_price = (
-            open_price + bot_config.stop_success_ticks * tick_size
-            if trade_type == TradeType.BUY
-            else open_price - bot_config.stop_success_ticks * tick_size
-        )
+        take_profit_price = calculate_take_profit_price(bot_config, tick_size, open_price, trade_type)
 
         print(
             f"🔎 Бот {bot_config.id} | {trade_type} | Вход: {open_price:.4f} | "
@@ -164,11 +179,11 @@ async def simulate_bot(session, redis, bot_config: TestBot, shared_data):
         elif trade_type == TradeType.SELL:
             pnl = (amount * open_price) - (amount * close_price) - total_commission
 
-        print(
-            f"💬 Бот {bot_config.id} | {trade_type} "
-            f"| Entry: {open_price:.4f} | "
-            f"Close: {close_price:.4f} | PnL: {pnl:.4f}"
-        )
+        # print(
+        #     f"💬 Бот {bot_config.id} | {trade_type} "
+        #     f"| Entry: {open_price:.4f} | "
+        #     f"Close: {close_price:.4f} | PnL: {pnl:.4f}"
+        # )
         try:
             await TestOrderCrud(session).create(
                 {
@@ -208,10 +223,11 @@ async def set_volatile_pairs():
                     since=five_minutes_ago
                 )
 
-                symbol = most_volatile.symbol
-                await redis.set("most_volatile_symbol", symbol)
-                print(f"most_volatile_symbol updated: {symbol}")
-                await asyncio.sleep(60)
+                if most_volatile:
+                    symbol = most_volatile.symbol
+                    await redis.set("most_volatile_symbol", symbol)
+                    print(f"most_volatile_symbol updated: {symbol}")
+                await asyncio.sleep(30)
 
 async def simulate_multiple_bots():
     dsm = DatabaseSessionManager.create(settings.DB_URL)
@@ -257,7 +273,6 @@ async def simulate_multiple_bots():
             tasks.append(asyncio.create_task(_run_loop()))
         await asyncio.gather(*tasks)
 
-
 def input_listener():
     while True:
         cmd = (
@@ -266,7 +281,6 @@ def input_listener():
         if cmd == "stop":
             print("🛑 Останавливаем бота...")
             break
-
 
 async def main():
     input_thread = threading.Thread(target=input_listener)
@@ -278,7 +292,6 @@ async def main():
     )
 
     print("✅ Все боты завершены.")
-
 
 if __name__ == "__main__":
     asyncio.run(main())
