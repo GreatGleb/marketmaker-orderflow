@@ -22,7 +22,6 @@ class TradeType(str, enum.Enum):
     BUY = "BUY"
     SELL = "SELL"
 
-
 async def get_price_from_redis(redis, symbol: str) -> Decimal:
     while True:
         try:
@@ -33,47 +32,34 @@ async def get_price_from_redis(redis, symbol: str) -> Decimal:
             print(f"❌ Redis error: {e}")
         await asyncio.sleep(0.1)
 
-
-async def _wait_for_entry_price(
-    redis_conn, symbol, entry_price_buy, entry_price_sell
-):
+async def _wait_for_entry_price(redis_conn, symbol, entry_price_buy, entry_price_sell):
     while True:
         current_price = await get_price_from_redis(redis_conn, symbol)
 
         if current_price >= entry_price_buy:
-            return TradeType.BUY, current_price
+            return (TradeType.BUY, current_price)
         elif current_price <= entry_price_sell:
-            return TradeType.SELL, current_price
+            return (TradeType.SELL, current_price)
 
         await asyncio.sleep(0.1)
 
-
 def calculate_take_profit_price(bot_config, tick_size, open_price, trade_type):
-    desired_net_profit_value = (
-        Decimal(bot_config.stop_success_ticks) * tick_size
-    )
+    desired_net_profit_value = Decimal(bot_config.stop_success_ticks) * tick_size
 
-    if trade_type == "buy":
+    if trade_type == 'buy':
         commission_open_cost = 1 + COMMISSION_OPEN
         commission_close_cost = 1 - COMMISSION_CLOSE
-        base_take_profit = (
-            open_price * commission_open_cost + desired_net_profit_value
-        )
+        base_take_profit = open_price * commission_open_cost + desired_net_profit_value
         take_profit_price = base_take_profit / commission_close_cost
     else:
         commission_open_cost = 1 - COMMISSION_OPEN
         commission_close_cost = 1 + COMMISSION_CLOSE
-        base_take_profit = (
-            open_price * commission_open_cost - desired_net_profit_value
-        )
+        base_take_profit = open_price * commission_open_cost - desired_net_profit_value
         take_profit_price = base_take_profit / commission_close_cost
 
-    take_profit_price = take_profit_price.quantize(
-        tick_size, rounding=ROUND_HALF_UP
-    )
+    take_profit_price = take_profit_price.quantize(tick_size, rounding=ROUND_HALF_UP)
 
     return take_profit_price
-
 
 def calculate_stop_lose_price(bot_config, tick_size, open_price, trade_type):
     stop_loss_price = (
@@ -84,25 +70,19 @@ def calculate_stop_lose_price(bot_config, tick_size, open_price, trade_type):
 
     return stop_loss_price
 
-
 def calculate_close_not_lose_price(open_price, trade_type):
-    if trade_type == "buy":
+    if trade_type == 'buy':
         commission_open_cost = 1 + COMMISSION_OPEN
         commission_close_cost = 1 - COMMISSION_CLOSE
     else:
         commission_open_cost = 1 - COMMISSION_OPEN
         commission_close_cost = 1 + COMMISSION_CLOSE
 
-    close_not_lose_price = (
-        open_price * commission_open_cost
-    ) / commission_close_cost
+    close_not_lose_price = (open_price * commission_open_cost) / commission_close_cost
 
     return close_not_lose_price
 
-
-async def simulate_bot(
-    session, redis, bot_config: TestBot, shared_data, stop_event
-):
+async def simulate_bot(session, redis, bot_config: TestBot, shared_data, stop_event):
     symbol = await redis.get("most_volatile_symbol")
     # symbol = bot_config.symbol
     data = shared_data.get(symbol)
@@ -135,26 +115,19 @@ async def simulate_bot(
                 _wait_for_entry_price(
                     redis, symbol, entry_price_buy, entry_price_sell
                 ),
-                timeout=30,
+                timeout=30
             )
         except asyncio.TimeoutError:
             timeoutOccurred = True
 
         if timeoutOccurred or not trade_type or not entry_price:
-            # print(f"Bot {bot_config.id};
-            # A minute has passed, entry conditions have not been met")
+            # print(f"Bot {bot_config.id}; A minute has passed, entry conditions have not been met")
             return False
 
         open_price = entry_price
-        close_not_lose_price = calculate_close_not_lose_price(
-            open_price, trade_type
-        )
-        stop_loss_price = calculate_stop_lose_price(
-            bot_config, tick_size, open_price, trade_type
-        )
-        take_profit_price = calculate_take_profit_price(
-            bot_config, tick_size, open_price, trade_type
-        )
+        close_not_lose_price = calculate_close_not_lose_price(open_price, trade_type)
+        stop_loss_price = calculate_stop_lose_price(bot_config, tick_size, open_price, trade_type)
+        take_profit_price = calculate_take_profit_price(bot_config, tick_size, open_price, trade_type)
 
         print(
             f"🔎 Бот {bot_config.id} | {trade_type} | Вход: {open_price:.4f} | "
@@ -171,12 +144,8 @@ async def simulate_bot(
 
         while not stop_event.is_set():
             updated_price = await get_price_from_redis(redis, symbol)
-            new_tk_p = calculate_take_profit_price(
-                bot_config, tick_size, updated_price, trade_type
-            )
-            new_sl_p = calculate_stop_lose_price(
-                bot_config, tick_size, updated_price, trade_type
-            )
+            new_tk_p = calculate_take_profit_price(bot_config, tick_size, updated_price, trade_type)
+            new_sl_p = calculate_stop_lose_price(bot_config, tick_size, updated_price, trade_type)
             itWasHigher_tk = False
 
             if trade_type == TradeType.BUY:
@@ -187,24 +156,10 @@ async def simulate_bot(
                 elif new_sl_p > order.stop_loss_price:
                     order.stop_loss_price = new_sl_p
                 if updated_price <= order.stop_loss_price:
-                    print(
-                        f"Бот {bot_config.id} "
-                        f"| 📉⛔ BUY order closed "
-                        f"by STOP-LOSE at {updated_price}"
-                    )
+                    print(f"Бот {bot_config.id} | 📉⛔ BUY order closed by STOP-LOSE at {updated_price}")
                     break
-                if (
-                    itWasHigher_tk
-                    and close_not_lose_price
-                    < updated_price
-                    <= take_profit_price
-                ):
-                    print(
-                        f"Бот {bot_config.id} "
-                        f"| 📈✅ BUY order closed "
-                        f"by STOP-WIN at {updated_price}, "
-                        f"Take profit: {take_profit_price}"
-                    )
+                if itWasHigher_tk and updated_price > close_not_lose_price and updated_price <= take_profit_price:
+                    print(f"Бот {bot_config.id} | 📈✅ BUY order closed by STOP-WIN at {updated_price}, Take profit: {take_profit_price}")
                     break
             else:
                 if updated_price < take_profit_price:
@@ -214,24 +169,10 @@ async def simulate_bot(
                 elif new_sl_p < order.stop_loss_price:
                     order.stop_loss_price = new_sl_p
                 if updated_price >= order.stop_loss_price:
-                    print(
-                        f"Бот {bot_config.id} | "
-                        f"📉⛔ SELL order closed "
-                        f"by STOP-LOSE at {updated_price}"
-                    )
+                    print(f"Бот {bot_config.id} | 📉⛔ SELL order closed by STOP-LOSE at {updated_price}")
                     break
-                if (
-                    itWasHigher_tk
-                    and close_not_lose_price
-                    > updated_price
-                    >= take_profit_price
-                ):
-                    print(
-                        f"Бот {bot_config.id} | "
-                        f"📈✅ SELL order closed by "
-                        f"STOP-WIN at {updated_price}, "
-                        f"Take profit: {take_profit_price}"
-                    )
+                if itWasHigher_tk and updated_price < close_not_lose_price and updated_price >= take_profit_price:
+                    print(f"Бот {bot_config.id} | 📈✅ SELL order closed by STOP-WIN at {updated_price}, Take profit: {take_profit_price}")
                     break
 
             await asyncio.sleep(0.1)
@@ -245,17 +186,9 @@ async def simulate_bot(
         total_commission = commission_open + commission_close
 
         if trade_type == TradeType.BUY:
-            pnl = (
-                (amount * close_price)
-                - (amount * open_price)
-                - total_commission
-            )
+            pnl = (amount * close_price) - (amount * open_price) - total_commission
         elif trade_type == TradeType.SELL:
-            pnl = (
-                (amount * open_price)
-                - (amount * close_price)
-                - total_commission
-            )
+            pnl = (amount * open_price) - (amount * close_price) - total_commission
 
         # print(
         #     f"💬 Бот {bot_config.id} | {trade_type} "
@@ -287,7 +220,6 @@ async def simulate_bot(
         except Exception as e:
             print(f"❌ Ошибка при записи ордера бота {bot_config.id}: {e}")
 
-
 async def set_volatile_pairs(stop_event):
     dsm = DatabaseSessionManager.create(settings.DB_URL)
     async with dsm.get_session() as session:
@@ -307,7 +239,6 @@ async def set_volatile_pairs(stop_event):
                     await redis.set("most_volatile_symbol", symbol)
                     print(f"most_volatile_symbol updated: {symbol}")
                 await asyncio.sleep(30)
-
 
 async def simulate_multiple_bots(stop_event):
     dsm = DatabaseSessionManager.create(settings.DB_URL)
@@ -336,7 +267,6 @@ async def simulate_multiple_bots(stop_event):
     async with redis_context() as redis:
         tasks = []
         for bot in active_bots:
-
             async def _run_loop(bot_config=bot):
                 while not stop_event.is_set():
                     async with dsm.get_session() as session:
@@ -355,7 +285,6 @@ async def simulate_multiple_bots(stop_event):
             tasks.append(asyncio.create_task(_run_loop()))
         await asyncio.gather(*tasks)
 
-
 def input_listener(loop, stop_event):
     while True:
         cmd = (
@@ -366,7 +295,6 @@ def input_listener(loop, stop_event):
             loop.call_soon_threadsafe(stop_event.set)
             break
 
-
 async def main():
     loop = asyncio.get_running_loop()
     stop_event = asyncio.Event()
@@ -375,12 +303,13 @@ async def main():
         target=input_listener, args=(loop, stop_event)
     )
     input_thread.start()
+
     await asyncio.gather(
         simulate_multiple_bots(stop_event),
-        set_volatile_pairs(stop_event),
+        set_volatile_pairs(stop_event)
     )
-    print("✅ Все боты завершены.")
 
+    print("✅ Все боты завершены.")
 
 if __name__ == "__main__":
     asyncio.run(main())
