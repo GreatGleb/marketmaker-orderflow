@@ -24,12 +24,18 @@ async def update_bot_profits():
         for bot in bots:
             # Общая прибыль
             total_stmt = select(
-                func.coalesce(func.sum(TestOrder.profit_loss), 0)
-            ).where(TestOrder.bot_id == bot.id)
+                func.coalesce(func.sum(TestOrder.profit_loss), None)
+            ).where(
+                TestOrder.bot_id == bot.id,
+                select(1).where(TestOrder.bot_id == bot.id).exists()
+            )
 
             total_profit = (await session.execute(total_stmt)).scalar_one()
 
-            # Обновляем данные в объекте
+            if total_profit is None:
+                continue
+
+            # # Обновляем данные в объекте
             await session.execute(
                 update(TestBot)
                 .where(TestBot.id == bot.id)
