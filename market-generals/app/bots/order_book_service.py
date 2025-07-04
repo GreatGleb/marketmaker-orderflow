@@ -46,7 +46,7 @@ async def _wait_for_entry_price(redis_conn, symbol, entry_price_buy, entry_price
 def calculate_take_profit_price(bot_config, tick_size, open_price, trade_type):
     desired_net_profit_value = Decimal(bot_config.stop_success_ticks) * tick_size
 
-    if trade_type == 'buy':
+    if trade_type == TradeType.BUY:
         commission_open_cost = 1 + COMMISSION_OPEN
         commission_close_cost = 1 - COMMISSION_CLOSE
         base_take_profit = open_price * commission_open_cost + desired_net_profit_value
@@ -71,7 +71,7 @@ def calculate_stop_lose_price(bot_config, tick_size, open_price, trade_type):
     return stop_loss_price
 
 def calculate_close_not_lose_price(open_price, trade_type):
-    if trade_type == 'buy':
+    if trade_type == TradeType.BUY:
         commission_open_cost = 1 + COMMISSION_OPEN
         commission_close_cost = 1 - COMMISSION_CLOSE
     else:
