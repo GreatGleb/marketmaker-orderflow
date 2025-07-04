@@ -96,7 +96,7 @@ async def simulate_bot(session, redis, bot_config: TestBot, shared_data):
                 _wait_for_entry_price(
                     redis, symbol, entry_price_buy, entry_price_sell
                 ),
-                timeout=300
+                timeout=30
             )
         except asyncio.TimeoutError:
             timeoutOccurred = True
@@ -134,11 +134,12 @@ async def simulate_bot(session, redis, bot_config: TestBot, shared_data):
                     potential_trailing_profit_sl = updated_price - Decimal(order.stop_success_ticks) * tick_size
                     if potential_trailing_profit_sl > take_profit_price:
                         take_profit_price = potential_trailing_profit_sl
-                        print(f"BUY: Trailing stop-win updated to {take_profit_price}")
+                        # print(f"Бот {bot_config.id} | BUY: Trailing stop-win updated to {take_profit_price}")
                 if updated_price <= take_profit_price:
-                    print(f"BUY order closed by TRAILING STOP-WIN at {updated_price}")
+                    print(f"Бот {bot_config.id} | 📈✅ BUY order closed by TRAILING STOP-WIN at {updated_price}")
                     break
                 if updated_price <= order.stop_loss_price:
+                    print(f"Бот {bot_config.id} | 📉⛔ BUY order closed by STOP-LOSE at {updated_price}")
                     break
                 if updated_price - open_price >= tick_size:
                     new_sl = (
@@ -151,11 +152,12 @@ async def simulate_bot(session, redis, bot_config: TestBot, shared_data):
                     potential_trailing_profit_sl = updated_price + Decimal(order.stop_success_ticks) * tick_size
                     if potential_trailing_profit_sl < take_profit_price:
                         take_profit_price = potential_trailing_profit_sl
-                        print(f"SELL: Trailing stop-win updated to {take_profit_price}")
+                        # print(f"Бот {bot_config.id} | SELL: Trailing stop-win updated to {take_profit_price}")
                 if updated_price >= take_profit_price:
-                    print(f"SELL order closed by TRAILING STOP-WIN at {updated_price}")
+                    print(f"Бот {bot_config.id} | 📈✅ SELL order closed by STOP-WIN at {updated_price}")
                     break
                 if updated_price >= order.stop_loss_price:
+                    print(f"Бот {bot_config.id} | 📉⛔ SELL order closed by STOP-LOSE at {updated_price}")
                     break
                 if open_price - updated_price >= tick_size:
                     new_sl = (
