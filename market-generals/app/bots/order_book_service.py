@@ -149,10 +149,10 @@ async def simulate_bot(session, redis, bot_config: TestBot, shared_data, stop_ev
             itWasHigher_tk = False
 
             if trade_type == TradeType.BUY:
-                if updated_price > take_profit_price:
-                    itWasHigher_tk = True
                 if new_tk_p > take_profit_price:
                     take_profit_price = new_tk_p
+                if updated_price > take_profit_price:
+                    itWasHigher_tk = True
                 elif new_sl_p > order.stop_loss_price:
                     order.stop_loss_price = new_sl_p
                 if updated_price <= order.stop_loss_price:
@@ -162,10 +162,10 @@ async def simulate_bot(session, redis, bot_config: TestBot, shared_data, stop_ev
                     print(f"Бот {bot_config.id} | 📈✅ BUY order closed by STOP-WIN at {updated_price}, Take profit: {take_profit_price}")
                     break
             else:
-                if updated_price < take_profit_price:
-                    itWasHigher_tk = True
                 if new_tk_p < take_profit_price:
                     take_profit_price = new_tk_p
+                if updated_price < take_profit_price:
+                    itWasHigher_tk = True
                 elif new_sl_p < order.stop_loss_price:
                     order.stop_loss_price = new_sl_p
                 if updated_price >= order.stop_loss_price:
@@ -305,8 +305,8 @@ async def main():
     input_thread.start()
 
     await asyncio.gather(
+        set_volatile_pairs(stop_event),
         simulate_multiple_bots(stop_event),
-        set_volatile_pairs(stop_event)
     )
 
     print("✅ Все боты завершены.")
