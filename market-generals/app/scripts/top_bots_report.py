@@ -30,6 +30,12 @@ async def update_bot_profits():
 
         profits_data = (await session.execute(profits_query)).all()
 
+        earliest_query = select(
+            func.min(TestOrder.created_at).label('earliest_date')
+        )
+
+        earliest_date = (await session.execute(earliest_query)).scalar()
+
         update_data = []
         bot_stats = []
 
@@ -53,14 +59,15 @@ async def update_bot_profits():
                 batch
             )
             await session.commit()
-            print(f"Обновлено записей: {i + len(batch)}/{len(update_data)}")
+            # print(f"Обновлено записей: {i + len(batch)}/{len(update_data)}")
 
         # Сортируем по общей прибыли и выводим топ 10
         bot_stats.sort(key=lambda x: x['total_profit'], reverse=True)
 
         print(
-            f"📊 Топ 10 прибыльных ботов по состоянию "
-            f"на {now.strftime('%Y-%m-%d %H:%M:%S')}:\n"
+            f"📊 Топ 10 прибыльных ботов\n"
+            f"начиная от: {earliest_date.strftime('%Y-%m-%d %H:%M:%S')}\n"
+            f"по состоянию на: {now.strftime('%Y-%m-%d %H:%M:%S')}:\n"
         )
         for idx, bot_data in enumerate(bot_stats[:10], 1):
             print(
