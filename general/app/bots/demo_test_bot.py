@@ -3,6 +3,7 @@ import enum
 import threading
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
+from sqlalchemy import distinct, select
 
 from app.crud.asset_history import AssetHistoryCrud
 from app.crud.exchange_pair_spec import AssetExchangeSpecCrud
@@ -83,7 +84,7 @@ def calculate_close_not_lose_price(open_price, trade_type):
     return close_not_lose_price
 
 async def simulate_bot(session, redis, bot_config: TestBot, shared_data, stop_event):
-    symbol = await redis.get("most_volatile_symbol")
+    symbol = await redis.get(f"most_volatile_symbol_{bot_config.min_timeframe_asset_volatility}")
     # symbol = bot_config.symbol
     data = shared_data.get(symbol)
 
@@ -222,22 +223,33 @@ async def simulate_bot(session, redis, bot_config: TestBot, shared_data, stop_ev
 
 async def set_volatile_pairs(stop_event):
     dsm = DatabaseSessionManager.create(settings.DB_URL)
+    first_run_completed = False
+    asset_volatility_timeframes = []
+
     async with dsm.get_session() as session:
         async with redis_context() as redis:
             while not stop_event.is_set():
-                now = datetime.now(UTC)
-                time_ago = now - timedelta(minutes=1)
+                if not first_run_completed:
+                    result = await session.execute(
+                        select(distinct(TestBot.min_timeframe_asset_volatility))
+                    )
+                    unique_values = result.scalars().all()
+                    asset_volatility_timeframes = list(unique_values)
+                    first_run_completed = True
 
-                # 1. Найти наиболее волатильную пару
-                asset_crud = AssetHistoryCrud(session)
-                most_volatile = await asset_crud.get_most_volatile_since(
-                    since=time_ago
-                )
+                for tf in asset_volatility_timeframes:
+                    now = datetime.now(UTC)
+                    time_ago = now - timedelta(minutes=float(tf))
 
-                if most_volatile:
-                    symbol = most_volatile.symbol
-                    await redis.set("most_volatile_symbol", symbol)
-                    print(f"most_volatile_symbol updated: {symbol}")
+                    asset_crud = AssetHistoryCrud(session)
+                    most_volatile = await asset_crud.get_most_volatile_since(
+                        since=time_ago
+                    )
+
+                    if most_volatile:
+                        symbol = most_volatile.symbol
+                        await redis.set(f"most_volatile_symbol_{tf}", symbol)
+                        print(f"most_volatile_symbol_{tf} updated: {symbol}")
                 await asyncio.sleep(30)
 
 async def simulate_multiple_bots(stop_event):
