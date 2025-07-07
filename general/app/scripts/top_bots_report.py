@@ -51,15 +51,15 @@ async def update_bot_profits():
                 'success_percentage': success_percentage
             })
 
-        BATCH_SIZE = 100
-        for i in range(0, len(update_data), BATCH_SIZE):
-            batch = update_data[i:i + BATCH_SIZE]
-            await session.execute(
-                update(TestBot),
-                batch
-            )
-            await session.commit()
-            # print(f"Обновлено записей: {i + len(batch)}/{len(update_data)}")
+        # BATCH_SIZE = 100
+        # for i in range(0, len(update_data), BATCH_SIZE):
+        #     batch = update_data[i:i + BATCH_SIZE]
+        #     await session.execute(
+        #         update(TestBot),
+        #         batch
+        #     )
+        #     await session.commit()
+        #     # print(f"Обновлено записей: {i + len(batch)}/{len(update_data)}")
 
         # Сортируем по общей прибыли и выводим топ 10
         bot_stats.sort(key=lambda x: x['total_profit'], reverse=True)

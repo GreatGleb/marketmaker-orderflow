@@ -48,9 +48,11 @@ async def save_filtered_assets(session: AsyncSession, redis, data: list[dict]):
             "statistics_close_time": item.get("C"),
         }
 
+        # if symbol == 'BTCUSDT':
+        #     records.append(record_data)
+        #     await redis.set(f"price:{symbol}", last_price)
+
         records.append(record_data)
-        print(f"price:{symbol}")
-        print(last_price)
         await redis.set(f"price:{symbol}", last_price)
 
     await history_crud.bulk_create(records)
