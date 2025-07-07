@@ -1,7 +1,7 @@
 services:
   web:
     image: nginx:latest
-    container_name: marketmaker_restapi_nginx
+    container_name: orderflow_nginx
     restart: unless-stopped
     ports:
       - "80:80"
@@ -10,11 +10,11 @@ services:
     depends_on:
       - general
     networks:
-      - marketmaker_network
+      - orderflow_network
 
   db:
     image: supabase/postgres:15.1.0.117
-    container_name: marketmaker_postgres
+    container_name: orderflow_postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
@@ -28,11 +28,11 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
-      - marketmaker_network
+      - orderflow_network
 
   meta:
     image: ghcr.io/supabase/postgres-meta:v0.75.0
-    container_name: marketmaker_meta
+    container_name: orderflow_meta
     environment:
       PG_META_PORT: 8080
       PG_META_DB_HOST: db
@@ -44,11 +44,11 @@ services:
     depends_on:
       - db
     networks:
-      - marketmaker_network
+      - orderflow_network
 
   studio:
     image: supabase/studio:latest
-    container_name: marketmaker_studio
+    container_name: orderflow_studio
     restart: unless-stopped
     environment:
       STUDIO_PG_META_URL: http://meta:8080
@@ -62,7 +62,7 @@ services:
       - db
       - meta
     networks:
-      - marketmaker_network
+      - orderflow_network
 
   general:
     build: general
@@ -79,12 +79,12 @@ services:
     depends_on:
         - db
     networks:
-        - marketmaker_network
+        - orderflow_network
         - redis_network
 
   general-celery-worker:
     build: general
-    container_name: market_history_celery_worker
+    container_name: orderflow_celery_worker
     command: celery -A app.tasks worker -l info
     volumes:
       - ./general:/opt/services/app/src:Z
@@ -98,11 +98,11 @@ services:
       - general/.env
     networks:
       - redis_network
-      - marketmaker_network
+      - orderflow_network
 
   general-celery-beat:
     build: general
-    container_name: market_history_celery_beat
+    container_name: orderflow_celery_beat
     command: celery -A app.tasks beat -l info
     volumes:
       - ./general:/opt/services/app/src:Z
@@ -116,10 +116,10 @@ services:
       - general/.env
     networks:
       - redis_network
-      - marketmaker_network
+      - orderflow_network
 
   flower:
-    container_name: marketmaker_flower
+    container_name: orderflow_flower
     image: mher/flower
     command: celery flower
     environment:
@@ -136,7 +136,7 @@ services:
 
   redis:
     image: redis:latest
-    container_name: marketmaker_redis
+    container_name: orderflow_redis
     ports:
       - "${REDIS_PORT:-6379}:6379"
     volumes:
@@ -149,7 +149,7 @@ volumes:
   redis_volume:
 
 networks:
-  marketmaker_network:
+  orderflow_network:
     driver: bridge
   redis_network:
     driver: bridge
