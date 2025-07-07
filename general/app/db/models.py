@@ -446,3 +446,9 @@ class TestBot(BaseId):
         nullable=False,
         comment="Start updown ticks",
     )
+
+    min_timeframe_asset_volatility: Mapped[float] = mapped_column(
+        types.Numeric(precision=10, scale=2),
+        nullable=True,
+        comment="Duration of the time window (in minutes) over which asset volatility is measured",
+    )
