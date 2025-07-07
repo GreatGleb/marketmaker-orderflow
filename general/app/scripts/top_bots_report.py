@@ -1,34 +1,22 @@
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from sqlalchemy import select, func, update, case
 from app.db.base import DatabaseSessionManager
 from app.config import settings
 from app.db.models import TestOrder, TestBot
+from app.crud.test_bot import TestBotCrud
 
 UTC = timezone.utc
 
 
 async def update_bot_profits():
-
     dsm = DatabaseSessionManager.create(settings.DB_URL)
     async with dsm.get_session() as session:
-        # Получаем всех ботов
-        bots_result = await session.execute(select(TestBot))
-        bots = bots_result.scalars().all()
-
         now = datetime.now(UTC)
 
-        profits_query = select(
-            TestOrder.bot_id,
-            func.coalesce(func.sum(TestOrder.profit_loss), None).label('total_profit'),
-            func.count(TestOrder.id).label('total_orders'),
-            func.sum(case((TestOrder.profit_loss > 0, 1), else_=0)).label('successful_orders')
-        ).where(
-            TestOrder.bot_id.in_([bot.id for bot in bots])
-        ).group_by(TestOrder.bot_id)
-
-        profits_data = (await session.execute(profits_query)).all()
+        bot_crud = TestBotCrud(session)
+        profits_data = await bot_crud.get_sorted_by_profit() #timedelta(minutes=60)
 
         earliest_query = select(
             func.min(TestOrder.created_at).label('earliest_date')
@@ -51,15 +39,15 @@ async def update_bot_profits():
                 'success_percentage': success_percentage
             })
 
-        # BATCH_SIZE = 100
-        # for i in range(0, len(update_data), BATCH_SIZE):
-        #     batch = update_data[i:i + BATCH_SIZE]
-        #     await session.execute(
-        #         update(TestBot),
-        #         batch
-        #     )
-        #     await session.commit()
-        #     # print(f"Обновлено записей: {i + len(batch)}/{len(update_data)}")
+        BATCH_SIZE = 1000
+        for i in range(0, len(update_data), BATCH_SIZE):
+            batch = update_data[i:i + BATCH_SIZE]
+            await session.execute(
+                update(TestBot),
+                batch
+            )
+            await session.commit()
+            # print(f"Обновлено записей: {i + len(batch)}/{len(update_data)}")
 
         # Сортируем по общей прибыли и выводим топ 10
         bot_stats.sort(key=lambda x: x['total_profit'], reverse=True)

@@ -1,10 +1,15 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func, case
 from sqlalchemy.dialects.postgresql import insert
+from datetime import datetime, timedelta, timezone
 
-from app.db.models import TestBot
+from app.db.models import TestBot, TestOrder
 from app.crud.base import BaseCrud
 
+from app.db.base import DatabaseSessionManager
+from app.config import settings
+
+UTC = timezone.utc
 
 class TestBotCrud(BaseCrud[TestBot]):
 
@@ -22,3 +27,29 @@ class TestBotCrud(BaseCrud[TestBot]):
 
         stmt = insert(TestBot).values(items)
         await self.session.execute(stmt)
+
+    async def get_sorted_by_profit(self, since = None):
+        bots = await self.get_active_bots()
+
+        profits_query = select(
+            TestOrder.bot_id,
+            func.coalesce(func.sum(TestOrder.profit_loss), None).label('total_profit'),
+            func.count(TestOrder.id).label('total_orders'),
+            func.sum(case((TestOrder.profit_loss > 0, 1), else_=0)).label('successful_orders')
+        ).where(
+            TestOrder.bot_id.in_([bot.id for bot in bots])
+        )
+
+        if since is not None:
+            now = datetime.now(UTC)
+            time_ago = now - since
+            time_ago = time_ago.replace(tzinfo=None)
+
+            profits_query = profits_query.where(TestOrder.created_at >= time_ago)
+
+        profits_query = profits_query.group_by(TestOrder.bot_id)
+
+        profits_data = (await self.session.execute(profits_query)).all()
+
+        return profits_data
+
