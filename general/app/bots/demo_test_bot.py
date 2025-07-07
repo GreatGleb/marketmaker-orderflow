@@ -306,7 +306,7 @@ async def main():
 
     await asyncio.gather(
         set_volatile_pairs(stop_event),
-        simulate_multiple_bots(stop_event),
+        # simulate_multiple_bots(stop_event),
     )
 
     print("✅ Все боты завершены.")
