@@ -314,6 +314,56 @@ async def set_volatile_pairs(stop_event):
                         print(f"most_volatile_symbol_{tf} updated: {symbol}")
                 await asyncio.sleep(30)
 
+async def get_profitable_bots_id_by_tf(session, bot_profitability_timeframes):
+    bot_crud = TestBotCrud(session)
+
+    tf_bot_ids = {}
+    profits_data = await bot_crud.get_sorted_by_profit()
+    filtered_sorted = sorted([item for item in profits_data if item[1] > 0], key=lambda x: x[1], reverse=True)
+    tf_bot_ids['time'] = [item[0] for item in filtered_sorted]
+
+    for tf in bot_profitability_timeframes:
+        time_ago = timedelta(minutes=float(tf))
+
+        profits_data = await bot_crud.get_sorted_by_profit(time_ago)
+        filtered_sorted = sorted([item for item in profits_data if item[1] > 0], key=lambda x: x[1], reverse=True)
+        tf_bot_ids[tf] = [item[0] for item in filtered_sorted]
+
+    return tf_bot_ids
+
+async def get_bot_config_by_params(session, tf_bot_ids, copy_bot_max_time_profitability_min, copy_bot_min_time_profitability_min):
+    max_bot_ids = tf_bot_ids[copy_bot_max_time_profitability_min]
+    min_bot_ids = tf_bot_ids[copy_bot_min_time_profitability_min]
+
+    tf_time_set = set(tf_bot_ids['time'])
+    min_bot_set = set(min_bot_ids)
+
+    max_bot_ids = [bot_id for bot_id in max_bot_ids if bot_id in tf_time_set and bot_id in min_bot_set]
+
+    if max_bot_ids:
+        refer_bot = await session.execute(
+            select(TestBot)
+            .where(
+                TestBot.id == max_bot_ids[0],
+            )
+        )
+        refer_bot = refer_bot.scalars().all()
+        if refer_bot:
+            refer_bot = refer_bot[0]
+            refer_bot_dict = {
+                'symbol': refer_bot.symbol,
+                'stop_success_ticks': refer_bot.stop_success_ticks,
+                'stop_loss_ticks': refer_bot.stop_loss_ticks,
+                'start_updown_ticks': refer_bot.start_updown_ticks,
+                'min_timeframe_asset_volatility': float(refer_bot.min_timeframe_asset_volatility)
+            }
+        else:
+            refer_bot_dict = None
+    else:
+        refer_bot_dict = None
+
+    return refer_bot_dict
+
 async def set_profitable_bots_for_copy_bots(stop_event):
     dsm = DatabaseSessionManager.create(settings.DB_URL)
     first_run_completed = False
@@ -347,20 +397,7 @@ async def set_profitable_bots_for_copy_bots(stop_event):
 
                     bot_profitability_timeframes = list(set(timeframes_max + timeframes_min))
 
-                bot_crud = TestBotCrud(session)
-
-                tf_bot_ids = {}
-                profits_data = await bot_crud.get_sorted_by_profit()
-                filtered_sorted = sorted([item for item in profits_data if item[1] > 0], key=lambda x: x[1], reverse=True)
-                tf_bot_ids['time'] = [item[0] for item in filtered_sorted]
-
-                for tf in bot_profitability_timeframes:
-                    time_ago = timedelta(minutes=float(tf))
-
-                    profits_data = await bot_crud.get_sorted_by_profit(time_ago)
-                    filtered_sorted = sorted([item for item in profits_data if item[1] > 0], key=lambda x: x[1],
-                                             reverse=True)
-                    tf_bot_ids[tf] = [item[0] for item in filtered_sorted]
+                tf_bot_ids = await get_profitable_bots_id_by_tf(session, bot_profitability_timeframes)
 
                 bots = await session.execute(
                     select(TestBot)
@@ -372,35 +409,12 @@ async def set_profitable_bots_for_copy_bots(stop_event):
                 bots = bots.scalars().all()
 
                 for bot in bots:
-                    max_bot_ids = tf_bot_ids[bot.copy_bot_max_time_profitability_min]
-                    min_bot_ids = tf_bot_ids[bot.copy_bot_min_time_profitability_min]
-
-                    tf_time_set = set(tf_bot_ids['time'])
-                    min_bot_set = set(min_bot_ids)
-
-                    max_bot_ids = [bot_id for bot_id in max_bot_ids if bot_id in tf_time_set and bot_id in min_bot_set]
-
-                    if max_bot_ids:
-                        refer_bot = await session.execute(
-                            select(TestBot)
-                            .where(
-                                TestBot.id == max_bot_ids[0],
-                            )
-                        )
-                        refer_bot = refer_bot.scalars().all()
-                        if refer_bot:
-                            refer_bot = refer_bot[0]
-                            refer_bot_dict = {}
-                            refer_bot_dict['symbol'] = refer_bot.symbol
-                            refer_bot_dict['stop_success_ticks'] = refer_bot.stop_success_ticks
-                            refer_bot_dict['stop_loss_ticks'] = refer_bot.stop_loss_ticks
-                            refer_bot_dict['start_updown_ticks'] = refer_bot.start_updown_ticks
-                            refer_bot_dict['min_timeframe_asset_volatility'] = float(refer_bot.min_timeframe_asset_volatility)
-                        else:
-                            refer_bot_dict = None
-                    else:
-                        refer_bot_dict = None
-
+                    refer_bot_dict = await get_bot_config_by_params(
+                        session,
+                        tf_bot_ids,
+                        bot.copy_bot_max_time_profitability_min,
+                        bot.copy_bot_min_time_profitability_min
+                    )
                     await redis.set(f"copy_bot_{bot.id}", json.dumps(refer_bot_dict))
 
                 await asyncio.sleep(30)
