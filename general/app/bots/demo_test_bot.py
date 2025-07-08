@@ -144,10 +144,10 @@ async def simulate_bot(session, redis, bot_config: TestBot, shared_data, stop_ev
         stop_loss_price = calculate_stop_lose_price(bot_config, tick_size, open_price, trade_type)
         take_profit_price = calculate_take_profit_price(bot_config, tick_size, open_price, trade_type)
 
-        print(
-            f"🔎 Бот {bot_config.id} | {trade_type} | Вход: {open_price:.4f} | "
-            f"SL: {stop_loss_price:.4f} | TP: {take_profit_price:.4f}"
-        )
+        # print(
+        #     f"🔎 Бот {bot_config.id} | {trade_type} | Вход: {open_price:.4f} | "
+        #     f"SL: {stop_loss_price:.4f} | TP: {take_profit_price:.4f}"
+        # )
 
         order = TestOrder(
             stop_loss_price=Decimal(stop_loss_price),
@@ -171,7 +171,7 @@ async def simulate_bot(session, redis, bot_config: TestBot, shared_data, stop_ev
                 elif new_sl_p > order.stop_loss_price:
                     order.stop_loss_price = new_sl_p
                 if updated_price <= order.stop_loss_price:
-                    print(f"Бот {bot_config.id} | 📉⛔ BUY order closed by STOP-LOSE at {updated_price}")
+                    # print(f"Бот {bot_config.id} | 📉⛔ BUY order closed by STOP-LOSE at {updated_price}")
                     break
                 if itWasHigher_tk and updated_price > close_not_lose_price and updated_price <= take_profit_price:
                     print(f"Бот {bot_config.id} | 📈✅ BUY order closed by STOP-WIN at {updated_price}, Take profit: {take_profit_price}")
@@ -184,7 +184,7 @@ async def simulate_bot(session, redis, bot_config: TestBot, shared_data, stop_ev
                 elif new_sl_p < order.stop_loss_price:
                     order.stop_loss_price = new_sl_p
                 if updated_price >= order.stop_loss_price:
-                    print(f"Бот {bot_config.id} | 📉⛔ SELL order closed by STOP-LOSE at {updated_price}")
+                    # print(f"Бот {bot_config.id} | 📉⛔ SELL order closed by STOP-LOSE at {updated_price}")
                     break
                 if itWasHigher_tk and updated_price < close_not_lose_price and updated_price >= take_profit_price:
                     print(f"Бот {bot_config.id} | 📈✅ SELL order closed by STOP-WIN at {updated_price}, Take profit: {take_profit_price}")
@@ -300,8 +300,9 @@ async def set_volatile_pairs(stop_event):
                     first_run_completed = True
 
                 for tf in asset_volatility_timeframes:
+                    tf = float(tf)
                     now = datetime.now(UTC)
-                    time_ago = now - timedelta(minutes=float(tf))
+                    time_ago = now - timedelta(minutes=tf)
 
                     asset_crud = AssetHistoryCrud(session)
                     most_volatile = await asset_crud.get_most_volatile_since(
@@ -351,6 +352,7 @@ async def get_bot_config_by_params(session, tf_bot_ids, copy_bot_max_time_profit
         if refer_bot:
             refer_bot = refer_bot[0]
             refer_bot_dict = {
+                'id': refer_bot.id,
                 'symbol': refer_bot.symbol,
                 'stop_success_ticks': refer_bot.stop_success_ticks,
                 'stop_loss_ticks': refer_bot.stop_loss_ticks,
