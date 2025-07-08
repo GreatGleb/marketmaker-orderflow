@@ -28,7 +28,7 @@ class TestBotCrud(BaseCrud[TestBot]):
         stmt = insert(TestBot).values(items)
         await self.session.execute(stmt)
 
-    async def get_sorted_by_profit(self, since = None):
+    async def get_sorted_by_profit(self, since = None, just_copy_bots = False):
         bots = await self.get_active_bots()
 
         profits_query = select(
@@ -46,6 +46,12 @@ class TestBotCrud(BaseCrud[TestBot]):
             time_ago = time_ago.replace(tzinfo=None)
 
             profits_query = profits_query.where(TestOrder.created_at >= time_ago)
+
+        if just_copy_bots:
+            profits_query = profits_query.where(
+                TestBot.copy_bot_min_time_profitability_min.is_not(None),
+                TestBot.copy_bot_max_time_profitability_min.is_not(None),
+            )
 
         profits_query = profits_query.group_by(TestOrder.bot_id)
 
