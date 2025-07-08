@@ -382,7 +382,6 @@ class TestOrder(BaseId):
     bot_id: Mapped[int] = mapped_column(
         ForeignKey("test_bots.id"), nullable=True
     )
-
     stop_loss_ticks = mapped_column(
         types.Integer,
         default=0,
@@ -403,6 +402,10 @@ class TestOrder(BaseId):
         server_default="0",
         nullable=False,
         comment="Start updown ticks",
+    )
+    stop_reason_event: Mapped[str] = mapped_column(
+        nullable=True,
+        comment="Reason event of stopping order",
     )
 
 

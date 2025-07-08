@@ -171,9 +171,11 @@ async def simulate_bot(session, redis, bot_config: TestBot, shared_data, stop_ev
                 elif new_sl_p > order.stop_loss_price:
                     order.stop_loss_price = new_sl_p
                 if updated_price <= order.stop_loss_price:
+                    order.stop_reason_event = 'stop-losed'
                     # print(f"Бот {bot_config.id} | 📉⛔ BUY order closed by STOP-LOSE at {updated_price}")
                     break
                 if itWasHigher_tk and updated_price > close_not_lose_price and updated_price <= take_profit_price:
+                    order.stop_reason_event = 'stop-won'
                     print(f"Бот {bot_config.id} | 📈✅ BUY order closed by STOP-WIN at {updated_price}, Take profit: {take_profit_price}")
                     break
             else:
@@ -184,9 +186,11 @@ async def simulate_bot(session, redis, bot_config: TestBot, shared_data, stop_ev
                 elif new_sl_p < order.stop_loss_price:
                     order.stop_loss_price = new_sl_p
                 if updated_price >= order.stop_loss_price:
+                    order.stop_reason_event = 'stop-losed'
                     # print(f"Бот {bot_config.id} | 📉⛔ SELL order closed by STOP-LOSE at {updated_price}")
                     break
                 if itWasHigher_tk and updated_price < close_not_lose_price and updated_price >= take_profit_price:
+                    order.stop_reason_event = 'stop-won'
                     print(f"Бот {bot_config.id} | 📈✅ SELL order closed by STOP-WIN at {updated_price}, Take profit: {take_profit_price}")
                     break
 
@@ -229,6 +233,7 @@ async def simulate_bot(session, redis, bot_config: TestBot, shared_data, stop_ev
                     "start_updown_ticks": bot_config.start_updown_ticks,
                     "stop_loss_ticks": bot_config.stop_loss_ticks,
                     "stop_success_ticks": bot_config.stop_success_ticks,
+                    "stop_reason_event": order.stop_reason_event,
                 }
             )
             await session.commit()
@@ -333,19 +338,21 @@ async def get_profitable_bots_id_by_tf(session, bot_profitability_timeframes):
     return tf_bot_ids
 
 async def get_bot_config_by_params(session, tf_bot_ids, copy_bot_max_time_profitability_min, copy_bot_min_time_profitability_min):
-    max_bot_ids = tf_bot_ids[copy_bot_max_time_profitability_min]
+    # max_bot_ids = tf_bot_ids[copy_bot_max_time_profitability_min]
     min_bot_ids = tf_bot_ids[copy_bot_min_time_profitability_min]
 
-    tf_time_set = set(tf_bot_ids['time'])
+    # tf_time_set = set(tf_bot_ids['time'])
     min_bot_set = set(min_bot_ids)
 
-    max_bot_ids = [bot_id for bot_id in max_bot_ids if bot_id in tf_time_set and bot_id in min_bot_set]
+    # max_bot_ids = [bot_id for bot_id in max_bot_ids if bot_id in tf_time_set and bot_id in min_bot_set]
+    max_bot_ids = list(min_bot_set)
 
     if max_bot_ids:
         refer_bot = await session.execute(
             select(TestBot)
             .where(
                 TestBot.id == max_bot_ids[0],
+                TestBot.min_timeframe_asset_volatility.is_not(None),
             )
         )
         refer_bot = refer_bot.scalars().all()
