@@ -1,7 +1,7 @@
 import asyncio
 from datetime import datetime, timezone, timedelta
 
-from sqlalchemy import select, func, update, case
+from sqlalchemy import select, func, update
 from app.db.base import DatabaseSessionManager
 from app.config import settings
 from app.db.models import TestOrder, TestBot
@@ -12,11 +12,11 @@ UTC = timezone.utc
 
 async def update_bot_profits():
     dsm = DatabaseSessionManager.create(settings.DB_URL)
-    async with dsm.get_session() as session:
+    async with (dsm.get_session() as session):
         now = datetime.now(UTC)
 
         bot_crud = TestBotCrud(session)
-        profits_data = await bot_crud.get_sorted_by_profit() #timedelta(minutes=60)
+        profits_data = await bot_crud.get_sorted_by_profit() #timedelta(hours=3)
 
         earliest_query = select(
             func.min(TestOrder.created_at).label('earliest_date')

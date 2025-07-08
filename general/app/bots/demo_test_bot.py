@@ -4,6 +4,7 @@ import threading
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from sqlalchemy import distinct, select
+import json
 
 from app.crud.asset_history import AssetHistoryCrud
 from app.crud.exchange_pair_spec import AssetExchangeSpecCrud
@@ -84,6 +85,19 @@ def calculate_close_not_lose_price(open_price, trade_type):
     return close_not_lose_price
 
 async def simulate_bot(session, redis, bot_config: TestBot, shared_data, stop_event):
+    if bot_config.copy_bot_max_time_profitability_min and bot_config.copy_bot_min_time_profitability_min:
+        refer_bot_js = await redis.get(f"copy_bot_{bot_config.id}")
+        refer_bot = json.loads(refer_bot_js)
+
+        if not refer_bot:
+            return
+
+        bot_config.symbol = refer_bot['symbol']
+        bot_config.stop_success_ticks = refer_bot['stop_success_ticks']
+        bot_config.stop_loss_ticks = refer_bot['stop_loss_ticks']
+        bot_config.start_updown_ticks = refer_bot['start_updown_ticks']
+        bot_config.min_timeframe_asset_volatility = refer_bot['min_timeframe_asset_volatility']
+
     symbol = await redis.get(f"most_volatile_symbol_{bot_config.min_timeframe_asset_volatility}")
     # symbol = bot_config.symbol
     data = shared_data.get(symbol)
@@ -221,37 +235,6 @@ async def simulate_bot(session, redis, bot_config: TestBot, shared_data, stop_ev
         except Exception as e:
             print(f"❌ Ошибка при записи ордера бота {bot_config.id}: {e}")
 
-async def set_volatile_pairs(stop_event):
-    dsm = DatabaseSessionManager.create(settings.DB_URL)
-    first_run_completed = False
-    asset_volatility_timeframes = []
-
-    async with dsm.get_session() as session:
-        async with redis_context() as redis:
-            while not stop_event.is_set():
-                if not first_run_completed:
-                    result = await session.execute(
-                        select(distinct(TestBot.min_timeframe_asset_volatility))
-                    )
-                    unique_values = result.scalars().all()
-                    asset_volatility_timeframes = list(unique_values)
-                    first_run_completed = True
-
-                for tf in asset_volatility_timeframes:
-                    now = datetime.now(UTC)
-                    time_ago = now - timedelta(minutes=float(tf))
-
-                    asset_crud = AssetHistoryCrud(session)
-                    most_volatile = await asset_crud.get_most_volatile_since(
-                        since=time_ago
-                    )
-
-                    if most_volatile:
-                        symbol = most_volatile.symbol
-                        await redis.set(f"most_volatile_symbol_{tf}", symbol)
-                        print(f"most_volatile_symbol_{tf} updated: {symbol}")
-                await asyncio.sleep(30)
-
 async def simulate_multiple_bots(stop_event):
     dsm = DatabaseSessionManager.create(settings.DB_URL)
     shared_data = {}
@@ -297,6 +280,131 @@ async def simulate_multiple_bots(stop_event):
             tasks.append(asyncio.create_task(_run_loop()))
         await asyncio.gather(*tasks)
 
+async def set_volatile_pairs(stop_event):
+    dsm = DatabaseSessionManager.create(settings.DB_URL)
+    first_run_completed = False
+    asset_volatility_timeframes = []
+
+    async with dsm.get_session() as session:
+        async with redis_context() as redis:
+            while not stop_event.is_set():
+                if not first_run_completed:
+                    result = await session.execute(
+                        select(distinct(TestBot.min_timeframe_asset_volatility))
+                        .where(
+                            TestBot.min_timeframe_asset_volatility.is_not(None)
+                        )
+                    )
+                    unique_values = result.scalars().all()
+                    asset_volatility_timeframes = list(unique_values)
+                    first_run_completed = True
+
+                for tf in asset_volatility_timeframes:
+                    now = datetime.now(UTC)
+                    time_ago = now - timedelta(minutes=float(tf))
+
+                    asset_crud = AssetHistoryCrud(session)
+                    most_volatile = await asset_crud.get_most_volatile_since(
+                        since=time_ago
+                    )
+
+                    if most_volatile:
+                        symbol = most_volatile.symbol
+                        await redis.set(f"most_volatile_symbol_{tf}", symbol)
+                        print(f"most_volatile_symbol_{tf} updated: {symbol}")
+                await asyncio.sleep(30)
+
+async def set_profitable_bots_for_copy_bots(stop_event):
+    dsm = DatabaseSessionManager.create(settings.DB_URL)
+    first_run_completed = False
+    bot_profitability_timeframes = []
+
+    async with dsm.get_session() as session:
+        async with redis_context() as redis:
+            while not stop_event.is_set():
+                if not first_run_completed:
+                    first_run_completed = True
+
+                    result = await session.execute(
+                        select(distinct(TestBot.copy_bot_max_time_profitability_min))
+                        .where(
+                            TestBot.copy_bot_min_time_profitability_min.is_not(None),
+                            TestBot.copy_bot_max_time_profitability_min.is_not(None),
+                        )
+                    )
+                    unique_values = result.scalars().all()
+                    timeframes_max = list(unique_values)
+
+                    result = await session.execute(
+                        select(distinct(TestBot.copy_bot_min_time_profitability_min))
+                        .where(
+                            TestBot.copy_bot_min_time_profitability_min.is_not(None),
+                            TestBot.copy_bot_max_time_profitability_min.is_not(None),
+                        )
+                    )
+                    unique_values = result.scalars().all()
+                    timeframes_min = list(unique_values)
+
+                    bot_profitability_timeframes = list(set(timeframes_max + timeframes_min))
+
+                bot_crud = TestBotCrud(session)
+
+                tf_bot_ids = {}
+                profits_data = await bot_crud.get_sorted_by_profit()
+                filtered_sorted = sorted([item for item in profits_data if item[1] > 0], key=lambda x: x[1], reverse=True)
+                tf_bot_ids['time'] = [item[0] for item in filtered_sorted]
+
+                for tf in bot_profitability_timeframes:
+                    time_ago = timedelta(minutes=float(tf))
+
+                    profits_data = await bot_crud.get_sorted_by_profit(time_ago)
+                    filtered_sorted = sorted([item for item in profits_data if item[1] > 0], key=lambda x: x[1],
+                                             reverse=True)
+                    tf_bot_ids[tf] = [item[0] for item in filtered_sorted]
+
+                bots = await session.execute(
+                    select(TestBot)
+                    .where(
+                        TestBot.copy_bot_min_time_profitability_min.is_not(None),
+                        TestBot.copy_bot_max_time_profitability_min.is_not(None),
+                    )
+                )
+                bots = bots.scalars().all()
+
+                for bot in bots:
+                    max_bot_ids = tf_bot_ids[bot.copy_bot_max_time_profitability_min]
+                    min_bot_ids = tf_bot_ids[bot.copy_bot_min_time_profitability_min]
+
+                    tf_time_set = set(tf_bot_ids['time'])
+                    min_bot_set = set(min_bot_ids)
+
+                    max_bot_ids = [bot_id for bot_id in max_bot_ids if bot_id in tf_time_set and bot_id in min_bot_set]
+
+                    if max_bot_ids:
+                        refer_bot = await session.execute(
+                            select(TestBot)
+                            .where(
+                                TestBot.id == max_bot_ids[0],
+                            )
+                        )
+                        refer_bot = refer_bot.scalars().all()
+                        if refer_bot:
+                            refer_bot = refer_bot[0]
+                            refer_bot_dict = {}
+                            refer_bot_dict['symbol'] = refer_bot.symbol
+                            refer_bot_dict['stop_success_ticks'] = refer_bot.stop_success_ticks
+                            refer_bot_dict['stop_loss_ticks'] = refer_bot.stop_loss_ticks
+                            refer_bot_dict['start_updown_ticks'] = refer_bot.start_updown_ticks
+                            refer_bot_dict['min_timeframe_asset_volatility'] = float(refer_bot.min_timeframe_asset_volatility)
+                        else:
+                            refer_bot_dict = None
+                    else:
+                        refer_bot_dict = None
+
+                    await redis.set(f"copy_bot_{bot.id}", json.dumps(refer_bot_dict))
+
+                await asyncio.sleep(30)
+
 def input_listener(loop, stop_event):
     while True:
         cmd = (
@@ -318,6 +426,7 @@ async def main():
 
     await asyncio.gather(
         set_volatile_pairs(stop_event),
+        set_profitable_bots_for_copy_bots(stop_event),
         simulate_multiple_bots(stop_event),
     )
 

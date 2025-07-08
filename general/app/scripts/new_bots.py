@@ -15,11 +15,6 @@ async def create_bots(symbol="BTCUSDT"):
         # stop_lose_ticks_values = [10, 20, 40, 60, 80, 90, 100, 126, 142, 158, 174, 190, 206, 222, 238, 254]  # X axis
         # stop_win_ticks_values = [1, 5, 10, 20, 30, 40, 50, 60, 70]
 
-        start_ticks_values = [15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 70, 80, 100]
-        stop_lose_ticks_values = [40, 45, 50, 55, 60, 70, 80, 90, 100, 200, 300, 400, 500]
-        stop_win_ticks_values = [5, 10, 20, 30, 40, 50, 60, 70]
-        min_tf_volatility_values = [0.5, 1, 2, 3]
-
         # start_ticks_values = [10, 15, 20, 30, 40, 70, 80]  # Y axis
         # stop_lose_ticks_values = [126, 132, 138, 144, 150, 156, 162, 168, 174]  # X axis
         # stop_win_ticks_values = [100, 110, 120, 130, 140, 150, 160, 170]
@@ -31,6 +26,11 @@ async def create_bots(symbol="BTCUSDT"):
         # start_ticks_values = [250, 500, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 12000, 13000, 14000, 15000, 20000, 30000]  # Y axis
         # stop_lose_ticks_values = [50, 100, 200, 300, 500, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 20000, 50000]  # X axis
         # stop_win_ticks_values = [20, 40, 60, 160, 300, 600, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000]
+
+        start_ticks_values = [15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 70, 80, 100]
+        stop_lose_ticks_values = [40, 45, 50, 55, 60, 70, 80, 90, 100, 200, 300, 400, 500]
+        stop_win_ticks_values = [5, 10, 20, 30, 40, 50, 60, 70]
+        min_tf_volatility_values = [0.5, 1, 2, 3]
 
         try:
             for start in start_ticks_values:
@@ -51,6 +51,31 @@ async def create_bots(symbol="BTCUSDT"):
 
                     await bot_crud.bulk_create(new_bots)
                     await session.commit()
+            print("✅ Успешно создано ботов.")
+        except Exception as e:
+            print(e)
+
+        copy_bot_max_time_profitability_min_values = [30, 45, 60, 75, 90, 120, 150, 180, 240, 300, 360, 720]
+        copy_bot_min_time_profitability_min_values = [5, 10, 20, 30, 40, 50, 60, 120]
+
+        try:
+            new_bots = []
+            for max_time in copy_bot_max_time_profitability_min_values:
+                for min_time in copy_bot_min_time_profitability_min_values:
+                    bot_data = {
+                        "symbol": symbol,
+                        "balance": Decimal("1000.0"),
+                        "stop_success_ticks": 0,
+                        "stop_loss_ticks": 0,
+                        "start_updown_ticks": 0,
+                        "copy_bot_max_time_profitability_min": max_time,
+                        "copy_bot_min_time_profitability_min": min_time,
+                        "is_active": True,
+                    }
+                    new_bots.append(bot_data)
+
+            await bot_crud.bulk_create(new_bots)
+            await session.commit()
             print("✅ Успешно создано ботов.")
         except Exception as e:
             print(e)

@@ -452,3 +452,15 @@ class TestBot(BaseId):
         nullable=True,
         comment="Duration of the time window (in minutes) over which asset volatility is measured",
     )
+
+    copy_bot_max_time_profitability_min: Mapped[float] = mapped_column(
+        types.Numeric(precision=10, scale=2),
+        nullable=True,
+        comment="For copy bot the maximum time it takes for the original bot being monitored to be profitable",
+    )
+
+    copy_bot_min_time_profitability_min: Mapped[float] = mapped_column(
+        types.Numeric(precision=10, scale=2),
+        nullable=True,
+        comment="For copy bot the minimum time it takes for the original bot being monitored to be profitable",
+    )
