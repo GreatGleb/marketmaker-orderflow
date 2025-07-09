@@ -55,24 +55,21 @@ async def create_bots(symbol="BTCUSDT"):
         except Exception as e:
             print(e)
 
-        copy_bot_max_time_profitability_min_values = [30, 45, 60, 75, 90, 120, 150, 180, 240, 300, 360, 720]
-        copy_bot_min_time_profitability_min_values = [5, 10, 20, 30, 40, 50, 60, 120]
+        copy_bot_min_time_profitability_min_values = [10, 20, 30, 40, 50, 60, 120, 180, 240, 360, 420, 480, 540, 600, 660, 720, 1440]
 
         try:
             new_bots = []
-            for max_time in copy_bot_max_time_profitability_min_values:
-                for min_time in copy_bot_min_time_profitability_min_values:
-                    bot_data = {
-                        "symbol": symbol,
-                        "balance": Decimal("1000.0"),
-                        "stop_success_ticks": 0,
-                        "stop_loss_ticks": 0,
-                        "start_updown_ticks": 0,
-                        "copy_bot_max_time_profitability_min": max_time,
-                        "copy_bot_min_time_profitability_min": min_time,
-                        "is_active": True,
-                    }
-                    new_bots.append(bot_data)
+            for min_time in copy_bot_min_time_profitability_min_values:
+                bot_data = {
+                    "symbol": symbol,
+                    "balance": Decimal("1000.0"),
+                    "stop_success_ticks": 0,
+                    "stop_loss_ticks": 0,
+                    "start_updown_ticks": 0,
+                    "copy_bot_min_time_profitability_min": min_time,
+                    "is_active": True,
+                }
+                new_bots.append(bot_data)
 
             await bot_crud.bulk_create(new_bots)
             await session.commit()
