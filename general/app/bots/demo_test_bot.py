@@ -323,14 +323,14 @@ async def get_profitable_bots_id_by_tf(session, bot_profitability_timeframes):
     bot_crud = TestBotCrud(session)
 
     tf_bot_ids = {}
-    profits_data = await bot_crud.get_sorted_by_profit()
-    filtered_sorted = sorted([item for item in profits_data if item[1] > 0], key=lambda x: x[1], reverse=True)
-    tf_bot_ids['time'] = [item[0] for item in filtered_sorted]
+    # profits_data = await bot_crud.get_sorted_by_profit(just_not_copy_bots=True)
+    # filtered_sorted = sorted([item for item in profits_data if item[1] > 0], key=lambda x: x[1], reverse=True)
+    # tf_bot_ids['time'] = [item[0] for item in filtered_sorted]
 
     for tf in bot_profitability_timeframes:
         time_ago = timedelta(minutes=float(tf))
 
-        profits_data = await bot_crud.get_sorted_by_profit(time_ago)
+        profits_data = await bot_crud.get_sorted_by_profit(since=time_ago, just_not_copy_bots=True)
         filtered_sorted = sorted([item for item in profits_data if item[1] > 0], key=lambda x: x[1], reverse=True)
         tf_bot_ids[tf] = [item[0] for item in filtered_sorted]
 
