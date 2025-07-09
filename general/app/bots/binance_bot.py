@@ -16,7 +16,7 @@ from app.db.models import TestBot, TestOrder
 from app.dependencies import redis_context
 
 UTC = timezone.utc
-COMMISSION_OPEN = Decimal("0.0002")
+COMMISSION_OPEN  = Decimal("0.0005")# 0.0002
 COMMISSION_CLOSE = Decimal("0.0005")
 
 
@@ -343,7 +343,10 @@ async def set_volatile_pairs(stop_event):
                     if most_volatile:
                         symbol = most_volatile.symbol
                         await redis.set(f"most_volatile_symbol_{tf}", symbol)
-                        print(f"most_volatile_symbol_{tf} updated: {symbol}")
+
+                if most_volatile:
+                    print(f"most_volatile_symbol_{tf} updated: {symbol}")
+
                 await asyncio.sleep(30)
 
 async def get_profitable_bots_id_by_tf(session, bot_profitability_timeframes):

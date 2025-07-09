@@ -16,7 +16,7 @@ from app.db.models import TestBot, TestOrder
 from app.dependencies import redis_context
 
 UTC = timezone.utc
-COMMISSION_OPEN = Decimal("0.0002")
+COMMISSION_OPEN  = Decimal("0.0005")# 0.0002
 COMMISSION_CLOSE = Decimal("0.0005")
 
 
@@ -175,7 +175,7 @@ async def simulate_bot(session, redis, bot_config: TestBot, shared_data, stop_ev
                     break
                 if updated_price > close_not_lose_price and updated_price <= take_profit_price:
                     order.stop_reason_event = 'stop-won'
-                    print(f"Бот {bot_config.id} | 📈✅ BUY order closed by STOP-WIN at {updated_price}, Take profit: {take_profit_price}")
+                    # print(f"Бот {bot_config.id} | 📈✅ BUY order closed by STOP-WIN at {updated_price}, Take profit: {take_profit_price}")
                     break
             else:
                 if priceFromPreviousStep > updated_price and new_tk_p < take_profit_price:
@@ -188,7 +188,7 @@ async def simulate_bot(session, redis, bot_config: TestBot, shared_data, stop_ev
                     break
                 if updated_price < close_not_lose_price and updated_price >= take_profit_price:
                     order.stop_reason_event = 'stop-won'
-                    print(f"Бот {bot_config.id} | 📈✅ SELL order closed by STOP-WIN at {updated_price}, Take profit: {take_profit_price}")
+                    # print(f"Бот {bot_config.id} | 📈✅ SELL order closed by STOP-WIN at {updated_price}, Take profit: {take_profit_price}")
                     break
 
             priceFromPreviousStep = updated_price
@@ -316,7 +316,10 @@ async def set_volatile_pairs(stop_event):
                     if most_volatile:
                         symbol = most_volatile.symbol
                         await redis.set(f"most_volatile_symbol_{tf}", symbol)
-                        print(f"most_volatile_symbol_{tf} updated: {symbol}")
+
+                if most_volatile:
+                    print(f"most_volatile_symbol_{tf} updated: {symbol}")
+
                 await asyncio.sleep(30)
 
 async def get_profitable_bots_id_by_tf(session, bot_profitability_timeframes):
