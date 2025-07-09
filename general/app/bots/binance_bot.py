@@ -85,13 +85,11 @@ def calculate_close_not_lose_price(open_price, trade_type):
     return close_not_lose_price
 
 async def get_copy_bot_tf_params(session):
-    copy_bot_max_time_profitability_min = 60
     copy_bot_min_time_profitability_min = 30
 
     bot_crud = TestBotCrud(session)
     profits_data = await bot_crud.get_sorted_by_profit(just_copy_bots=True)
-    profits_data_filtered_sorted = sorted([item for item in profits_data if item[1] > 0], key=lambda x: x[1],
-                                          reverse=True)
+    profits_data_filtered_sorted = sorted([item for item in profits_data if item[1] > 0], key=lambda x: x[1], reverse=True)
 
     if profits_data_filtered_sorted:
         refer_bot_id = profits_data_filtered_sorted[0]
@@ -105,19 +103,17 @@ async def get_copy_bot_tf_params(session):
         refer_bot = refer_bot.scalars().all()
         if refer_bot:
             refer_bot = refer_bot[0]
-            copy_bot_max_time_profitability_min = float(refer_bot.copy_bot_max_time_profitability_min)
             copy_bot_min_time_profitability_min = float(refer_bot.copy_bot_min_time_profitability_min)
 
-    return copy_bot_max_time_profitability_min, copy_bot_min_time_profitability_min
+    return copy_bot_min_time_profitability_min
 
 async def creating_orders_bot(session, redis, shared_data, stop_event):
-    copy_bot_max_time_profitability_min, copy_bot_min_time_profitability_min = get_copy_bot_tf_params(session)
+    copy_bot_min_time_profitability_min = get_copy_bot_tf_params(session)
 
-    tf_bot_ids = await get_profitable_bots_id_by_tf(session, [copy_bot_max_time_profitability_min, copy_bot_min_time_profitability_min])
+    tf_bot_ids = await get_profitable_bots_id_by_tf(session, [copy_bot_min_time_profitability_min])
     refer_bot = await get_bot_config_by_params(
         session,
         tf_bot_ids,
-        copy_bot_max_time_profitability_min,
         copy_bot_min_time_profitability_min
     )
 
@@ -367,21 +363,18 @@ async def get_profitable_bots_id_by_tf(session, bot_profitability_timeframes):
 
     return tf_bot_ids
 
-async def get_bot_config_by_params(session, tf_bot_ids, copy_bot_max_time_profitability_min, copy_bot_min_time_profitability_min):
-    max_bot_ids = tf_bot_ids[copy_bot_max_time_profitability_min]
+async def get_bot_config_by_params(session, tf_bot_ids, copy_bot_min_time_profitability_min):
     min_bot_ids = tf_bot_ids[copy_bot_min_time_profitability_min]
 
-    tf_time_set = set(tf_bot_ids['time'])
+    # tf_time_set = set(tf_bot_ids['time'])
     min_bot_set = set(min_bot_ids)
+    min_bot_ids = list(min_bot_set)
 
-    # max_bot_ids = [bot_id for bot_id in max_bot_ids if bot_id in tf_time_set and bot_id in min_bot_set]
-    max_bot_ids = list(min_bot_set)
-
-    if max_bot_ids:
+    if min_bot_ids:
         refer_bot = await session.execute(
             select(TestBot)
             .where(
-                TestBot.id == max_bot_ids[0],
+                TestBot.id == min_bot_ids[0],
                 TestBot.min_timeframe_asset_volatility.is_not(None),
             )
         )
@@ -415,34 +408,20 @@ async def set_profitable_bots_for_copy_bots(stop_event):
                     first_run_completed = True
 
                     result = await session.execute(
-                        select(distinct(TestBot.copy_bot_max_time_profitability_min))
-                        .where(
-                            TestBot.copy_bot_min_time_profitability_min.is_not(None),
-                            TestBot.copy_bot_max_time_profitability_min.is_not(None),
-                        )
-                    )
-                    unique_values = result.scalars().all()
-                    timeframes_max = list(unique_values)
-
-                    result = await session.execute(
                         select(distinct(TestBot.copy_bot_min_time_profitability_min))
                         .where(
-                            TestBot.copy_bot_min_time_profitability_min.is_not(None),
-                            TestBot.copy_bot_max_time_profitability_min.is_not(None),
+                            TestBot.copy_bot_min_time_profitability_min.is_not(None)
                         )
                     )
                     unique_values = result.scalars().all()
-                    timeframes_min = list(unique_values)
-
-                    bot_profitability_timeframes = list(set(timeframes_max + timeframes_min))
+                    bot_profitability_timeframes = list(unique_values)
 
                 tf_bot_ids = await get_profitable_bots_id_by_tf(session, bot_profitability_timeframes)
 
                 bots = await session.execute(
                     select(TestBot)
                     .where(
-                        TestBot.copy_bot_min_time_profitability_min.is_not(None),
-                        TestBot.copy_bot_max_time_profitability_min.is_not(None),
+                        TestBot.copy_bot_min_time_profitability_min.is_not(None)
                     )
                 )
                 bots = bots.scalars().all()
@@ -451,7 +430,6 @@ async def set_profitable_bots_for_copy_bots(stop_event):
                     refer_bot_dict = await get_bot_config_by_params(
                         session,
                         tf_bot_ids,
-                        bot.copy_bot_max_time_profitability_min,
                         bot.copy_bot_min_time_profitability_min
                     )
                     await redis.set(f"copy_bot_{bot.id}", json.dumps(refer_bot_dict))
