@@ -30,10 +30,9 @@
 git clone https://github.com/your-username/marketmaker-orderflow.git
 cd marketmaker-orderflow
 cp .env.example .env
-docker-compose up --build
+./run.sh start
 
-docker exec -it orderflow_general python -m app.scripts.seed_binance_data
-docker exec -it orderflow_general python -m app.scripts.seed_watched_pairs_usdt
+./run.sh init
 ```
 > ⚠️ **Перед запуском необходимо указать в `.env` данные API и параметры стратегии.**
 
