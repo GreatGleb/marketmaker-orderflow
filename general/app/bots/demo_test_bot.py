@@ -51,12 +51,12 @@ def calculate_take_profit_price(bot_config, tick_size, open_price, trade_type):
     if trade_type == TradeType.BUY:
         commission_open_cost = 1 + COMMISSION_OPEN
         commission_close_cost = 1 - COMMISSION_CLOSE
-        base_take_profit = open_price * commission_open_cost + desired_net_profit_value
+        base_take_profit = open_price * commission_open_cost - desired_net_profit_value
         take_profit_price = base_take_profit / commission_close_cost
     else:
         commission_open_cost = 1 - COMMISSION_OPEN
         commission_close_cost = 1 + COMMISSION_CLOSE
-        base_take_profit = open_price * commission_open_cost - desired_net_profit_value
+        base_take_profit = open_price * commission_open_cost + desired_net_profit_value
         take_profit_price = base_take_profit / commission_close_cost
 
     take_profit_price = take_profit_price.quantize(tick_size, rounding=ROUND_HALF_UP)
@@ -140,9 +140,11 @@ async def simulate_bot(session, redis, bot_config: TestBot, shared_data, stop_ev
             return False
 
         open_price = entry_price
+        priceFromPreviousStep = entry_price
         close_not_lose_price = calculate_close_not_lose_price(open_price, trade_type)
         stop_loss_price = calculate_stop_lose_price(bot_config, tick_size, open_price, trade_type)
-        take_profit_price = calculate_take_profit_price(bot_config, tick_size, open_price, trade_type)
+        original_take_profit_price = calculate_take_profit_price(bot_config, tick_size, open_price, trade_type)
+        take_profit_price = original_take_profit_price
 
         # print(
         #     f"🔎 Бот {bot_config.id} | {trade_type} | Вход: {open_price:.4f} | "
@@ -161,38 +163,35 @@ async def simulate_bot(session, redis, bot_config: TestBot, shared_data, stop_ev
             updated_price = await get_price_from_redis(redis, symbol)
             new_tk_p = calculate_take_profit_price(bot_config, tick_size, updated_price, trade_type)
             new_sl_p = calculate_stop_lose_price(bot_config, tick_size, updated_price, trade_type)
-            itWasHigher_tk = False
 
             if trade_type == TradeType.BUY:
-                if new_tk_p > take_profit_price:
+                if priceFromPreviousStep > updated_price and new_tk_p > take_profit_price:
                     take_profit_price = new_tk_p
-                if updated_price > take_profit_price:
-                    itWasHigher_tk = True
                 elif new_sl_p > order.stop_loss_price:
                     order.stop_loss_price = new_sl_p
                 if updated_price <= order.stop_loss_price:
                     order.stop_reason_event = 'stop-losed'
                     # print(f"Бот {bot_config.id} | 📉⛔ BUY order closed by STOP-LOSE at {updated_price}")
                     break
-                if itWasHigher_tk and updated_price > close_not_lose_price and updated_price <= take_profit_price:
+                if updated_price > close_not_lose_price and updated_price <= take_profit_price:
                     order.stop_reason_event = 'stop-won'
                     print(f"Бот {bot_config.id} | 📈✅ BUY order closed by STOP-WIN at {updated_price}, Take profit: {take_profit_price}")
                     break
             else:
-                if new_tk_p < take_profit_price:
+                if priceFromPreviousStep < updated_price and new_tk_p < take_profit_price:
                     take_profit_price = new_tk_p
-                if updated_price < take_profit_price:
-                    itWasHigher_tk = True
                 elif new_sl_p < order.stop_loss_price:
                     order.stop_loss_price = new_sl_p
                 if updated_price >= order.stop_loss_price:
                     order.stop_reason_event = 'stop-losed'
                     # print(f"Бот {bot_config.id} | 📉⛔ SELL order closed by STOP-LOSE at {updated_price}")
                     break
-                if itWasHigher_tk and updated_price < close_not_lose_price and updated_price >= take_profit_price:
+                if updated_price < close_not_lose_price and updated_price >= take_profit_price:
                     order.stop_reason_event = 'stop-won'
                     print(f"Бот {bot_config.id} | 📈✅ SELL order closed by STOP-WIN at {updated_price}, Take profit: {take_profit_price}")
                     break
+
+            priceFromPreviousStep = updated_price
 
             await asyncio.sleep(0.1)
 
