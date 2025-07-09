@@ -303,6 +303,10 @@ async def set_volatile_pairs(stop_event):
                     asset_volatility_timeframes = list(unique_values)
                     first_run_completed = True
 
+                most_volatile = None
+                tf = None
+                symbol = None
+
                 for tf in asset_volatility_timeframes:
                     tf = float(tf)
                     now = datetime.now(UTC)
@@ -317,7 +321,7 @@ async def set_volatile_pairs(stop_event):
                         symbol = most_volatile.symbol
                         await redis.set(f"most_volatile_symbol_{tf}", symbol)
 
-                if most_volatile:
+                if most_volatile and tf and symbol:
                     print(f"most_volatile_symbol_{tf} updated: {symbol}")
 
                 await asyncio.sleep(30)
