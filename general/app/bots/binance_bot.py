@@ -199,7 +199,7 @@ async def creating_orders_bot(session, redis, shared_data, stop_event):
             new_sl_p = calculate_stop_lose_price(bot_config, tick_size, updated_price, trade_type)
 
             if trade_type == TradeType.BUY:
-                if priceFromPreviousStep > updated_price and new_tk_p > take_profit_price:
+                if priceFromPreviousStep < updated_price and new_tk_p > take_profit_price:
                     take_profit_price = new_tk_p
                 elif new_sl_p > order.stop_loss_price:
                     order.stop_loss_price = new_sl_p
@@ -212,7 +212,7 @@ async def creating_orders_bot(session, redis, shared_data, stop_event):
                     print(f"Бот {bot_config.id} | 📈✅ BUY order closed by STOP-WIN at {updated_price}, Take profit: {take_profit_price}")
                     break
             else:
-                if priceFromPreviousStep < updated_price and new_tk_p < take_profit_price:
+                if priceFromPreviousStep > updated_price and new_tk_p < take_profit_price:
                     take_profit_price = new_tk_p
                 elif new_sl_p < order.stop_loss_price:
                     order.stop_loss_price = new_sl_p
