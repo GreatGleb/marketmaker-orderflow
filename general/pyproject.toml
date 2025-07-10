@@ -17,6 +17,7 @@ sqlalchemy = {extras = ["asyncio", "greenlet"], version = "^2.0.40"}
 httpx = "^0.28.1"
 websocket = "^0.2.1"
 celery = "^5.5.3"
+python-binance = "^1.0.29"
 
 
 [tool.poetry.group.dev.dependencies]
