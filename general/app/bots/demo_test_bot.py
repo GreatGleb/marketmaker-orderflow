@@ -127,7 +127,7 @@ async def simulate_bot(session, redis, bot_config: TestBot, shared_data, stop_ev
         timeoutOccurred = False
 
         try:
-            timeout = bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes * 60
+            timeout = int(bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes * 60)
 
             trade_type, entry_price = await asyncio.wait_for(
                 _wait_for_entry_price(
