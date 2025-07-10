@@ -349,10 +349,6 @@ async def get_profitable_bots_id_by_tf(session, bot_profitability_timeframes):
 async def get_bot_config_by_params(session, tf_bot_ids, copy_bot_min_time_profitability_min):
     min_bot_ids = tf_bot_ids[copy_bot_min_time_profitability_min]
 
-    # tf_time_set = set(tf_bot_ids['time'])
-    min_bot_set = set(min_bot_ids)
-    min_bot_ids = list(min_bot_set)
-
     if min_bot_ids:
         refer_bot = await session.execute(
             select(TestBot)
@@ -416,6 +412,7 @@ async def set_profitable_bots_for_copy_bots(stop_event):
                         tf_bot_ids,
                         bot.copy_bot_min_time_profitability_min
                     )
+
                     await redis.set(f"copy_bot_{bot.id}", json.dumps(refer_bot_dict))
 
                 await asyncio.sleep(30)
