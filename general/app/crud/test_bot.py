@@ -29,7 +29,16 @@ class TestBotCrud(BaseCrud[TestBot]):
         await self.session.execute(stmt)
 
     async def get_sorted_by_profit(self, since = None, just_copy_bots = False, just_not_copy_bots = False):
-        bots = await self.get_active_bots()
+        active_bots_subquery = select(TestBot.id).where(TestBot.is_active == True)
+
+        if just_copy_bots:
+            active_bots_subquery = active_bots_subquery.where(
+                TestBot.copy_bot_min_time_profitability_min.is_not(None)
+            )
+        elif just_not_copy_bots:
+            active_bots_subquery = active_bots_subquery.where(
+                TestBot.copy_bot_min_time_profitability_min.is_(None)
+            )
 
         profits_query = select(
             TestOrder.bot_id,
@@ -37,7 +46,7 @@ class TestBotCrud(BaseCrud[TestBot]):
             func.count(TestOrder.id).label('total_orders'),
             func.sum(case((TestOrder.profit_loss > 0, 1), else_=0)).label('successful_orders')
         ).where(
-            TestOrder.bot_id.in_([bot.id for bot in bots])
+            TestOrder.bot_id.in_(active_bots_subquery)
         )
 
         if since is not None:
@@ -47,17 +56,7 @@ class TestBotCrud(BaseCrud[TestBot]):
 
             profits_query = profits_query.where(TestOrder.created_at >= time_ago)
 
-        if just_copy_bots:
-            profits_query = profits_query.where(
-                TestBot.copy_bot_min_time_profitability_min.is_not(None),
-            )
-        elif just_not_copy_bots:
-            profits_query = profits_query.where(
-                TestBot.copy_bot_min_time_profitability_min.is_(None),
-            )
-
         profits_query = profits_query.group_by(TestOrder.bot_id)
-
         profits_data = (await self.session.execute(profits_query)).all()
 
         return profits_data
