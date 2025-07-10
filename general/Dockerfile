@@ -14,22 +14,16 @@ ENV PYTHONFAULTHANDLER=1 \
 
 EXPOSE 8000
 
-RUN apt-get update \
-    # Cleaning cache:  \
-  && apt-get autoremove -y && apt-get clean -y && rm -rf /var/lib/apt/lists/* \
-  # Installing `poetry` package manager:
-  # https://github.com/python-poetry/poetry
-  && pip install idna "poetry==$POETRY_VERSION" && poetry --version
+RUN pip install idna "poetry==$POETRY_VERSION" && poetry --version
 
 RUN mkdir -p /opt/services/app/src
 WORKDIR /opt/services/app/src
 
-COPY . /opt/services/app/src
-COPY ./boot.sh /boot.sh
+COPY pyproject.toml poetry.lock* ./
 
 RUN poetry config installer.max-workers 10
-
-# Project initialization:
 RUN poetry install
 
-RUN chmod +x /boot.sh
+COPY . .
+
+RUN chmod +x boot.sh
