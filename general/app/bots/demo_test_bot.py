@@ -97,6 +97,7 @@ async def simulate_bot(session, redis, bot_config: TestBot, shared_data, stop_ev
         bot_config.stop_loss_ticks = refer_bot['stop_loss_ticks']
         bot_config.start_updown_ticks = refer_bot['start_updown_ticks']
         bot_config.min_timeframe_asset_volatility = refer_bot['min_timeframe_asset_volatility']
+        bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes = refer_bot['time_to_wait_for_entry_price_to_open_order_in_minutes']
 
     symbol = await redis.get(f"most_volatile_symbol_{bot_config.min_timeframe_asset_volatility}")
     # symbol = bot_config.symbol
@@ -126,11 +127,13 @@ async def simulate_bot(session, redis, bot_config: TestBot, shared_data, stop_ev
         timeoutOccurred = False
 
         try:
+            timeout = bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes * 60
+
             trade_type, entry_price = await asyncio.wait_for(
                 _wait_for_entry_price(
                     redis, symbol, entry_price_buy, entry_price_sell
                 ),
-                timeout=30
+                timeout=timeout
             )
         except asyncio.TimeoutError:
             timeoutOccurred = True
@@ -367,7 +370,8 @@ async def get_bot_config_by_params(session, tf_bot_ids, copy_bot_min_time_profit
                 'stop_success_ticks': refer_bot.stop_success_ticks,
                 'stop_loss_ticks': refer_bot.stop_loss_ticks,
                 'start_updown_ticks': refer_bot.start_updown_ticks,
-                'min_timeframe_asset_volatility': float(refer_bot.min_timeframe_asset_volatility)
+                'min_timeframe_asset_volatility': float(refer_bot.min_timeframe_asset_volatility),
+                'time_to_wait_for_entry_price_to_open_order_in_minutes': float(refer_bot.time_to_wait_for_entry_price_to_open_order_in_minutes)
             }
         else:
             refer_bot_dict = None

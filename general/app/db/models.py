@@ -467,3 +467,9 @@ class TestBot(BaseId):
         nullable=True,
         comment="For copy bot the minimum time it takes for the original bot being monitored to be profitable",
     )
+
+    time_to_wait_for_entry_price_to_open_order_in_minutes: Mapped[float] = mapped_column(
+        types.Numeric(precision=10, scale=2),
+        nullable=True,
+        comment="The maximum duration (in minutes) a bot will wait for the entry price to be reached before attempting to open an order",
+    )

@@ -5,6 +5,11 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from sqlalchemy import distinct, select
 import json
+from dotenv import load_dotenv
+import os
+
+from binance.client import Client
+from binance.enums import *
 
 from app.crud.asset_history import AssetHistoryCrud
 from app.crud.exchange_pair_spec import AssetExchangeSpecCrud
@@ -15,6 +20,7 @@ from app.config import settings
 from app.db.models import TestBot, TestOrder
 from app.dependencies import redis_context
 
+load_dotenv()
 UTC = timezone.utc
 COMMISSION_OPEN  = Decimal("0.0005")# 0.0002
 COMMISSION_CLOSE = Decimal("0.0005")
@@ -107,7 +113,7 @@ async def get_copy_bot_tf_params(session):
 
     return copy_bot_min_time_profitability_min
 
-async def creating_orders_bot(session, redis, shared_data, stop_event):
+async def creating_orders_bot(session, redis, shared_data, client, stop_event):
     copy_bot_min_time_profitability_min = get_copy_bot_tf_params(session)
 
     tf_bot_ids = await get_profitable_bots_id_by_tf(session, [copy_bot_min_time_profitability_min])
@@ -126,6 +132,7 @@ async def creating_orders_bot(session, redis, shared_data, stop_event):
         stop_loss_ticks = refer_bot['stop_loss_ticks'],
         start_updown_ticks = refer_bot['start_updown_ticks'],
         min_timeframe_asset_volatility = refer_bot['min_timeframe_asset_volatility'],
+        time_to_wait_for_entry_price_to_open_order_in_minutes = refer_bot['time_to_wait_for_entry_price_to_open_order_in_minutes']
     )
 
     symbol = await redis.get(f"most_volatile_symbol_{bot_config.min_timeframe_asset_volatility}")
@@ -156,11 +163,13 @@ async def creating_orders_bot(session, redis, shared_data, stop_event):
         timeoutOccurred = False
 
         try:
+            timeout = bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes * 60
+
             trade_type, entry_price = await asyncio.wait_for(
                 _wait_for_entry_price(
                     redis, symbol, entry_price_buy, entry_price_sell
                 ),
-                timeout=30
+                timeout=timeout
             )
         except asyncio.TimeoutError:
             timeoutOccurred = True
@@ -292,6 +301,12 @@ async def launch_bot(stop_event):
                 ),
             }
 
+    api_key = os.getenv("api_key_testnet")
+    api_secret = os.getenv("api_secret_testnet")
+
+    client = Client(api_key, api_secret, testnet=True)
+    client.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
+
     async with redis_context() as redis:
         tasks = []
         async def _run_loop():
@@ -302,6 +317,7 @@ async def launch_bot(stop_event):
                             session=session,
                             shared_data=shared_data,
                             redis=redis,
+                            client=client,
                             stop_event=stop_event,
                         )
                     except Exception as e:
@@ -394,7 +410,8 @@ async def get_bot_config_by_params(session, tf_bot_ids, copy_bot_min_time_profit
                 'stop_success_ticks': refer_bot.stop_success_ticks,
                 'stop_loss_ticks': refer_bot.stop_loss_ticks,
                 'start_updown_ticks': refer_bot.start_updown_ticks,
-                'min_timeframe_asset_volatility': float(refer_bot.min_timeframe_asset_volatility)
+                'min_timeframe_asset_volatility': float(refer_bot.min_timeframe_asset_volatility),
+                'time_to_wait_for_entry_price_to_open_order_in_minutes': float(refer_bot.time_to_wait_for_entry_price_to_open_order_in_minutes)
             }
         else:
             refer_bot_dict = None
