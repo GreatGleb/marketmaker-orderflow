@@ -59,3 +59,27 @@ class PriceCalculator:
         ) / commission_close_cost
 
         return close_not_lose_price
+
+    @staticmethod
+    def calculate_pnl(trade_type, balance, open_price, close_price):
+        pnl = Decimal("0.0")
+
+        amount = Decimal(balance) / Decimal(open_price)
+        commission_open = amount * open_price * COMMISSION_OPEN
+        commission_close = amount * close_price * COMMISSION_CLOSE
+        total_commission = commission_open + commission_close
+
+        if trade_type == TradeType.BUY:
+            pnl = (
+                (amount * close_price)
+                - (amount * open_price)
+                - total_commission
+            )
+        elif trade_type == TradeType.SELL:
+            pnl = (
+                (amount * open_price)
+                - (amount * close_price)
+                - total_commission
+            )
+
+        return pnl

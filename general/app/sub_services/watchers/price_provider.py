@@ -1,7 +1,7 @@
 import asyncio
 from decimal import Decimal
 
-from general.app.enums.trade_type import TradeType
+from app.enums.trade_type import TradeType
 
 
 class PriceProvider:
