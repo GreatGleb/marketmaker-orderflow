@@ -61,23 +61,33 @@ async def save_filtered_assets(session: AsyncSession, redis, data: list[dict]):
 
 
 async def run_websocket_listener():
-    async with websockets.connect(WS_URL) as websocket:
-        dsm = DatabaseSessionManager.create(settings.DB_URL)
-        async with dsm.get_session() as session:
-            while True:
-                try:
-                    async with redis_context() as redis:
-                        message = await websocket.recv()
-                        data = json.loads(message)
-                        if isinstance(data, list):
-                            await save_filtered_assets(
-                                session,
-                                redis,
-                                data,
-                            )
-                except Exception as e:
-                    print(f"❌ Error: {e}")
-                    await asyncio.sleep(3)
+    dsm = DatabaseSessionManager.create(settings.DB_URL)
+    async with dsm.get_session() as session:
+        while True:
+            try:
+                print("Attempting to connect to WebSocket...")
+                async with websockets.connect(WS_URL) as ws:
+                    websocket = ws
+                    print("✅ WebSocket connected.")
+
+                    while True:
+                        async with redis_context() as redis:
+                            message = await websocket.recv()
+                            data = json.loads(message)
+                            if isinstance(data, list):
+                                await save_filtered_assets(
+                                    session,
+                                    redis,
+                                    data,
+                                )
+            except websockets.exceptions.ConnectionClosedOK:
+                print("⚠️ WebSocket connection closed gracefully. Reconnecting...")
+            except websockets.exceptions.ConnectionClosedError as e:
+                print(f"❌ WebSocket connection closed with error: {e}. Reconnecting...")
+            except Exception as e:
+                print(f"❌ General error: {e}. Reconnecting...")
+            finally:
+                await asyncio.sleep(3)
 
 
 if __name__ == "__main__":
