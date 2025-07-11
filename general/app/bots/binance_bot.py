@@ -12,7 +12,7 @@ import math
 
 from binance.client import Client
 from binance.enums import *
-from binance.helpers import round_step_size
+from binance.exceptions import BinanceAPIException
 
 from app.crud.asset_history import AssetHistoryCrud
 from app.crud.exchange_pair_spec import AssetExchangeSpecCrud
@@ -121,22 +121,20 @@ async def get_copy_bot_tf_params(session):
 
     return copy_bot_min_time_profitability_min
 
-def round_step(quantity, step_size):
-    precision = int(round(-math.log10(step_size), 0))
-    return float(round(quantity, precision))
+def get_precision_by_tick_size(tick_size):
+    precision = int(round(-math.log10(tick_size), 0))
+    return precision
 
-def calculate_quantity_for_usdt(usdt_amount: float, price: float, step_size: float):
-    raw_quantity = usdt_amount / price
-    return round_step_size(raw_quantity, step_size)
+def calculate_quantity_for_order(amount: Decimal, price: Decimal, lot_size: Decimal):
+    raw_quantity = amount / price
+    return round_price_for_order(raw_quantity, lot_size)
 
-def get_binance_timestamp(client):
-    server_time = client.futures_time()['serverTime']
-    local_time = int(time.time() * 1000)
-    binance_time_offset = server_time - local_time
+def round_price_for_order(price: Decimal, tick_size: Decimal):
+    precision = get_precision_by_tick_size(tick_size)
+    rounded_price = f"{price:.{precision}f}"
+    return rounded_price
 
-    return int(time.time() * 1000 + binance_time_offset)
-
-async def creating_orders_bot(session, redis, shared_data, client, stop_event):
+async def creating_orders_bot(session, redis, symbols_characteristics, client, stop_event):
     print('start function creating_orders_bot')
     copy_bot_min_time_profitability_min = await get_copy_bot_tf_params(session)
     print('finished get_copy_bot_tf_params')
@@ -166,112 +164,126 @@ async def creating_orders_bot(session, redis, shared_data, client, stop_event):
 
     symbol = await redis.get(f"most_volatile_symbol_{bot_config.min_timeframe_asset_volatility}")
 
-    symbol = '1000WHYUSDT'
-    # symbol = bot_config.symbol
-    data = shared_data.get(symbol)
-
-    if not data:
-        # print(f"❌ Нет данных по символу {symbol}")
+    try:
+        symbol_characteristics = symbols_characteristics.get(symbol)
+        tick_size = symbol_characteristics['price']['tickSize']
+        max_price = symbol_characteristics['price']['maxPrice']
+        min_price = symbol_characteristics['price']['minPrice']
+        lot_size = symbol_characteristics['lot_size']['stepSize']
+        max_qty = symbol_characteristics['lot_size']['maxQty']
+        min_qty = symbol_characteristics['lot_size']['minQty']
+    except:
+        print(f"❌ Ошибка при получении symbol_characteristics по {symbol}")
         return
 
-    tick_size = data["tick_size"]
+    if not tick_size or not max_price or not min_price or not lot_size or not min_qty or not max_qty:
+        print(f"❌ Нет symbol_characteristics по {symbol}")
+        return
 
     print(f'current symbol: {symbol}')
 
     try:
-        client.futures_change_margin_type(symbol=symbol, marginType='ISOLATED')
+        await safe_from_time_err_call_binance(
+            client.futures_change_margin_type,
+            symbol=symbol, marginType='ISOLATED'
+        )
     except:
         pass
 
-    position_info = client.futures_account()
-    # Запись в файл JSON
-    file_name = "position_info.json"
-    with open(file_name, 'w', encoding='utf-8') as f:
-        json.dump(position_info, f, ensure_ascii=False, indent=4)
-
-
     print('start get balance')
 
-    balance = client.futures_account_balance()
+    balance = await safe_from_time_err_call_binance(
+            client.futures_account_balance
+    )
     print('finish get balance')
     balanceUSDT = 0
 
     for accountAlias in balance:
         if accountAlias['asset'] == 'USDT':
-            balanceUSDT = float(accountAlias['balance'])
+            balanceUSDT = Decimal(accountAlias['balance'])
 
     if not balanceUSDT:
         return
 
-    if balanceUSDT > 1000:
-        balanceUSDT = 1000
+    if balanceUSDT > 10:
+        balanceUSDT = 10
 
-    balanceUSDT099 = balanceUSDT * float(0.99)
+    balanceUSDT099 = balanceUSDT * Decimal(0.99)
 
-    initial_price = await get_price_from_redis(redis, symbol)
-    # ticker = client.futures_symbol_ticker(symbol=symbol)
-    # current_price = float(ticker['price'])
-    ticker_mark = client.futures_mark_price(symbol=symbol)
-
-    entry_price_buy = float(
-        initial_price + bot_config.start_updown_ticks * tick_size
+    futures_mark_price = await safe_from_time_err_call_binance(
+        client.futures_mark_price,
+        symbol=symbol
     )
-    entry_price_sell = float(
-        initial_price - bot_config.start_updown_ticks * tick_size
-    )
+    initial_price = Decimal(futures_mark_price['markPrice'])
 
-    stepsize = str(tick_size)
-    tick_size = float(tick_size)
+    entry_price_buy = initial_price + bot_config.start_updown_ticks * tick_size
+    entry_price_buy_str = round_price_for_order(price=entry_price_buy, tick_size=tick_size)
 
-    quantityOrder_buy = calculate_quantity_for_usdt(usdt_amount=balanceUSDT099, price=entry_price_buy, step_size=tick_size)
-    quantityOrder_sell = calculate_quantity_for_usdt(usdt_amount=balanceUSDT099, price=entry_price_sell, step_size=tick_size)
+    entry_price_sell = initial_price - bot_config.start_updown_ticks * tick_size
+    entry_price_sell_str = round_price_for_order(price=entry_price_sell, tick_size=tick_size)
 
-    quantityOrder_buy = int(quantityOrder_buy)
-    quantityOrder_sell = int(quantityOrder_sell)
+    if any([
+        entry_price_buy > max_price,
+        entry_price_buy < min_price,
+        entry_price_sell > max_price,
+        entry_price_sell < min_price
+    ]):
+        print(f'Price bigger or less then maximums for {symbol}')
+        return
 
-    entry_price_buy = round(entry_price_buy, 7)
-    entry_price_buy = f"{entry_price_buy:.7f}"
-    entry_price_sell = round(entry_price_sell, 7)
-    entry_price_sell = f"{entry_price_sell:.7f}"
+
+    quantityOrder_buy_str = calculate_quantity_for_order(amount=balanceUSDT099, price=entry_price_buy, lot_size=lot_size)
+    quantityOrder_sell_str = calculate_quantity_for_order(amount=balanceUSDT099, price=entry_price_sell, lot_size=lot_size)
+
+    if any([
+        Decimal(quantityOrder_buy_str) > max_qty,
+        Decimal(quantityOrder_buy_str) < min_qty,
+        Decimal(quantityOrder_sell_str) > max_qty,
+        Decimal(quantityOrder_sell_str) < min_qty
+    ]):
+        print(f'Quantity bigger or less then maximums for {symbol}')
+        return
 
     print(
         f"balanceUSDT: {balanceUSDT}\n"
         f"symbol: {symbol}\n"
         f"bot_config.start_updown_ticks: {bot_config.start_updown_ticks}\n"
-        f"binc ticker_mark: {ticker_mark}\n"
+        f"futures_mark_price: {futures_mark_price}\n"
         f"initial_price: {initial_price}\n"
-        f"entry_price_buy: {entry_price_buy}\n"
-        f"entry_price_sell: {entry_price_sell}\n"
-        f"quantityOrder_buy: {quantityOrder_buy}\n"
-        f"quantityOrder_sell: {quantityOrder_sell}\n"
-        f"step size: {stepsize}\n"
+        f"entry_price_buy: {entry_price_buy_str}\n"
+        f"entry_price_sell: {entry_price_sell_str}\n"
+        f"quantityOrder_buy: {quantityOrder_buy_str}\n"
+        f"quantityOrder_sell: {quantityOrder_sell_str}\n"
+        f"step size: {str(tick_size)}\n"
     )
 
-    newClientOrderId1 = 'order_1'
-    newClientOrderId2 = 'order_2'
+    newOrderId1 = 'order_1'
+    newOrderId2 = 'order_2'
 
-    # order_buy = client.futures_create_order(
-    #     symbol=symbol,
-    #     side=SIDE_BUY,
-    #     positionSide="LONG",
-    #     type=FUTURE_ORDER_TYPE_STOP_MARKET,
-    #     quantity=quantityOrder_buy,
-    #     stopPrice=entry_price_buy,
-    #     newClientOrderId=newClientOrderId1,
-    #     workingType="MARK_PRICE",
-    #     priceProtect=True,
-    #     newOrderRespType="RESULT",
-    #     recvWindow=3000,
-    # )
+    order_buy = await safe_from_time_err_call_binance(
+        client.futures_create_order,
+        symbol=symbol,
+        side=SIDE_BUY,
+        positionSide="LONG",
+        type=FUTURE_ORDER_TYPE_STOP_MARKET,
+        quantity=quantityOrder_buy_str,
+        stopPrice=entry_price_buy_str,
+        # newClientOrderId=newOrderId1,
+        workingType="MARK_PRICE",
+        priceProtect=True,
+        newOrderRespType="RESULT",
+        recvWindow=3000,
+    )
 
-    order_sell = client.futures_create_order(
+    order_sell = await safe_from_time_err_call_binance(
+        client.futures_create_order,
         symbol=symbol,
         side=SIDE_SELL,
         positionSide="SHORT",
         type=FUTURE_ORDER_TYPE_STOP_MARKET,
-        quantity=quantityOrder_sell,
-        stopPrice=entry_price_sell,
-        newClientOrderId=newClientOrderId2,
+        quantity=quantityOrder_sell_str,
+        stopPrice=entry_price_sell_str,
+        # newClientOrderId=newOrderId2,
         workingType="MARK_PRICE",
         priceProtect=True,
         newOrderRespType="RESULT",
@@ -279,7 +291,7 @@ async def creating_orders_bot(session, redis, shared_data, client, stop_event):
     )
 
     print(
-        # f"order_buy: {order_buy}\n"
+        f"order_buy: {order_buy}\n"
         f"order_sell: {order_sell}\n"
     )
 
@@ -409,29 +421,13 @@ async def creating_orders_bot(session, redis, shared_data, client, stop_event):
 
 async def launch_bot(stop_event):
     dsm = DatabaseSessionManager.create(settings.DB_URL)
-    shared_data = {}
+    symbols_characteristics = {}
 
     print('getting tick_size data')
 
     async with dsm.get_session() as session:
-        bot_crud = TestBotCrud(session)
-        active_bots = await bot_crud.get_active_bots()
         exchange_crud = AssetExchangeSpecCrud(session)
-
-        asset_crud = AssetHistoryCrud(session)
-        # symbols = {active_bot.symbol for active_bot in active_bots}
-        symbols = await asset_crud.get_all_active_pairs()
-
-        for symbol in symbols:
-            step_sizes = await exchange_crud.get_step_size_by_symbol(symbol)
-            shared_data[symbol] = {
-                # "order_book": order_book,
-                "tick_size": (
-                    Decimal(str(step_sizes.get("tick_size")))
-                    if step_sizes
-                    else None
-                ),
-            }
+        symbols_characteristics = await exchange_crud.get_symbols_characteristics_from_active_pairs()
 
     print('creating binance client')
 
@@ -440,19 +436,17 @@ async def launch_bot(stop_event):
 
     client = Client(api_key, api_secret, testnet=True)
     client.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
-    mode = client.futures_get_position_mode()
-    if not mode:
-        try:
-            client.futures_change_position_mode(
-                dualSidePosition=True
-            )
-        except:
-            pass
 
-    mode = client.futures_get_position_mode()
-    if not mode:
-        print('can\'t set hadge mode')
+    if not await check_and_set_dual_mode(client):
+        print('Mod not dual side position, can\'t to create new orders!')
         return
+
+
+    # position_info = client.futures_account()
+    # # Запись в файл JSON
+    # file_name = "position_info.json"
+    # with open(file_name, 'w', encoding='utf-8') as f:
+    #     json.dump(position_info, f, ensure_ascii=False, indent=4)
 
     print('finished creating binance client')
 
@@ -465,7 +459,7 @@ async def launch_bot(stop_event):
                 print('before creating orders')
                 await creating_orders_bot(
                     session=session,
-                    shared_data=shared_data,
+                    symbols_characteristics=symbols_characteristics,
                     redis=redis,
                     client=client,
                     stop_event=stop_event,
@@ -476,6 +470,39 @@ async def launch_bot(stop_event):
 
         tasks.append(asyncio.create_task(_run_loop()))
         await asyncio.gather(*tasks)
+
+async def check_and_set_dual_mode(client):
+    try:
+        mode = await safe_from_time_err_call_binance(
+            client.futures_get_position_mode
+        )
+
+        if not mode['dualSidePosition']:
+            await safe_from_time_err_call_binance(
+                client.futures_change_position_mode,
+                dualSidePosition=True
+            )
+
+        mode = await safe_from_time_err_call_binance(
+            client.futures_get_position_mode
+        )
+
+        return mode['dualSidePosition']
+    except:
+        return False
+
+async def safe_from_time_err_call_binance(func, *args, max_retries=20, retry_delay=1, **kwargs):
+    for attempt in range(1, max_retries + 1):
+        try:
+            return func(*args, **kwargs)
+        except BinanceAPIException as e:
+            if e.code == -1021:
+                print(f"Try {attempt}/{max_retries}: Error Binance API: {e}")
+                if attempt == max_retries:
+                    raise
+                time.sleep(retry_delay)
+            else:
+                raise
 
 async def set_volatile_pairs(stop_event):
     dsm = DatabaseSessionManager.create(settings.DB_URL)
