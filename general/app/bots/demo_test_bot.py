@@ -84,21 +84,24 @@ def calculate_close_not_lose_price(open_price, trade_type):
 
     return close_not_lose_price
 
+async def _update_config_from_referral_bot(bot_config: TestBot, redis) -> bool:
+    refer_bot_js = await redis.get(f"copy_bot_{bot_config.id}")
+    refer_bot = json.loads(refer_bot_js) if refer_bot_js else None
+
+    if not refer_bot:
+        print(f"❌ Не удалось найти реферального бота для ID: {bot_config.id}")
+        return False
+
+    bot_config.symbol = refer_bot['symbol']
+    bot_config.stop_success_ticks = refer_bot['stop_success_ticks']
+    bot_config.stop_loss_ticks = refer_bot['stop_loss_ticks']
+    bot_config.start_updown_ticks = refer_bot['start_updown_ticks']
+    bot_config.min_timeframe_asset_volatility = refer_bot['min_timeframe_asset_volatility']
+    bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes = refer_bot['time_to_wait_for_entry_price_to_open_order_in_minutes']
+
+    return True
+
 async def simulate_bot(session, redis, bot_config: TestBot, shared_data, stop_event):
-    if bot_config.copy_bot_min_time_profitability_min:
-        refer_bot_js = await redis.get(f"copy_bot_{bot_config.id}")
-        refer_bot = json.loads(refer_bot_js)
-
-        if not refer_bot:
-            return
-
-        bot_config.symbol = refer_bot['symbol']
-        bot_config.stop_success_ticks = refer_bot['stop_success_ticks']
-        bot_config.stop_loss_ticks = refer_bot['stop_loss_ticks']
-        bot_config.start_updown_ticks = refer_bot['start_updown_ticks']
-        bot_config.min_timeframe_asset_volatility = refer_bot['min_timeframe_asset_volatility']
-        bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes = refer_bot['time_to_wait_for_entry_price_to_open_order_in_minutes']
-
     symbol = await redis.get(f"most_volatile_symbol_{bot_config.min_timeframe_asset_volatility}")
     # symbol = bot_config.symbol
     data = shared_data.get(symbol)
@@ -110,6 +113,11 @@ async def simulate_bot(session, redis, bot_config: TestBot, shared_data, stop_ev
     tick_size = data["tick_size"]
 
     while not stop_event.is_set():
+        if bot_config.copy_bot_min_time_profitability_min:
+            bot_config_updated = await _update_config_from_referral_bot(bot_config, redis)
+            if not bot_config_updated:
+                return
+
         initial_price = await get_price_from_redis(redis, symbol)
 
         entry_price_buy = (
