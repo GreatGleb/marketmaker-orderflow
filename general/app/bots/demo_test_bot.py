@@ -18,7 +18,12 @@ from app.crud.test_orders import TestOrderCrud
 from app.db.base import DatabaseSessionManager
 from app.config import settings
 from app.db.models import TestBot, TestOrder
-from app.dependencies import redis_context, get_session, get_redis
+from app.dependencies import (
+    redis_context,
+    get_session,
+    get_redis,
+    resolve_crud,
+)
 
 from app.constants.commissions import COMMISSION_OPEN, COMMISSION_CLOSE
 from app.sub_services.logic.market_setup import MarketDataBuilder
@@ -31,6 +36,28 @@ from app.utils import Command
 from app.sub_services.logic.exit_strategy import ExitStrategy
 
 UTC = timezone.utc
+
+
+async def _update_config_from_referral_bot(bot_config: TestBot, redis) -> bool:
+    refer_bot_js = await redis.get(f"copy_bot_{bot_config.id}")
+    refer_bot = json.loads(refer_bot_js) if refer_bot_js else None
+
+    if not refer_bot:
+        print(f"❌ Не удалось найти реферального бота для ID: {bot_config.id}")
+        return False
+
+    bot_config.symbol = refer_bot["symbol"]
+    bot_config.stop_success_ticks = refer_bot["stop_success_ticks"]
+    bot_config.stop_loss_ticks = refer_bot["stop_loss_ticks"]
+    bot_config.start_updown_ticks = refer_bot["start_updown_ticks"]
+    bot_config.min_timeframe_asset_volatility = refer_bot[
+        "min_timeframe_asset_volatility"
+    ]
+    bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes = (
+        refer_bot["time_to_wait_for_entry_price_to_open_order_in_minutes"]
+    )
+
+    return True
 
 
 async def set_volatile_pairs(stop_event):
@@ -207,6 +234,7 @@ class StartTestBotsCommand(Command):
 
     async def command(
         self,
+        order_crud: TestOrderCrud = resolve_crud(TestOrderCrud),
         session: AsyncSession = Depends(get_session),
         redis: Redis = Depends(get_redis),
     ):
@@ -228,12 +256,12 @@ class StartTestBotsCommand(Command):
                 while not self.stop_event.is_set():
                     try:
                         await self.simulate_bot(
-                            session=session,
                             bot_config=bot_config,
                             shared_data=shared_data,
                             redis=redis,
                             stop_event=self.stop_event,
                             price_provider=price_provider,
+                            order_crud=order_crud,
                         )
                     except Exception as e:
                         print(f"❌ Ошибка в боте {bot_config.id}: {e}")
@@ -245,12 +273,12 @@ class StartTestBotsCommand(Command):
 
     @staticmethod
     async def simulate_bot(
-        session,
         redis,
         bot_config: TestBot,
         shared_data,
         stop_event,
         price_provider,
+        order_crud,
     ):
 
         if bot_config.copy_bot_min_time_profitability_min:
@@ -282,6 +310,13 @@ class StartTestBotsCommand(Command):
         tick_size = data["tick_size"]
 
         while not stop_event.is_set():
+            if bot_config.copy_bot_min_time_profitability_min:
+                bot_config_updated = await _update_config_from_referral_bot(
+                    bot_config, redis
+                )
+                if not bot_config_updated:
+                    return
+
             initial_price = await price_provider.get_price(symbol=symbol)
 
             entry_price_buy = (
@@ -399,7 +434,7 @@ class StartTestBotsCommand(Command):
             )
 
             try:
-                await TestOrderCrud(session).create(
+                await order_crud.create(
                     {
                         "asset_symbol": symbol,
                         "order_type": trade_type,
@@ -421,7 +456,7 @@ class StartTestBotsCommand(Command):
                         "stop_reason_event": order.stop_reason_event,
                     }
                 )
-                await session.commit()
+                await order_crud.session.commit()
             except Exception as e:
                 print(f"❌ Ошибка при записи ордера бота {bot_config.id}: {e}")
 
