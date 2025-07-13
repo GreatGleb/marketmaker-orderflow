@@ -34,8 +34,8 @@ class PriceWatcher:
             current_price = await self.price_provider.get_price(symbol)
 
             if current_price >= entry_price_buy:
-                return TradeType.BUY, current_price
+                return TradeType.BUY.value, current_price
             elif current_price <= entry_price_sell:
-                return TradeType.SELL, current_price
+                return TradeType.SELL.value, current_price
 
             await asyncio.sleep(0.1)

@@ -453,7 +453,6 @@ class StartTestBotsCommand(Command):
                         "stop_reason_event": order.stop_reason_event,
                     }
                 )
-                await order_crud.session.commit()
             except Exception as e:
                 print(f"❌ Ошибка при записи ордера бота {bot_config.id}: {e}")
 
