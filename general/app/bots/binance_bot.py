@@ -295,6 +295,12 @@ async def creating_orders_bot(session, redis, symbols_characteristics, client, s
         f"order_sell: {order_sell}\n"
     )
 
+    # check each order, wait when it will filled one of orders 
+    # add model for market order
+    # create new db order of filled orders
+    # add new stops orders for stop lose, take profit
+    # wait for stop, update db order
+
     return
 
     print(
