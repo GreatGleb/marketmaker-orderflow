@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 from typing import Optional
@@ -13,12 +14,9 @@ class TestOrderCrud(BaseCrud[TestOrder]):
     def __init__(self, session: AsyncSession):
         super().__init__(session, TestOrder)
 
-    async def create(self, data: dict) -> TestOrder:
-        order = TestOrder(**data)
-        self.session.add(order)
-        await self.session.flush()
-        await self.session.commit()
-        return order
+    async def create(self, data: dict):
+        stmt = insert(TestOrder).values(data)
+        await self.session.execute(stmt)
 
     async def get_active_by_symbol(self, symbol: str) -> Optional[TestOrder]:
         stmt = (

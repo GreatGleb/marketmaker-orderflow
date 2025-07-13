@@ -295,7 +295,7 @@ class StartTestBotsCommand(Command):
             ]
 
         symbol = await redis.get(
-            f"most_volatile_symbol_{bot_config.min_timeframe_asset_volatility}"
+            f"most_volatile_symbol_{float(bot_config.min_timeframe_asset_volatility)}"
         )
         data = shared_data.get(symbol)
 
