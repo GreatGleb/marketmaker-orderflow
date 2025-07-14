@@ -14,6 +14,7 @@ from redis.asyncio import Redis
 from app.constants.order import ORDER_QUEUE_KEY
 from app.crud.asset_history import AssetHistoryCrud
 from app.crud.test_bot import TestBotCrud
+from app.crud.test_orders import TestOrderCrud
 from app.db.models import TestBot, TestOrder
 from app.dependencies import (
     get_session,
@@ -32,6 +33,53 @@ from app.utils import Command
 from app.sub_services.logic.exit_strategy import ExitStrategy
 
 UTC = timezone.utc
+
+
+class OrderBulkInsert(Command):
+
+    def __init__(self, stop_event):
+        super().__init__()
+        self.stop_event = stop_event
+
+    @staticmethod
+    def parse_datetime_fields(order, datetime_fields: list[str]) -> dict:
+        for field in datetime_fields:
+            if field in order and isinstance(order[field], str):
+                order[field] = datetime.fromisoformat(order[field])
+        return order
+
+    async def command(
+        self,
+        session: AsyncSession = Depends(get_session),
+        crud: TestOrderCrud = resolve_crud(TestOrderCrud),
+        redis: Redis = Depends(get_redis),
+    ):
+
+        orders = []
+        DATETIME_FIELDS = ["open_time", "close_time"]
+        BATCH_SIZE = 300
+
+        while not self.stop_event.is_set():
+            for _ in range(1000):
+                raw = await redis.lpop(ORDER_QUEUE_KEY)
+                if raw is None:
+                    break
+
+                try:
+                    order = json.loads(raw)
+                    order = self.parse_datetime_fields(order, DATETIME_FIELDS)
+                    orders.append(order)
+                except Exception as e:
+                    print(f"❌ Ошибка при обработке записи из Redis: {e}")
+
+            for i in range(0, len(orders), BATCH_SIZE):
+                batch = orders[i : i + BATCH_SIZE]
+                try:
+                    await crud.bulk_create(orders=batch)
+                except Exception as e:
+                    print(f"❌ Ошибка при вставке батча в БД: {e}")
+
+            await asyncio.sleep(30)
 
 
 class VolatilePair(Command):
@@ -472,6 +520,7 @@ async def main():
         VolatilePair(stop_event=stop_event).run_async(),
         ProfitableBotUpdater(stop_event=stop_event).run_async(),
         StartTestBotsCommand(stop_event=stop_event).run_async(),
+        OrderBulkInsert(stop_event=stop_event).run_async(),
     )
 
     print("✅ Все боты завершены.")
