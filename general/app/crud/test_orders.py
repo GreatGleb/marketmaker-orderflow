@@ -18,6 +18,11 @@ class TestOrderCrud(BaseCrud[TestOrder]):
         stmt = insert(TestOrder).values(data)
         await self.session.execute(stmt)
 
+    async def bulk_create(self, orders):
+        stmt = insert(TestOrder).values(orders)
+        await self.session.execute(stmt)
+        await self.session.commit()
+
     async def get_active_by_symbol(self, symbol: str) -> Optional[TestOrder]:
         stmt = (
             select(TestOrder)
