@@ -7,7 +7,6 @@ from app.config import settings
 from app.exceptions.tasks import TaskNeedsRetry
 from app.workers.order_book_cleanup import OrderBookCleaner
 from app.workers.clear_old_assets_history import ClearOldAssetsHistoryCommand
-from app.workers.order_bulk_create import OrderBulkInsert
 
 app = Celery("tasks", broker=settings.CELERY_BROKER)
 # app.conf.update(task_always_eager=True)
@@ -21,10 +20,6 @@ app.conf.beat_schedule = {
         "task": "app.tasks.clear_old_assets_history",
         "schedule": crontab(minute=0, hour=1),  # 01:00 UTC
     },
-    "saving-orders-to-the-database": {
-        "task": "app.tasks.bulk_insert_orders",
-        "schedule": crontab(minute="*"),
-    },
 }
 
 
@@ -36,11 +31,6 @@ def order_book_cleanup_collector(self):
 @app.task(bind=True, default_retry_delay=60, max_retries=3)
 def clear_old_assets_history(self):
     _run_task(self, ClearOldAssetsHistoryCommand, [], lambda x: 0)
-
-
-@app.task(bind=True, default_retry_delay=60, max_retries=3)
-def bulk_insert_orders(self):
-    _run_task(self, OrderBulkInsert, [], lambda x: 0)
 
 
 def get_countdown(retry: int) -> int:
