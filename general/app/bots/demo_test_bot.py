@@ -11,9 +11,9 @@ from fastapi import Depends
 
 from redis.asyncio import Redis
 
+from app.constants.order import ORDER_QUEUE_KEY
 from app.crud.asset_history import AssetHistoryCrud
 from app.crud.test_bot import TestBotCrud
-from app.crud.test_orders import TestOrderCrud
 from app.db.models import TestBot, TestOrder
 from app.dependencies import (
     get_session,
@@ -203,7 +203,6 @@ class StartTestBotsCommand(Command):
 
     async def command(
         self,
-        order_crud: TestOrderCrud = resolve_crud(TestOrderCrud),
         session: AsyncSession = Depends(get_session),
         redis: Redis = Depends(get_redis),
         bot_crud: TestBotCrud = resolve_crud(TestBotCrud),
@@ -230,7 +229,6 @@ class StartTestBotsCommand(Command):
                             redis=redis,
                             stop_event=self.stop_event,
                             price_provider=price_provider,
-                            order_crud=order_crud,
                         )
                     except Exception as e:
                         print(f"❌ Ошибка в боте {bot_config.id}: {e}")
@@ -266,6 +264,12 @@ class StartTestBotsCommand(Command):
 
         return True
 
+    @staticmethod
+    def json_serializer(obj):
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        raise TypeError(f"Type {type(obj)} not serializable")
+
     async def simulate_bot(
         self,
         redis,
@@ -273,7 +277,6 @@ class StartTestBotsCommand(Command):
         shared_data,
         stop_event,
         price_provider,
-        order_crud,
     ):
 
         if bot_config.copy_bot_min_time_profitability_min:
@@ -429,32 +432,31 @@ class StartTestBotsCommand(Command):
                 open_price=open_price,
                 trade_type=trade_type,
             )
-
-            try:
-                await order_crud.create(
-                    {
-                        "asset_symbol": symbol,
-                        "order_type": trade_type,
-                        "balance": balance,
-                        "open_price": open_price,
-                        "open_time": order.open_time,
-                        "open_fee": order.open_fee,
-                        "stop_loss_price": order.stop_loss_price,
-                        "bot_id": bot_config.id,
-                        "close_price": close_price,
-                        "close_time": datetime.now(UTC),
-                        "close_fee": order.open_price
-                        * Decimal(COMMISSION_CLOSE),
-                        "profit_loss": pnl,
-                        "is_active": False,
-                        "start_updown_ticks": bot_config.start_updown_ticks,
-                        "stop_loss_ticks": bot_config.stop_loss_ticks,
-                        "stop_success_ticks": bot_config.stop_success_ticks,
-                        "stop_reason_event": order.stop_reason_event,
-                    }
-                )
-            except Exception as e:
-                print(f"❌ Ошибка при записи ордера бота {bot_config.id}: {e}")
+            order_data = {
+                "asset_symbol": symbol,
+                "order_type": trade_type,
+                "balance": float(balance),
+                "open_price": float(open_price),
+                "open_time": order.open_time,
+                "open_fee": float(order.open_fee),
+                "stop_loss_price": float(order.stop_loss_price),
+                "bot_id": bot_config.id,
+                "close_price": float(close_price),
+                "close_time": datetime.now(UTC),
+                "close_fee": float(
+                    order.open_price * Decimal(COMMISSION_CLOSE)
+                ),
+                "profit_loss": float(pnl),
+                "is_active": False,
+                "start_updown_ticks": bot_config.start_updown_ticks,
+                "stop_loss_ticks": bot_config.stop_loss_ticks,
+                "stop_success_ticks": bot_config.stop_success_ticks,
+                "stop_reason_event": order.stop_reason_event,
+            }
+            await redis.rpush(
+                ORDER_QUEUE_KEY,
+                json.dumps(order_data, default=self.json_serializer),
+            )
 
 
 async def main():
