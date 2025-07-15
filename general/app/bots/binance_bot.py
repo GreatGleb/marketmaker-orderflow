@@ -135,6 +135,64 @@ def round_price_for_order(price: Decimal, tick_size: Decimal):
     rounded_price = f"{price:.{precision}f}"
     return rounded_price
 
+async def delete_order(
+        client, order
+):
+    try:
+        await safe_from_time_err_call_binance(
+            client.futures_cancel_order,
+            symbol=order['symbol'],
+            origClientOrderId=order['origClientOrderId']
+        )
+    except Exception as e:
+        print("Не могу удалить ордер, он уже отменён или исполнен:", e)
+
+    if order['side'] == 'BUY':
+        order_side = SIDE_SELL
+        order_position_side = 'LONG'
+    else:
+        order_side = SIDE_BUY
+        order_position_side = 'SHORT'
+
+    order = await safe_from_time_err_call_binance(
+        client.futures_get_order,
+        symbol=order['symbol'],
+        origClientOrderId=order['origClientOrderId']
+    )
+    executed_qty = float(order["executedQty"])
+
+    positions = await safe_from_time_err_call_binance(
+        client.futures_position_information,
+        symbol=order['symbol']
+    )
+    position_amt = 0
+    for pos in positions:
+        if pos['positionSide'] == order_position_side:
+            position_amt = Decimal(pos['positionAmt'])
+
+    if executed_qty > 0 and position_amt != 0:
+        try:
+            await safe_from_time_err_call_binance(
+                client.futures_create_order,
+                symbol=order['symbol'],
+                side=order_side,
+                positionSide=order_position_side,
+                type=FUTURE_ORDER_TYPE_MARKET,
+                quantity=executed_qty,
+                reduceOnly=True
+            )
+        except:
+            await safe_from_time_err_call_binance(
+                client.futures_create_order,
+                symbol=order['symbol'],
+                side=order_side,
+                positionSide=order_position_side,
+                type=FUTURE_ORDER_TYPE_MARKET,
+                quantity=executed_qty
+            )
+
+    return
+
 async def create_order(
     client, balanceUSDT, balanceUSDT099, bot_config,
     symbol, tick_size, lot_size, max_price, min_price, max_qty, min_qty, order_type,
@@ -162,8 +220,6 @@ async def create_order(
             newOrderRespType="RESULT",
             recvWindow=3000,
             tryCreateOrder=tryCreateOrder,
-            buy_order_id=buy_order_id,
-            sell_order_id=sell_order_id
         )
 
         return order
@@ -393,7 +449,13 @@ async def creating_orders_bot(session, redis, symbols_characteristics, client, s
 
     balanceUSDT099 = balanceUSDT * Decimal(0.99)
 
-    order_update_listener = UserDataWebSocketClient(client)
+    buy_order_id = 'buy_1'
+    sell_order_id = 'sell_2'
+
+    order_update_listener = UserDataWebSocketClient(
+        client,
+        waiting_orders_id=[buy_order_id, sell_order_id]
+    )
     await order_update_listener.start()
 
     bot_config.start_updown_ticks = 100
@@ -411,32 +473,67 @@ async def creating_orders_bot(session, redis, symbols_characteristics, client, s
         max_qty=max_qty,
         min_qty=min_qty,
         type_order='both',
+        buy_order_id=buy_order_id,
+        sell_order_id=sell_order_id
     )
 
-    # TO DO
-    # if not orders['order_buy'] or not orders['order_sell']:
-    #     if orders['order_buy']:
-    #         # delete order buy
-    #     if orders['order_sell']:
-    #         # delete order sell
-    #
-    #         return
+    if not orders['order_buy'] or not orders['order_sell']:
+        deleting_order = None
+
+        if orders['order_buy']:
+            deleting_order = {
+                'symbol': symbol,
+                'side': 'BUY',
+                'origClientOrderId': orders['order_buy']['clientOrderId'],
+            }
+        if orders['order_sell']:
+            deleting_order = {
+                'symbol': symbol,
+                'side': 'SELL',
+                'origClientOrderId': orders['order_sell']['clientOrderId'],
+            }
+
+        if deleting_order:
+            await delete_order(
+                client=client,
+                order=deleting_order
+            )
+
+        print(f"❌ У стоп маркет ордера цена слишком близка к рыночной")
+        return
 
     first_order_updating_data = await order_update_listener.get_first_started_order()
-
     print("✅ Первый ордер получен:", first_order_updating_data)
-    # order_update_listener.stop()
 
-    # delete 2 order
-    # add updating 2 orders - with orderId to redis
-    # if two orders started - close 2 order
-    # if just 1 order started - delete 2 order
+    deleting_order = None
+
+    if first_order_updating_data['c'] == orders['order_buy']['clientOrderId']:
+        deleting_order = {
+            'symbol': symbol,
+            'side': 'SELL',
+            'origClientOrderId': orders['order_sell']['clientOrderId'],
+        }
+    elif first_order_updating_data['c'] == orders['order_sell']['clientOrderId']:
+        deleting_order = {
+            'symbol': symbol,
+            'side': 'BUY',
+            'origClientOrderId': orders['order_buy']['clientOrderId'],
+        }
+
+    if deleting_order:
+        await delete_order(
+            client=client,
+            order=deleting_order
+        )
+    else:
+        print('❌ Can\'t get first order. stop.')
 
     # add model for market order
     # create new db order of first filled order
     # add new stops orders for stop lose, take profit
     # wait for stop, update db order
 
+    # order_update_listener.stop()
     return
 
     print(
