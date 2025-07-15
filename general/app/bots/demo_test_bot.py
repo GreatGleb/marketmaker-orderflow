@@ -102,6 +102,12 @@ async def _update_config_from_referral_bot(bot_config: TestBot, redis) -> bool:
     return True
 
 async def simulate_bot(session, redis, bot_config: TestBot, shared_data, stop_event):
+    if bot_config.copy_bot_min_time_profitability_min:
+        bot_config_updated = await _update_config_from_referral_bot(bot_config, redis)
+        if not bot_config_updated:
+            print(f'copy bot {bot_config.id} without refer')
+            return
+
     symbol = await redis.get(f"most_volatile_symbol_{bot_config.min_timeframe_asset_volatility}")
     # symbol = bot_config.symbol
     data = shared_data.get(symbol)
@@ -135,7 +141,8 @@ async def simulate_bot(session, redis, bot_config: TestBot, shared_data, stop_ev
         timeoutOccurred = False
 
         try:
-            timeout = int(bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes * 60)
+            timeout = Decimal(bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes) * 60
+            timeout = int(timeout)
 
             trade_type, entry_price = await asyncio.wait_for(
                 _wait_for_entry_price(
@@ -318,8 +325,8 @@ async def set_volatile_pairs(stop_event):
                 tf = None
                 symbol = None
 
-                for tf in asset_volatility_timeframes:
-                    tf = float(tf)
+                for tf_str in asset_volatility_timeframes:
+                    tf = float(tf_str)
                     now = datetime.now(UTC)
                     time_ago = now - timedelta(minutes=tf)
 
@@ -330,7 +337,7 @@ async def set_volatile_pairs(stop_event):
 
                     if most_volatile:
                         symbol = most_volatile.symbol
-                        await redis.set(f"most_volatile_symbol_{tf}", symbol)
+                        await redis.set(f"most_volatile_symbol_{tf_str}", symbol)
 
                 if most_volatile and tf and symbol:
                     print(f"most_volatile_symbol_{tf} updated: {symbol}")
@@ -374,8 +381,8 @@ async def get_bot_config_by_params(session, tf_bot_ids, copy_bot_min_time_profit
                 'stop_success_ticks': refer_bot.stop_success_ticks,
                 'stop_loss_ticks': refer_bot.stop_loss_ticks,
                 'start_updown_ticks': refer_bot.start_updown_ticks,
-                'min_timeframe_asset_volatility': float(refer_bot.min_timeframe_asset_volatility),
-                'time_to_wait_for_entry_price_to_open_order_in_minutes': float(refer_bot.time_to_wait_for_entry_price_to_open_order_in_minutes)
+                'min_timeframe_asset_volatility': str(refer_bot.min_timeframe_asset_volatility),
+                'time_to_wait_for_entry_price_to_open_order_in_minutes': str(refer_bot.time_to_wait_for_entry_price_to_open_order_in_minutes)
             }
         else:
             refer_bot_dict = None
