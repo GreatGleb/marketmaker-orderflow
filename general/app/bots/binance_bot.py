@@ -136,10 +136,10 @@ def round_price_for_order(price: Decimal, tick_size: Decimal):
     return rounded_price
 
 async def create_order(
-       client, balanceUSDT, balanceUSDT099, bot_config,
-       symbol, tick_size, lot_size, max_price, min_price, max_qty, min_qty, order_type,
-       futures_order_type, order_side, order_position_side, order_quantity, order_stop_price, order_id,
-       tryCreateOrder
+    client, balanceUSDT, balanceUSDT099, bot_config,
+    symbol, tick_size, lot_size, max_price, min_price, max_qty, min_qty, order_type,
+    futures_order_type, order_side, order_position_side, order_quantity, order_stop_price, order_id,
+    tryCreateOrder, buy_order_id, sell_order_id
 ):
     tryCreateOrder = tryCreateOrder + 1
 
@@ -161,7 +161,9 @@ async def create_order(
             priceProtect=True,
             newOrderRespType="RESULT",
             recvWindow=3000,
-            tryCreateOrder=tryCreateOrder
+            tryCreateOrder=tryCreateOrder,
+            buy_order_id=buy_order_id,
+            sell_order_id=sell_order_id
         )
 
         return order
@@ -180,15 +182,18 @@ async def create_order(
                 max_qty=max_qty,
                 min_qty=min_qty,
                 type_order=order_type,
-                tryCreateOrder=tryCreateOrder
+                tryCreateOrder=tryCreateOrder,
+                buy_order_id=buy_order_id,
+                sell_order_id=sell_order_id
             )
         else:
             raise
 
 async def create_orders(
-        client, balanceUSDT, balanceUSDT099, bot_config,
-        symbol, tick_size, lot_size, max_price, min_price, max_qty, min_qty, type_order,
-        tryCreateOrder=0
+    client, balanceUSDT, balanceUSDT099, bot_config,
+    symbol, tick_size, lot_size, max_price, min_price, max_qty, min_qty, type_order,
+    buy_order_id=None, sell_order_id=None,
+    tryCreateOrder=0,
 ):
     futures_mark_price = await safe_from_time_err_call_binance(
         client.futures_mark_price,
@@ -196,17 +201,11 @@ async def create_orders(
     )
     initial_price = Decimal(futures_mark_price['markPrice'])
 
-    entry_price_buy = initial_price + 100 * tick_size
+    entry_price_buy = initial_price + bot_config.start_updown_ticks * tick_size
     entry_price_buy_str = round_price_for_order(price=entry_price_buy, tick_size=tick_size)
 
-    entry_price_sell = initial_price - 100 * tick_size
+    entry_price_sell = initial_price - bot_config.start_updown_ticks * tick_size
     entry_price_sell_str = round_price_for_order(price=entry_price_sell, tick_size=tick_size)
-
-    # entry_price_buy = initial_price + bot_config.start_updown_ticks * tick_size
-    # entry_price_buy_str = round_price_for_order(price=entry_price_buy, tick_size=tick_size)
-
-    # entry_price_sell = initial_price - bot_config.start_updown_ticks * tick_size
-    # entry_price_sell_str = round_price_for_order(price=entry_price_sell, tick_size=tick_size)
 
     if any([
         entry_price_buy > max_price,
@@ -229,10 +228,10 @@ async def create_orders(
         print(f'Quantity bigger or less then maximums for {symbol}')
         return
 
-    new_order_id_1 = 'order_1'
-    new_order_id_2 = 'order_2'
-
     if type_order == 'buy' or type_order == 'both':
+        if not buy_order_id:
+            buy_order_id='buy_1'
+
         order_buy = await create_order(
             client=client,
             balanceUSDT=balanceUSDT,
@@ -251,11 +250,16 @@ async def create_orders(
             order_position_side="LONG",
             order_quantity=quantityOrder_buy_str,
             order_stop_price=entry_price_buy_str,
-            order_id=new_order_id_1,
-            tryCreateOrder=tryCreateOrder
+            order_id=buy_order_id,
+            tryCreateOrder=tryCreateOrder,
+            buy_order_id=buy_order_id,
+            sell_order_id=sell_order_id
         )
 
     if type_order == 'sell' or (type_order == 'both' and order_buy):
+        if not sell_order_id:
+            sell_order_id='sell_2'
+
         order_sell = await create_order(
             client=client,
             balanceUSDT=balanceUSDT,
@@ -274,8 +278,10 @@ async def create_orders(
             order_position_side="SHORT",
             order_quantity=quantityOrder_sell_str,
             order_stop_price=entry_price_sell_str,
-            order_id=new_order_id_2,
-            tryCreateOrder=tryCreateOrder
+            order_id=sell_order_id,
+            tryCreateOrder=tryCreateOrder,
+            buy_order_id=buy_order_id,
+            sell_order_id=sell_order_id
         )
 
     if type_order == 'both':
@@ -389,6 +395,8 @@ async def creating_orders_bot(session, redis, symbols_characteristics, client, s
 
     order_update_listener = UserDataWebSocketClient(client)
     await order_update_listener.start()
+
+    bot_config.start_updown_ticks = 100
 
     orders = await create_orders(
         client=client,
