@@ -27,9 +27,9 @@ async def create_bots(symbol="BTCUSDT"):
         # stop_lose_ticks_values = [50, 100, 200, 300, 500, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 20000, 50000]  # X axis
         # stop_win_ticks_values = [20, 40, 60, 160, 300, 600, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000]
 
-        start_ticks_values = [15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 70, 80, 100]
-        stop_lose_ticks_values = [40, 45, 50, 55, 60, 70, 80, 90, 100, 200, 300, 400, 500]
-        stop_win_ticks_values = [5, 10, 20, 30, 40, 50, 60, 70]
+        start_ticks_values = [10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 70, 80, 100]
+        stop_lose_ticks_values = [40, 45, 50, 55, 60, 70, 80, 90, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]
+        stop_win_ticks_values = [5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
         min_tf_volatility_values = [0.5, 1, 2, 3]
         wait_open_order_values = [0.5]
 
