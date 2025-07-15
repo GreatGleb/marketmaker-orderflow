@@ -17,14 +17,10 @@ from app.dependencies import (
     resolve_crud,
 )
 
-from app.utils import Command
+from app.utils import Command, CommandResult
 
 
 class OrderBulkInsertCommand(Command):
-
-    def __init__(self, stop_event):
-        super().__init__()
-        self.stop_event = stop_event
 
     @staticmethod
     def parse_datetime_fields(order, datetime_fields: list[str]) -> dict:
@@ -39,29 +35,28 @@ class OrderBulkInsertCommand(Command):
         crud: TestOrderCrud = resolve_crud(TestOrderCrud),
         redis: Redis = Depends(get_redis),
     ):
+        DATETIME_FIELDS = ["open_time", "close_time"]
+        BATCH_SIZE = 1000
 
         orders = []
-        DATETIME_FIELDS = ["open_time", "close_time"]
-        BATCH_SIZE = 300
+        for _ in range(4000):
+            raw = await redis.lpop(ORDER_QUEUE_KEY)
 
-        while not self.stop_event.is_set():
-            for _ in range(1000):
-                raw = await redis.lpop(ORDER_QUEUE_KEY)
-                if raw is None:
-                    break
+            if raw is None:
+                break
 
-                try:
-                    order = json.loads(raw)
-                    order = self.parse_datetime_fields(order, DATETIME_FIELDS)
-                    orders.append(order)
-                except Exception as e:
-                    print(f"❌ Ошибка при обработке записи из Redis: {e}")
+            try:
+                order = json.loads(raw)
+                order = self.parse_datetime_fields(order, DATETIME_FIELDS)
+                orders.append(order)
+            except Exception as e:
+                print(f"❌ Ошибка при обработке записи из Redis: {e}")
 
-            for i in range(0, len(orders), BATCH_SIZE):
-                batch = orders[i : i + BATCH_SIZE]
-                try:
-                    await crud.bulk_create(orders=batch)
-                except Exception as e:
-                    print(f"❌ Ошибка при вставке батча в БД: {e}")
+        for i in range(0, len(orders), BATCH_SIZE):
+            batch = orders[i : i + BATCH_SIZE]
+            try:
+                await crud.bulk_create(orders=batch)
+            except Exception as e:
+                print(f"❌ Ошибка при вставке батча в БД: {e}")
 
-            await asyncio.sleep(30)
+        return CommandResult(success=True)

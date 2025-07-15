@@ -4,7 +4,8 @@ import threading
 from datetime import timezone
 
 from app.bots.demo_test_bot import StartTestBotsCommand
-from app.workers.bulk_insert_orders import OrderBulkInsertCommand
+
+# from app.workers.bulk_insert_orders import OrderBulkInsertCommand
 from app.workers.profitable_bot_updater import ProfitableBotUpdaterCommand
 from app.workers.volatile_pair import VolatilePairCommand
 
@@ -35,7 +36,7 @@ async def main():
         VolatilePairCommand(stop_event=stop_event).run_async(),
         ProfitableBotUpdaterCommand(stop_event=stop_event).run_async(),
         StartTestBotsCommand(stop_event=stop_event).run_async(),
-        OrderBulkInsertCommand(stop_event=stop_event).run_async(),
+        # OrderBulkInsertCommand(stop_event=stop_event).run_async(),
     )
 
     print("✅ Все боты завершены.")
