@@ -1,0 +1,119 @@
+import asyncio
+import json
+
+from datetime import timedelta
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from fastapi import Depends
+
+from redis.asyncio import Redis
+
+from app.crud.test_bot import TestBotCrud
+from app.dependencies import (
+    get_session,
+    get_redis,
+    resolve_crud,
+)
+
+from app.utils import Command
+
+
+class ProfitableBotUpdaterCommand(Command):
+
+    def __init__(self, stop_event):
+        super().__init__()
+        self.stop_event = stop_event
+
+    @staticmethod
+    async def get_bot_config_by_params(
+        bot_crud, tf_bot_ids, copy_bot_min_time_profitability_min
+    ):
+        min_bot_ids = tf_bot_ids[copy_bot_min_time_profitability_min]
+
+        if min_bot_ids:
+
+            refer_bot = await bot_crud.get_bot_with_volatility_by_id(
+                bot_id=min_bot_ids[0]
+            )
+
+            if refer_bot:
+                refer_bot = refer_bot[0]
+                refer_bot_dict = {
+                    "id": refer_bot.id,
+                    "symbol": refer_bot.symbol,
+                    "stop_success_ticks": refer_bot.stop_success_ticks,
+                    "stop_loss_ticks": refer_bot.stop_loss_ticks,
+                    "start_updown_ticks": refer_bot.start_updown_ticks,
+                    "min_timeframe_asset_volatility": float(
+                        refer_bot.min_timeframe_asset_volatility
+                    ),
+                    "time_to_wait_for_entry_price_to_open_order_in_minutes": float(
+                        refer_bot.time_to_wait_for_entry_price_to_open_order_in_minutes
+                        or 1
+                    ),
+                }
+            else:
+                refer_bot_dict = None
+        else:
+            refer_bot_dict = None
+
+        return refer_bot_dict
+
+    @staticmethod
+    async def get_profitable_bots_id_by_tf(
+        bot_crud, bot_profitability_timeframes
+    ):
+
+        tf_bot_ids = {}
+
+        for tf in bot_profitability_timeframes:
+            time_ago = timedelta(minutes=float(tf))
+
+            profits_data = await bot_crud.get_sorted_by_profit(
+                since=time_ago, just_not_copy_bots=True
+            )
+            filtered_sorted = sorted(
+                [item for item in profits_data if item[1] > 0],
+                key=lambda x: x[1],
+                reverse=True,
+            )
+            tf_bot_ids[tf] = [item[0] for item in filtered_sorted]
+
+        return tf_bot_ids
+
+    async def command(
+        self,
+        session: AsyncSession = Depends(get_session),
+        redis: Redis = Depends(get_redis),
+        bot_crud: TestBotCrud = resolve_crud(TestBotCrud),
+    ):
+        first_run_completed = False
+        bot_profitability_timeframes = []
+
+        while not self.stop_event.is_set():
+            if not first_run_completed:
+                first_run_completed = True
+
+                bot_profitability_timeframes = (
+                    await bot_crud.get_unique_copy_bot_min_time_profitability()
+                )
+
+            tf_bot_ids = await self.get_profitable_bots_id_by_tf(
+                bot_crud=bot_crud,
+                bot_profitability_timeframes=bot_profitability_timeframes,
+            )
+
+            bots = await bot_crud.get_bots_with_profitability_time()
+
+            for bot in bots:
+                refer_bot_dict = await self.get_bot_config_by_params(
+                    bot_crud=bot_crud,
+                    tf_bot_ids=tf_bot_ids,
+                    copy_bot_min_time_profitability_min=bot.copy_bot_min_time_profitability_min,
+                )
+                await redis.set(
+                    f"copy_bot_{bot.id}", json.dumps(refer_bot_dict)
+                )
+
+            await asyncio.sleep(30)
