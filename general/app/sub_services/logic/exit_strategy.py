@@ -25,11 +25,11 @@ class ExitStrategy:
                 order.stop_loss_price = new_sl_p
 
             if updated_price <= order.stop_loss_price:
-                order.stop_reason_event = StopReasonEvent.STOP_LOOSED
+                order.stop_reason_event = StopReasonEvent.STOP_LOOSED.value
                 return True, take_profit_price
 
             if close_not_lose_price < updated_price <= take_profit_price:
-                order.stop_reason_event = StopReasonEvent.STOP_WON
+                order.stop_reason_event = StopReasonEvent.STOP_WON.value
                 return True, take_profit_price
 
         else:
@@ -42,11 +42,11 @@ class ExitStrategy:
                 order.stop_loss_price = new_sl_p
 
             if updated_price >= order.stop_loss_price:
-                order.stop_reason_event = StopReasonEvent.STOP_LOOSED
+                order.stop_reason_event = StopReasonEvent.STOP_LOOSED.value
                 return True, take_profit_price
 
             if take_profit_price <= updated_price < close_not_lose_price:
-                order.stop_reason_event = StopReasonEvent.STOP_WON
+                order.stop_reason_event = StopReasonEvent.STOP_WON.value
                 return True, take_profit_price
 
         return False, take_profit_price
