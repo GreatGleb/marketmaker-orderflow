@@ -13,7 +13,7 @@ class UserDataWebSocketClient:
         self.url = f"wss://{domain}/ws/{self.listen_key}"
         self.first_order_started_event = asyncio.Event()
         self.keep_running = True
-        self.order = None
+        self.first_order = None
 
     async def connect(self):
         while self.keep_running:
@@ -23,8 +23,6 @@ class UserDataWebSocketClient:
                     while self.keep_running:
                         msg = await websocket.recv()
                         data = json.loads(msg)
-
-                        print(data)
 
                         if data.get("e") == "ORDER_TRADE_UPDATE":
                             await self.handle_order_update(data["o"])
@@ -55,7 +53,8 @@ class UserDataWebSocketClient:
             print(f"⚠️ Ошибка при закрытии listenKey: {e}")
 
     async def handle_order_update(self, order):
-        self.order = order
+        if not self.first_order_started_event.is_set() or (self.first_order and order['i'] == self.first_order['i']):
+            self.first_order = order
         print("📦 Обновление ордера:")
         print(f"  Статус: {order['X']}")
         print(f"  Тип: {order['o']}")
@@ -70,8 +69,8 @@ class UserDataWebSocketClient:
     async def get_first_started_order(self):
         """Асинхронно возвращает первый полученный ордер"""
         if self.first_order_started_event.is_set():
-            return self.order
+            return self.first_order
 
         await self.first_order_started_event.wait()
 
-        return self.order
+        return self.first_order
