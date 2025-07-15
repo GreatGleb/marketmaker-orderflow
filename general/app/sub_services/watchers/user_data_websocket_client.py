@@ -3,7 +3,7 @@ import websockets
 import json
 
 class UserDataWebSocketClient:
-    def __init__(self, binance_client):
+    def __init__(self, binance_client, waiting_orders_id):
         self.client = binance_client
         self.listen_key = self.client.futures_stream_get_listen_key()
         # market
@@ -14,6 +14,7 @@ class UserDataWebSocketClient:
         self.first_order_started_event = asyncio.Event()
         self.keep_running = True
         self.first_order = None
+        self.waiting_orders_id = waiting_orders_id
 
     async def connect(self):
         while self.keep_running:
@@ -53,8 +54,11 @@ class UserDataWebSocketClient:
             print(f"⚠️ Ошибка при закрытии listenKey: {e}")
 
     async def handle_order_update(self, order):
+        if order['c'] not in self.waiting_orders_id:
+            return
         if not self.first_order_started_event.is_set() or (self.first_order and order['i'] == self.first_order['i']):
             self.first_order = order
+
         print("📦 Обновление ордера:")
         print(f"  Статус: {order['X']}")
         print(f"  Тип: {order['o']}")
