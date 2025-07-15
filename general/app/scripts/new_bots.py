@@ -31,6 +31,7 @@ async def create_bots(symbol="BTCUSDT"):
         stop_lose_ticks_values = [40, 45, 50, 55, 60, 70, 80, 90, 100, 200, 300, 400, 500]
         stop_win_ticks_values = [5, 10, 20, 30, 40, 50, 60, 70]
         min_tf_volatility_values = [0.5, 1, 2, 3]
+        wait_open_order_values = [0.5]
 
         try:
             for start in start_ticks_values:
@@ -38,16 +39,18 @@ async def create_bots(symbol="BTCUSDT"):
                     new_bots = []
                     for stop_win in stop_win_ticks_values:
                         for min_tf in min_tf_volatility_values:
-                            bot_data = {
-                                "symbol": symbol,
-                                "balance": Decimal("1000.0"),
-                                "stop_success_ticks": stop_win,
-                                "stop_loss_ticks": stop_lose,
-                                "start_updown_ticks": start,
-                                "min_timeframe_asset_volatility": min_tf,
-                                "is_active": True,
-                            }
-                            new_bots.append(bot_data)
+                            for wait_min in wait_open_order_values:
+                                bot_data = {
+                                    "symbol": symbol,
+                                    "balance": Decimal("1000.0"),
+                                    "stop_success_ticks": stop_win,
+                                    "stop_loss_ticks": stop_lose,
+                                    "start_updown_ticks": start,
+                                    "min_timeframe_asset_volatility": min_tf,
+                                    "time_to_wait_for_entry_price_to_open_order_in_minutes": wait_min,
+                                    "is_active": True,
+                                }
+                                new_bots.append(bot_data)
 
                     await bot_crud.bulk_create(new_bots)
                     await session.commit()
