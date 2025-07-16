@@ -125,7 +125,7 @@ class StartTestBotsCommand(Command):
                 return
 
         symbol = await redis.get(
-            f"most_volatile_symbol_{float(bot_config.min_timeframe_asset_volatility)}"
+            f"most_volatile_symbol_{bot_config.min_timeframe_asset_volatility}"
         )
         data = shared_data.get(symbol)
 
@@ -159,10 +159,8 @@ class StartTestBotsCommand(Command):
             entry_price = None
 
             try:
-                timeout = int(
-                    bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes
-                    * 60
-                )
+                timeout = Decimal(bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes) * 60
+                timeout = int(timeout)
                 price_watcher = PriceWatcher(redis=redis)
 
                 trade_type, entry_price = await asyncio.wait_for(

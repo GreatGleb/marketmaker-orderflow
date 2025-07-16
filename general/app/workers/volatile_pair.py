@@ -46,11 +46,11 @@ class VolatilePairCommand(Command):
                 first_run_completed = True
 
             most_volatile = None
-            tf = None
+            tf_str = None
             symbol = None
 
-            for tf in asset_volatility_timeframes:
-                tf = float(tf)
+            for tf_str in asset_volatility_timeframes:
+                tf = float(tf_str)
                 now = datetime.now(UTC)
                 time_ago = now - timedelta(minutes=tf)
 
@@ -60,9 +60,9 @@ class VolatilePairCommand(Command):
 
                 if most_volatile:
                     symbol = most_volatile.symbol
-                    await redis.set(f"most_volatile_symbol_{tf}", symbol)
+                    await redis.set(f"most_volatile_symbol_{tf_str}", symbol)
 
-            if most_volatile and tf and symbol:
-                print(f"most_volatile_symbol_{tf} updated: {symbol}")
+            if most_volatile and tf_str and symbol:
+                print(f"most_volatile_symbol_{tf_str} updated: {symbol}")
 
             await asyncio.sleep(30)

@@ -45,10 +45,10 @@ class ProfitableBotUpdaterCommand(Command):
                     "stop_success_ticks": refer_bot.stop_success_ticks,
                     "stop_loss_ticks": refer_bot.stop_loss_ticks,
                     "start_updown_ticks": refer_bot.start_updown_ticks,
-                    "min_timeframe_asset_volatility": float(
+                    "min_timeframe_asset_volatility": str(
                         refer_bot.min_timeframe_asset_volatility
                     ),
-                    "time_to_wait_for_entry_price_to_open_order_in_minutes": float(
+                    "time_to_wait_for_entry_price_to_open_order_in_minutes": str(
                         refer_bot.time_to_wait_for_entry_price_to_open_order_in_minutes
                         or 1
                     ),
