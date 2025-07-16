@@ -24,6 +24,9 @@ from app.db.models import TestBot, TestOrder
 from app.dependencies import redis_context
 from app.sub_services.watchers.user_data_websocket_client import UserDataWebSocketClient
 
+
+from app.db.models import MarketOrder
+
 load_dotenv()
 UTC = timezone.utc
 COMMISSION_OPEN  = Decimal("0.0005")# 0.0002
@@ -194,15 +197,26 @@ async def delete_order(
     return
 
 async def create_order(
-    client, balanceUSDT, balanceUSDT099, bot_config,
-    symbol, tick_size, lot_size, max_price, min_price, max_qty, min_qty, order_type,
-    futures_order_type, order_side, order_position_side, order_quantity, order_stop_price, order_id,
-    tryCreateOrder, buy_order_id, sell_order_id
+    client, session, balanceUSDT, balanceUSDT099, bot_config,
+    symbol, tick_size, lot_size, max_price, min_price, max_qty, min_qty, creating_orders_type,
+    futures_order_type, order_side, order_position_side, order_quantity, order_stop_price,
+    tryCreateOrder,
+    db_order_buy=None, db_order_sell=None,
 ):
     tryCreateOrder = tryCreateOrder + 1
 
+    if creating_orders_type == 'buy':
+        db_order = db_order_buy
+    else:
+        db_order = db_order_sell
+
     if tryCreateOrder > 10:
-        print('Too much tries when stop price ')
+        print('Too much tries when stop price like last market price')
+
+        db_order.status = 'CANCELED'
+        db_order.close_reason = f'Quantity bigger or less then maximums for {symbol}'
+        await session.commit()
+
         return None
 
     try:
@@ -214,7 +228,7 @@ async def create_order(
             type=futures_order_type,
             quantity=order_quantity,
             stopPrice=order_stop_price,
-            newClientOrderId=order_id,
+            newClientOrderId=db_order.client_order_id,
             workingType="MARK_PRICE",
             priceProtect=True,
             newOrderRespType="RESULT",
@@ -222,11 +236,18 @@ async def create_order(
             tryCreateOrder=tryCreateOrder,
         )
 
+        if 'orderId' in order and 'status' in order:
+            db_order.exchange_order_id = str(order['orderId'])
+            db_order.activation_time = datetime.now(UTC).replace(tzinfo=None)
+            db_order.exchange_status = order['status']
+            await session.commit()
+
         return order
     except BinanceAPIException as e:
         if e.code == -2021:
-            return await create_orders(
+            order = await create_orders(
                 client=client,
+                session=session,
                 balanceUSDT=balanceUSDT,
                 balanceUSDT099=balanceUSDT099,
                 bot_config=bot_config,
@@ -237,18 +258,26 @@ async def create_order(
                 min_price=min_price,
                 max_qty=max_qty,
                 min_qty=min_qty,
-                type_order=order_type,
+                creating_orders_type=creating_orders_type,
                 tryCreateOrder=tryCreateOrder,
-                buy_order_id=buy_order_id,
-                sell_order_id=sell_order_id
+                db_order_buy=db_order_buy,
+                db_order_sell=db_order_sell
             )
+
+            if 'orderId' in order and 'status' in order:
+                db_order.exchange_order_id = str(order['orderId'])
+                db_order.activation_time = datetime.now(UTC).replace(tzinfo=None)
+                db_order.exchange_status = order['status']
+                await session.commit()
+
+            return order
         else:
             raise
 
 async def create_orders(
-    client, balanceUSDT, balanceUSDT099, bot_config,
-    symbol, tick_size, lot_size, max_price, min_price, max_qty, min_qty, type_order,
-    buy_order_id=None, sell_order_id=None,
+    client, session, balanceUSDT, balanceUSDT099, bot_config,
+    symbol, tick_size, lot_size, max_price, min_price, max_qty, min_qty, creating_orders_type,
+    db_order_buy=None, db_order_sell=None,
     tryCreateOrder=0,
 ):
     futures_mark_price = await safe_from_time_err_call_binance(
@@ -263,6 +292,9 @@ async def create_orders(
     entry_price_sell = initial_price - bot_config.start_updown_ticks * tick_size
     entry_price_sell_str = round_price_for_order(price=entry_price_sell, tick_size=tick_size)
 
+    quantityOrder_buy_str = calculate_quantity_for_order(amount=balanceUSDT099, price=entry_price_buy, lot_size=lot_size)
+    quantityOrder_sell_str = calculate_quantity_for_order(amount=balanceUSDT099, price=entry_price_sell, lot_size=lot_size)
+
     if any([
         entry_price_buy > max_price,
         entry_price_buy < min_price,
@@ -270,10 +302,14 @@ async def create_orders(
         entry_price_sell < min_price
     ]):
         print(f'Price bigger or less then maximums for {symbol}')
-        return
 
-    quantityOrder_buy_str = calculate_quantity_for_order(amount=balanceUSDT099, price=entry_price_buy, lot_size=lot_size)
-    quantityOrder_sell_str = calculate_quantity_for_order(amount=balanceUSDT099, price=entry_price_sell, lot_size=lot_size)
+        db_order_buy.status = 'CANCELED'
+        db_order_buy.close_reason = f'Price bigger or less then maximums for {symbol}'
+        db_order_sell.status = 'CANCELED'
+        db_order_sell.close_reason = f'Price bigger or less then maximums for {symbol}'
+        await session.commit()
+
+        creating_orders_type = 'canceled'
 
     if any([
         Decimal(quantityOrder_buy_str) > max_qty,
@@ -282,14 +318,22 @@ async def create_orders(
         Decimal(quantityOrder_sell_str) < min_qty
     ]):
         print(f'Quantity bigger or less then maximums for {symbol}')
-        return
 
-    if type_order == 'buy' or type_order == 'both':
-        if not buy_order_id:
-            buy_order_id='buy_1'
+        db_order_buy.status = 'CANCELED'
+        db_order_buy.close_reason = f'Quantity bigger or less then maximums for {symbol}'
+        db_order_sell.status = 'CANCELED'
+        db_order_sell.close_reason = f'Quantity bigger or less then maximums for {symbol}'
+        await session.commit()
 
+        creating_orders_type = 'canceled'
+
+    order_buy = None
+    order_sell = None
+
+    if creating_orders_type == 'buy' or creating_orders_type == 'both':
         order_buy = await create_order(
             client=client,
+            session=session,
             balanceUSDT=balanceUSDT,
             balanceUSDT099=balanceUSDT099,
             bot_config=bot_config,
@@ -300,24 +344,21 @@ async def create_orders(
             min_price=min_price,
             max_qty=max_qty,
             min_qty=min_qty,
-            order_type='buy',
+            creating_orders_type='buy',
             futures_order_type=FUTURE_ORDER_TYPE_STOP_MARKET,
             order_side=SIDE_BUY,
             order_position_side="LONG",
             order_quantity=quantityOrder_buy_str,
             order_stop_price=entry_price_buy_str,
-            order_id=buy_order_id,
-            tryCreateOrder=tryCreateOrder,
-            buy_order_id=buy_order_id,
-            sell_order_id=sell_order_id
+            db_order_buy=db_order_buy,
+            db_order_sell=db_order_sell,
+            tryCreateOrder=tryCreateOrder
         )
 
-    if type_order == 'sell' or (type_order == 'both' and order_buy):
-        if not sell_order_id:
-            sell_order_id='sell_2'
-
+    if creating_orders_type == 'sell' or (creating_orders_type == 'both' and order_buy):
         order_sell = await create_order(
             client=client,
+            session=session,
             balanceUSDT=balanceUSDT,
             balanceUSDT099=balanceUSDT099,
             bot_config=bot_config,
@@ -328,19 +369,18 @@ async def create_orders(
             min_price=min_price,
             max_qty=max_qty,
             min_qty=min_qty,
-            order_type='sell',
+            creating_orders_type='sell',
             futures_order_type=FUTURE_ORDER_TYPE_STOP_MARKET,
             order_side=SIDE_SELL,
             order_position_side="SHORT",
             order_quantity=quantityOrder_sell_str,
             order_stop_price=entry_price_sell_str,
-            order_id=sell_order_id,
-            tryCreateOrder=tryCreateOrder,
-            buy_order_id=buy_order_id,
-            sell_order_id=sell_order_id
+            db_order_buy=db_order_buy,
+            db_order_sell=db_order_sell,
+            tryCreateOrder=tryCreateOrder
         )
 
-    if type_order == 'both':
+    if creating_orders_type == 'both':
         print(
             f"balanceUSDT: {balanceUSDT}\n"
             f"symbol: {symbol}\n"
@@ -354,14 +394,26 @@ async def create_orders(
             f"step size: {str(tick_size)}\n"
         )
 
+        db_order_buy.quote_quantity = balanceUSDT
+        db_order_buy.asset_quantity = Decimal(quantityOrder_buy_str)
+        db_order_buy.start_price = initial_price
+        db_order_buy.activation_price = Decimal(entry_price_buy_str)
+
+        db_order_sell.quote_quantity = balanceUSDT
+        db_order_sell.asset_quantity = Decimal(quantityOrder_sell_str)
+        db_order_sell.start_price = initial_price
+        db_order_sell.activation_price = Decimal(entry_price_sell_str)
+
+        await session.commit()
+
         print(
             f"order_buy: {order_buy}\n\n"
             f"order_sell: {order_sell}\n"
         )
 
-    if type_order == 'buy':
+    if creating_orders_type == 'buy':
         return order_buy
-    elif type_order == 'sell':
+    elif creating_orders_type == 'sell':
         return order_sell
     else:
         return {
@@ -449,19 +501,56 @@ async def creating_orders_bot(session, redis, symbols_characteristics, client, s
 
     balanceUSDT099 = balanceUSDT * Decimal(0.99)
 
-    buy_order_id = 'buy_1'
-    sell_order_id = 'sell_2'
+    bot_config.start_updown_ticks = 100
+
+    db_order_buy = MarketOrder(
+        symbol=symbol,
+        exchange_name='BINANCE',
+        side='BUY',
+        position_side='LONG',
+        open_order_type=FUTURE_ORDER_TYPE_STOP_MARKET,
+        start_updown_ticks=bot_config.start_updown_ticks,
+        trailing_stop_lose_ticks=bot_config.stop_loss_ticks,
+        trailing_stop_win_ticks=bot_config.stop_success_ticks,
+        status='NEW'
+    )
+
+    db_order_sell = MarketOrder(
+        symbol=symbol,
+        exchange_name='BINANCE',
+        side='SELL',
+        position_side='SHORT',
+        open_order_type=FUTURE_ORDER_TYPE_STOP_MARKET,
+        start_updown_ticks=bot_config.start_updown_ticks,
+        trailing_stop_lose_ticks=bot_config.stop_loss_ticks,
+        trailing_stop_win_ticks=bot_config.stop_success_ticks,
+        status='NEW'
+    )
+
+    try:
+        session.add(db_order_buy)
+        session.add(db_order_sell)
+        await session.commit()
+    except Exception as e:
+        session.rollback()
+        print(f"❌ Error adding market order to DB: {e}")
+        return
+
+    db_order_buy.client_order_id = f'buy_{db_order_buy.id}'
+    db_order_sell.client_order_id = f'sell_{db_order_sell.id}'
+
+    print(db_order_buy.client_order_id)
+    print(db_order_sell.client_order_id)
 
     order_update_listener = UserDataWebSocketClient(
         client,
-        waiting_orders_id=[buy_order_id, sell_order_id]
+        waiting_orders_id=[db_order_buy.client_order_id, db_order_sell.client_order_id]
     )
     await order_update_listener.start()
 
-    bot_config.start_updown_ticks = 100
-
-    orders = await create_orders(
+    exchange_orders = await create_orders(
         client=client,
+        session=session,
         balanceUSDT=balanceUSDT,
         balanceUSDT099=balanceUSDT099,
         bot_config=bot_config,
@@ -472,26 +561,34 @@ async def creating_orders_bot(session, redis, symbols_characteristics, client, s
         min_price=min_price,
         max_qty=max_qty,
         min_qty=min_qty,
-        type_order='both',
-        buy_order_id=buy_order_id,
-        sell_order_id=sell_order_id
+        creating_orders_type='both',
+        db_order_buy=db_order_buy,
+        db_order_sell=db_order_sell,
     )
 
-    if not orders['order_buy'] or not orders['order_sell']:
+    if not exchange_orders['order_buy'] or not exchange_orders['order_sell']:
         deleting_order = None
 
-        if orders['order_buy']:
+        if exchange_orders['order_buy']:
             deleting_order = {
                 'symbol': symbol,
                 'side': 'BUY',
-                'origClientOrderId': orders['order_buy']['clientOrderId'],
+                'origClientOrderId': exchange_orders['order_buy']['clientOrderId'],
             }
-        if orders['order_sell']:
+
+            db_order_buy.status = 'CANCELED'
+            db_order_buy.close_reason = f'Can\'t create sell order, cancel both'
+        if exchange_orders['order_sell']:
             deleting_order = {
                 'symbol': symbol,
                 'side': 'SELL',
-                'origClientOrderId': orders['order_sell']['clientOrderId'],
+                'origClientOrderId': exchange_orders['order_sell']['clientOrderId'],
             }
+
+            db_order_sell.status = 'CANCELED'
+            db_order_sell.close_reason = f'Can\'t create buy order, cancel both'
+
+        await session.commit()
 
         if deleting_order:
             await delete_order(
@@ -499,7 +596,7 @@ async def creating_orders_bot(session, redis, symbols_characteristics, client, s
                 order=deleting_order
             )
 
-        print(f"❌ У стоп маркет ордера цена слишком близка к рыночной")
+        print(f"❌ Один из ордеров не может быть создан, второй ордер был отменён")
         return
 
     first_order_updating_data = await order_update_listener.get_first_started_order()
@@ -507,18 +604,26 @@ async def creating_orders_bot(session, redis, symbols_characteristics, client, s
 
     deleting_order = None
 
-    if first_order_updating_data['c'] == orders['order_buy']['clientOrderId']:
+    if first_order_updating_data['c'] == exchange_orders['order_buy']['clientOrderId']:
         deleting_order = {
             'symbol': symbol,
             'side': 'SELL',
-            'origClientOrderId': orders['order_sell']['clientOrderId'],
+            'origClientOrderId': exchange_orders['order_sell']['clientOrderId'],
         }
-    elif first_order_updating_data['c'] == orders['order_sell']['clientOrderId']:
+
+        db_order_sell.status = 'CANCELED'
+        db_order_sell.close_reason = f'Buy order activated first'
+    elif first_order_updating_data['c'] == exchange_orders['order_sell']['clientOrderId']:
         deleting_order = {
             'symbol': symbol,
             'side': 'BUY',
-            'origClientOrderId': orders['order_buy']['clientOrderId'],
+            'origClientOrderId': exchange_orders['order_buy']['clientOrderId'],
         }
+
+        db_order_buy.status = 'CANCELED'
+        db_order_buy.close_reason = f'Sell order activated first'
+
+    await session.commit()
 
     if deleting_order:
         await delete_order(
