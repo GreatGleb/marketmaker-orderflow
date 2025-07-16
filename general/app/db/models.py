@@ -478,3 +478,110 @@ class TestBot(BaseId):
             comment="The maximum duration (in minutes) a bot will wait for the entry price to be reached before attempting to open an order",
         )
     )
+
+
+class MarketOrder(BaseId):
+    __tablename__ = "market_orders"
+
+    client_order_id: Mapped[Optional[str]] = mapped_column(
+        types.String, nullable=True, comment="Client-generated order ID"
+    )
+    exchange_name: Mapped[Optional[str]] = mapped_column(
+        types.String, nullable=True, comment="Name of the exchange"
+    )
+    exchange_order_id: Mapped[Optional[str]] = mapped_column(
+        types.String, nullable=True, comment="Order ID from the exchange"
+    )
+    symbol: Mapped[str] = mapped_column(
+        types.String, nullable=True, comment="Trading symbol, e.g., BTCUSDT"
+    )
+    side: Mapped[str] = mapped_column(
+        types.String, nullable=True, comment="Order side (BUY/SELL)"
+    )
+    position_side: Mapped[str] = mapped_column(
+        types.String, nullable=True, comment="Position side (LONG/SHORT/BOTH)"
+    )
+    quote_quantity: Mapped[float] = mapped_column(
+        types.Numeric, nullable=True, comment="Quantity in quote asset"
+    )
+    asset_quantity: Mapped[float] = mapped_column(
+        types.Numeric, nullable=True, comment="Quantity in base asset"
+    )
+    open_order_type: Mapped[Optional[str]] = mapped_column(
+        types.String,
+        nullable=True,
+        comment="Type of order used to open position",
+    )
+    close_order_type: Mapped[Optional[str]] = mapped_column(
+        types.String,
+        nullable=True,
+        comment="Type of order used to close position",
+    )
+    start_price: Mapped[Optional[float]] = mapped_column(
+        types.Numeric,
+        nullable=True,
+        comment="Price at which the order was initiated",
+    )
+    activation_price: Mapped[Optional[float]] = mapped_column(
+        types.Numeric,
+        nullable=True,
+        comment="Price at which the order became active",
+    )
+    open_price: Mapped[Optional[float]] = mapped_column(
+        types.Numeric,
+        nullable=True,
+        comment="Execution price for opening the position",
+    )
+    close_price: Mapped[Optional[float]] = mapped_column(
+        types.Numeric,
+        nullable=True,
+        comment="Execution price for closing the position",
+    )
+    open_commission: Mapped[Optional[float]] = mapped_column(
+        types.Numeric,
+        nullable=True,
+        comment="Commission paid for opening the position",
+    )
+    close_commission: Mapped[Optional[float]] = mapped_column(
+        types.Numeric,
+        nullable=True,
+        comment="Commission paid for closing the position",
+    )
+    activation_time: Mapped[Optional[datetime]] = mapped_column(
+        types.TIMESTAMP,
+        nullable=True,
+        comment="Timestamp when order became active",
+    )
+    open_time: Mapped[Optional[datetime]] = mapped_column(
+        types.TIMESTAMP,
+        nullable=True,
+        comment="Timestamp when position was opened",
+    )
+    close_time: Mapped[Optional[datetime]] = mapped_column(
+        types.TIMESTAMP,
+        nullable=True,
+        comment="Timestamp when position was closed",
+    )
+    close_reason: Mapped[Optional[str]] = mapped_column(
+        types.String, nullable=True, comment="Reason for closing the position"
+    )
+    start_updown_ticks: Mapped[Optional[int]] = mapped_column(
+        types.Integer, nullable=True, comment="Initial price movement in ticks"
+    )
+    trailing_stop_lose_ticks: Mapped[Optional[int]] = mapped_column(
+        types.Integer, nullable=True, comment="Trailing stop loss in ticks"
+    )
+    trailing_stop_win_ticks: Mapped[Optional[int]] = mapped_column(
+        types.Integer, nullable=True, comment="Trailing stop win in ticks"
+    )
+    status: Mapped[Optional[str]] = mapped_column(
+        types.String, nullable=True, comment="Current status of the order"
+    )
+    exchange_status: Mapped[Optional[str]] = mapped_column(
+        types.String,
+        nullable=True,
+        comment="Status of the order on the exchange",
+    )
+    profit_loss: Mapped[Optional[float]] = mapped_column(
+        types.Numeric, nullable=True, comment="Profit or loss from the order"
+    )

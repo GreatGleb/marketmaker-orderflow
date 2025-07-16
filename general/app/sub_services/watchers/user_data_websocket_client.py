@@ -54,18 +54,19 @@ class UserDataWebSocketClient:
             print(f"⚠️ Ошибка при закрытии listenKey: {e}")
 
     async def handle_order_update(self, order):
-        if order['c'] not in self.waiting_orders_id:
-            return
-        if not self.first_order_started_event.is_set() or (self.first_order and order['i'] == self.first_order['i']):
-            self.first_order = order
-
         print("📦 Обновление ордера:")
+        print(f"  id: {order['c']}")
         print(f"  Статус: {order['X']}")
         print(f"  Тип: {order['o']}")
         print(f"  Side: {order['S']}")
         print(f"  Цена активации: {order.get('sp', '—')}")
         print(f"  Был ли активирован: {order.get('wt')}")
         print(f"  Triggered: {order.get('ps', '—')}")
+
+        if order['c'] not in self.waiting_orders_id:
+            return
+        if not self.first_order_started_event.is_set() or (self.first_order and order['i'] == self.first_order['i']):
+            self.first_order = order
 
         if order['X'] == 'EXPIRED' and not self.first_order_started_event.is_set():
             self.first_order_started_event.set()
