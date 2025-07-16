@@ -115,24 +115,14 @@ class StartTestBotsCommand(Command):
         stop_event,
         price_provider,
     ):
-
         if bot_config.copy_bot_min_time_profitability_min:
-            refer_bot_js = await redis.get(f"copy_bot_{bot_config.id}")
-            refer_bot = json.loads(refer_bot_js)
-
-            if not refer_bot:
+            bot_config_updated = (
+                await self.update_config_from_referral_bot(
+                    bot_config, redis
+                )
+            )
+            if not bot_config_updated:
                 return
-
-            bot_config.symbol = refer_bot["symbol"]
-            bot_config.stop_success_ticks = refer_bot["stop_success_ticks"]
-            bot_config.stop_loss_ticks = refer_bot["stop_loss_ticks"]
-            bot_config.start_updown_ticks = refer_bot["start_updown_ticks"]
-            bot_config.min_timeframe_asset_volatility = refer_bot[
-                "min_timeframe_asset_volatility"
-            ]
-            bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes = refer_bot[
-                "time_to_wait_for_entry_price_to_open_order_in_minutes"
-            ]
 
         symbol = await redis.get(
             f"most_volatile_symbol_{float(bot_config.min_timeframe_asset_volatility)}"
