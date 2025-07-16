@@ -41,7 +41,7 @@ cp .env.example .env
 ```bash
 docker exec -it orderflow_general python -m app.scripts.watch_ws_and_save
 
-docker exec -it orderflow_general python -m app.bots.demo_test_bot
+docker exec -it orderflow_general python -m app.scripts.start_test_bots
 
 docker exec -it orderflow_general python -m app.scripts.top_bots_report
 ```
