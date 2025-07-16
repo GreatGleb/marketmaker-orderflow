@@ -98,6 +98,7 @@ class StartTestBotsCommand(Command):
         bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes = (
             refer_bot["time_to_wait_for_entry_price_to_open_order_in_minutes"]
         )
+        bot_config.referral_bot_id = refer_bot["id"]
 
         return True
 
@@ -115,11 +116,11 @@ class StartTestBotsCommand(Command):
         stop_event,
         price_provider,
     ):
+        setattr(bot_config, "referral_bot_id", None)
+
         if bot_config.copy_bot_min_time_profitability_min:
-            bot_config_updated = (
-                await self.update_config_from_referral_bot(
-                    bot_config, redis
-                )
+            bot_config_updated = await self.update_config_from_referral_bot(
+                bot_config, redis
             )
             if not bot_config_updated:
                 return
@@ -159,7 +160,12 @@ class StartTestBotsCommand(Command):
             entry_price = None
 
             try:
-                timeout = Decimal(bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes) * 60
+                timeout = (
+                    Decimal(
+                        bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes
+                    )
+                    * 60
+                )
                 timeout = int(timeout)
                 price_watcher = PriceWatcher(redis=redis)
 
@@ -260,23 +266,22 @@ class StartTestBotsCommand(Command):
             order_data = {
                 "asset_symbol": symbol,
                 "order_type": trade_type,
-                "balance": float(balance),
-                "open_price": float(open_price),
+                "balance": str(balance),
+                "open_price": str(open_price),
                 "open_time": order.open_time,
-                "open_fee": float(order.open_fee),
-                "stop_loss_price": float(order.stop_loss_price),
+                "open_fee": str(order.open_fee),
+                "stop_loss_price": str(order.stop_loss_price),
                 "bot_id": bot_config.id,
-                "close_price": float(close_price),
+                "close_price": str(close_price),
                 "close_time": datetime.now(UTC),
-                "close_fee": float(
-                    order.open_price * Decimal(COMMISSION_CLOSE)
-                ),
-                "profit_loss": float(pnl),
+                "close_fee": str(order.open_price * Decimal(COMMISSION_CLOSE)),
+                "profit_loss": str(pnl),
                 "is_active": False,
                 "start_updown_ticks": bot_config.start_updown_ticks,
                 "stop_loss_ticks": bot_config.stop_loss_ticks,
                 "stop_success_ticks": bot_config.stop_success_ticks,
                 "stop_reason_event": order.stop_reason_event,
+                "referral_bot_id": bot_config.referral_bot_id,
             }
             await redis.rpush(
                 ORDER_QUEUE_KEY,
