@@ -26,6 +26,10 @@ from app.sub_services.watchers.user_data_websocket_client import UserDataWebSock
 
 
 from app.db.models import MarketOrder
+from app.sub_services.watchers.price_provider import (
+    PriceWatcher,
+    PriceProvider,
+)
 
 load_dotenv()
 UTC = timezone.utc
@@ -138,6 +142,41 @@ def round_price_for_order(price: Decimal, tick_size: Decimal):
     rounded_price = f"{price:.{precision}f}"
     return rounded_price
 
+async def delete_second_order(
+        client, session, symbol, first_order_updating_data, exchange_orders, db_order_sell, db_order_buy
+):
+    deleting_order = None
+
+    if first_order_updating_data['c'] == exchange_orders['order_buy']['clientOrderId']:
+        deleting_order = {
+            'symbol': symbol,
+            'side': 'SELL',
+            'origClientOrderId': exchange_orders['order_sell']['clientOrderId'],
+        }
+
+        db_order_sell.status = 'CANCELED'
+        db_order_sell.close_reason = f'Buy order activated first'
+    elif first_order_updating_data['c'] == exchange_orders['order_sell']['clientOrderId']:
+        deleting_order = {
+            'symbol': symbol,
+            'side': 'BUY',
+            'origClientOrderId': exchange_orders['order_buy']['clientOrderId'],
+        }
+
+        db_order_buy.status = 'CANCELED'
+        db_order_buy.close_reason = f'Sell order activated first'
+
+    await session.commit()
+
+    if deleting_order:
+        await delete_order(
+            client=client,
+            order=deleting_order
+        )
+    else:
+        print('❌ Can\'t get first order. stop.')
+        return
+
 async def delete_order(
         client, order
 ):
@@ -238,8 +277,6 @@ async def create_order(
 
         if 'orderId' in order and 'status' in order:
             db_order.exchange_order_id = str(order['orderId'])
-            db_order.activation_time = datetime.now(UTC).replace(tzinfo=None)
-            db_order.exchange_status = order['status']
             await session.commit()
 
         return order
@@ -266,8 +303,6 @@ async def create_order(
 
             if 'orderId' in order and 'status' in order:
                 db_order.exchange_order_id = str(order['orderId'])
-                db_order.activation_time = datetime.now(UTC).replace(tzinfo=None)
-                db_order.exchange_status = order['status']
                 await session.commit()
 
             return order
@@ -421,6 +456,13 @@ async def create_orders(
             'order_sell': order_sell,
         }
 
+async def _wait_filling_of_order(db_order):
+    while True:
+        if db_order.open_time is not None:
+            return True
+
+        await asyncio.sleep(0.1)
+
 async def creating_orders_bot(session, redis, symbols_characteristics, client, stop_event):
     print('start function creating_orders_bot')
     copy_bot_min_time_profitability_min = await get_copy_bot_tf_params(session)
@@ -544,10 +586,11 @@ async def creating_orders_bot(session, redis, symbols_characteristics, client, s
 
     order_update_listener = UserDataWebSocketClient(
         client,
-        waiting_orders_id=[db_order_buy.client_order_id, db_order_sell.client_order_id]
+        waiting_orders=[db_order_buy, db_order_sell]
     )
     await order_update_listener.start()
 
+    # price_provider = PriceProvider(redis=redis)
     exchange_orders = await create_orders(
         client=client,
         session=session,
@@ -602,36 +645,44 @@ async def creating_orders_bot(session, redis, symbols_characteristics, client, s
     first_order_updating_data = await order_update_listener.get_first_started_order()
     print("✅ Первый ордер получен:", first_order_updating_data)
 
-    deleting_order = None
+    await delete_second_order(
+        client=client,
+        session=session,
+        symbol=symbol,
+        first_order_updating_data=first_order_updating_data,
+        exchange_orders=exchange_orders,
+        db_order_sell=db_order_sell,
+        db_order_buy=db_order_buy
+    )
 
     if first_order_updating_data['c'] == exchange_orders['order_buy']['clientOrderId']:
-        deleting_order = {
-            'symbol': symbol,
-            'side': 'SELL',
-            'origClientOrderId': exchange_orders['order_sell']['clientOrderId'],
-        }
-
-        db_order_sell.status = 'CANCELED'
-        db_order_sell.close_reason = f'Buy order activated first'
-    elif first_order_updating_data['c'] == exchange_orders['order_sell']['clientOrderId']:
-        deleting_order = {
-            'symbol': symbol,
-            'side': 'BUY',
-            'origClientOrderId': exchange_orders['order_buy']['clientOrderId'],
-        }
-
-        db_order_buy.status = 'CANCELED'
-        db_order_buy.close_reason = f'Sell order activated first'
-
-    await session.commit()
-
-    if deleting_order:
-        await delete_order(
-            client=client,
-            order=deleting_order
-        )
+        db_order = db_order_buy
     else:
-        print('❌ Can\'t get first order. stop.')
+        db_order = db_order_sell
+
+    timeoutOccurred = False
+
+    try:
+        timeout = Decimal(bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes)
+        timeout = int(timeout * 60)
+
+        await asyncio.wait_for(
+            _wait_filling_of_order(db_order),
+            timeout=timeout
+        )
+    except asyncio.TimeoutError:
+        timeoutOccurred = True
+
+    if timeoutOccurred:
+        print(f"Bot {bot_config.id}; A minute has passed, entry conditions have not been met")
+
+        #delete order
+
+        return False
+    else:
+        print(f'db_order - activated: {db_order.activation_time}, opened: {db_order.open_time}')
+
+    await asyncio.sleep(60)
 
     # add model for market order
     # create new db order of first filled order
@@ -645,24 +696,6 @@ async def creating_orders_bot(session, redis, symbols_characteristics, client, s
         f"⏳ Бот {bot_config.id} | Ожидаем входа:"
         f" BUY ≥ {entry_price_buy:.4f}, SELL ≤ {entry_price_sell:.4f}"
     )
-
-    timeoutOccurred = False
-
-    try:
-        timeout = int(bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes * 60)
-
-        trade_type, entry_price = await asyncio.wait_for(
-            _wait_for_entry_price(
-                redis, symbol, entry_price_buy, entry_price_sell
-            ),
-            timeout=timeout
-        )
-    except asyncio.TimeoutError:
-        timeoutOccurred = True
-
-    if timeoutOccurred or not trade_type or not entry_price:
-        print(f"Bot {bot_config.id}; A minute has passed, entry conditions have not been met")
-        return False
 
     open_price = entry_price
     priceFromPreviousStep = entry_price
