@@ -257,8 +257,7 @@ class BinanceBot(Command):
 
         # price_provider = PriceProvider(redis=self.redis)
         exchange_orders = await self.create_orders(
-            balanceUSDT=balanceUSDT,
-            balanceUSDT099=balanceUSDT099,
+            balanceUSDT=balanceUSDT099,
             bot_config=bot_config,
             symbol=symbol,
             tick_size=tick_size,
@@ -267,38 +266,26 @@ class BinanceBot(Command):
             min_price=min_price,
             max_qty=max_qty,
             min_qty=min_qty,
-            creating_orders_type='both',
             db_order_buy=db_order_buy,
             db_order_sell=db_order_sell,
         )
 
         if not exchange_orders['order_buy'] or not exchange_orders['order_sell']:
-            deleting_order = None
-
             if exchange_orders['order_buy']:
-                deleting_order = {
-                    'symbol': symbol,
-                    'side': 'BUY',
-                    'origClientOrderId': exchange_orders['order_buy']['clientOrderId'],
-                }
-
-                db_order_buy.status = 'CANCELED'
-                db_order_buy.close_reason = f'Can\'t create sell order, cancel both'
-            if exchange_orders['order_sell']:
-                deleting_order = {
-                    'symbol': symbol,
-                    'side': 'SELL',
-                    'origClientOrderId': exchange_orders['order_sell']['clientOrderId'],
-                }
-
-                db_order_sell.status = 'CANCELED'
-                db_order_sell.close_reason = f'Can\'t create buy order, cancel both'
-
-            await self.session.commit()
-
-            if deleting_order:
                 await self.delete_order(
-                    order=deleting_order
+                    symbol=symbol,
+                    db_order=db_order_sell,
+                    orig_client_order_id=exchange_orders['order_buy']['clientOrderId'],
+                    status='CANCELED',
+                    close_reason=f'Can\'t create sell order, cancel both'
+                )
+            if exchange_orders['order_sell']:
+                await self.delete_order(
+                    symbol=symbol,
+                    db_order=db_order_sell,
+                    orig_client_order_id=exchange_orders['order_sell']['clientOrderId'],
+                    status='CANCELED',
+                    close_reason=f'Can\'t create buy order, cancel both'
                 )
 
             print(f"❌ Один из ордеров не может быть создан, второй ордер был отменён")
@@ -457,221 +444,144 @@ class BinanceBot(Command):
             print(f"❌ Ошибка при записи ордера бота {bot_config.id}: {e}")
 
     async def create_orders(
-        self, balanceUSDT, balanceUSDT099, bot_config,
-        symbol, tick_size, lot_size, max_price, min_price, max_qty, min_qty, creating_orders_type,
-        db_order_buy=None, db_order_sell=None,
-        tryCreateOrder=0,
+        self, balanceUSDT, bot_config,
+        symbol, tick_size, lot_size, max_price, min_price, max_qty, min_qty,
+        db_order_buy, db_order_sell
     ):
-        futures_mark_price = await self._safe_from_time_err_call_binance(
-            self.binance_client.futures_mark_price,
-            symbol=symbol
+        order_buy = await self.create_order(
+            balanceUSDT=balanceUSDT,
+            bot_config=bot_config,
+            symbol=symbol,
+            tick_size=tick_size,
+            lot_size=lot_size,
+            max_price=max_price,
+            min_price=min_price,
+            max_qty=max_qty,
+            min_qty=min_qty,
+            creating_orders_type='buy',
+            futures_order_type=FUTURE_ORDER_TYPE_STOP_MARKET,
+            order_side=SIDE_BUY,
+            order_position_side="LONG",
+            db_order=db_order_buy,
         )
-        initial_price = Decimal(futures_mark_price['markPrice'])
 
-        entry_price_buy = initial_price + bot_config.start_updown_ticks * tick_size
-        entry_price_buy_str = self._round_price_for_order(price=entry_price_buy, tick_size=tick_size)
+        order_sell = await self.create_order(
+            balanceUSDT=balanceUSDT,
+            bot_config=bot_config,
+            symbol=symbol,
+            tick_size=tick_size,
+            lot_size=lot_size,
+            max_price=max_price,
+            min_price=min_price,
+            max_qty=max_qty,
+            min_qty=min_qty,
+            creating_orders_type='sell',
+            futures_order_type=FUTURE_ORDER_TYPE_STOP_MARKET,
+            order_side=SIDE_SELL,
+            order_position_side="SHORT",
+            db_order=db_order_sell,
+        )
 
-        entry_price_sell = initial_price - bot_config.start_updown_ticks * tick_size
-        entry_price_sell_str = self._round_price_for_order(price=entry_price_sell, tick_size=tick_size)
+        print(
+            f"order_buy: {order_buy}\n\n"
+            f"order_sell: {order_sell}\n"
+        )
 
-        quantityOrder_buy_str = self._calculate_quantity_for_order(amount=balanceUSDT099, price=entry_price_buy, lot_size=lot_size)
-        quantityOrder_sell_str = self._calculate_quantity_for_order(amount=balanceUSDT099, price=entry_price_sell, lot_size=lot_size)
-
-        if any([
-            entry_price_buy > max_price,
-            entry_price_buy < min_price,
-            entry_price_sell > max_price,
-            entry_price_sell < min_price
-        ]):
-            print(f'Price bigger or less then maximums for {symbol}')
-
-            db_order_buy.status = 'CANCELED'
-            db_order_buy.close_reason = f'Price bigger or less then maximums for {symbol}'
-            db_order_sell.status = 'CANCELED'
-            db_order_sell.close_reason = f'Price bigger or less then maximums for {symbol}'
-            await self.session.commit()
-
-            creating_orders_type = 'canceled'
-
-        if any([
-            Decimal(quantityOrder_buy_str) > max_qty,
-            Decimal(quantityOrder_buy_str) < min_qty,
-            Decimal(quantityOrder_sell_str) > max_qty,
-            Decimal(quantityOrder_sell_str) < min_qty
-        ]):
-            print(f'Quantity bigger or less then maximums for {symbol}')
-
-            db_order_buy.status = 'CANCELED'
-            db_order_buy.close_reason = f'Quantity bigger or less then maximums for {symbol}'
-            db_order_sell.status = 'CANCELED'
-            db_order_sell.close_reason = f'Quantity bigger or less then maximums for {symbol}'
-            await self.session.commit()
-
-            creating_orders_type = 'canceled'
-
-        order_buy = None
-        order_sell = None
-
-        if creating_orders_type == 'buy' or creating_orders_type == 'both':
-            order_buy = await self.create_order(
-                balanceUSDT=balanceUSDT,
-                balanceUSDT099=balanceUSDT099,
-                bot_config=bot_config,
-                symbol=symbol,
-                tick_size=tick_size,
-                lot_size=lot_size,
-                max_price=max_price,
-                min_price=min_price,
-                max_qty=max_qty,
-                min_qty=min_qty,
-                creating_orders_type='buy',
-                futures_order_type=FUTURE_ORDER_TYPE_STOP_MARKET,
-                order_side=SIDE_BUY,
-                order_position_side="LONG",
-                order_quantity=quantityOrder_buy_str,
-                order_stop_price=entry_price_buy_str,
-                db_order_buy=db_order_buy,
-                db_order_sell=db_order_sell,
-                tryCreateOrder=tryCreateOrder
-            )
-
-        if creating_orders_type == 'sell' or (creating_orders_type == 'both' and order_buy):
-            order_sell = await self.create_order(
-                balanceUSDT=balanceUSDT,
-                balanceUSDT099=balanceUSDT099,
-                bot_config=bot_config,
-                symbol=symbol,
-                tick_size=tick_size,
-                lot_size=lot_size,
-                max_price=max_price,
-                min_price=min_price,
-                max_qty=max_qty,
-                min_qty=min_qty,
-                creating_orders_type='sell',
-                futures_order_type=FUTURE_ORDER_TYPE_STOP_MARKET,
-                order_side=SIDE_SELL,
-                order_position_side="SHORT",
-                order_quantity=quantityOrder_sell_str,
-                order_stop_price=entry_price_sell_str,
-                db_order_buy=db_order_buy,
-                db_order_sell=db_order_sell,
-                tryCreateOrder=tryCreateOrder
-            )
-
-        if creating_orders_type == 'both':
-            print(
-                f"balanceUSDT: {balanceUSDT}\n"
-                f"symbol: {symbol}\n"
-                f"bot_config.start_updown_ticks: {bot_config.start_updown_ticks}\n"
-                f"futures_mark_price: {futures_mark_price}\n"
-                f"initial_price: {initial_price}\n"
-                f"entry_price_buy: {entry_price_buy_str}\n"
-                f"entry_price_sell: {entry_price_sell_str}\n"
-                f"quantityOrder_buy: {quantityOrder_buy_str}\n"
-                f"quantityOrder_sell: {quantityOrder_sell_str}\n"
-                f"step size: {str(tick_size)}\n"
-            )
-
-            db_order_buy.quote_quantity = balanceUSDT
-            db_order_buy.asset_quantity = Decimal(quantityOrder_buy_str)
-            db_order_buy.start_price = initial_price
-            db_order_buy.activation_price = Decimal(entry_price_buy_str)
-
-            db_order_sell.quote_quantity = balanceUSDT
-            db_order_sell.asset_quantity = Decimal(quantityOrder_sell_str)
-            db_order_sell.start_price = initial_price
-            db_order_sell.activation_price = Decimal(entry_price_sell_str)
-
-            await self.session.commit()
-
-            print(
-                f"order_buy: {order_buy}\n\n"
-                f"order_sell: {order_sell}\n"
-            )
-
-        if creating_orders_type == 'buy':
-            return order_buy
-        elif creating_orders_type == 'sell':
-            return order_sell
-        else:
-            return {
-                'order_buy': order_buy,
-                'order_sell': order_sell,
-            }
+        return {
+            'order_buy': order_buy,
+            'order_sell': order_sell,
+        }
 
     async def create_order(
-        self, balanceUSDT, balanceUSDT099, bot_config,
+        self, balanceUSDT, bot_config,
         symbol, tick_size, lot_size, max_price, min_price, max_qty, min_qty, creating_orders_type,
-        futures_order_type, order_side, order_position_side, order_quantity, order_stop_price,
-        tryCreateOrder,
-        db_order_buy=None, db_order_sell=None,
+        futures_order_type, order_side, order_position_side,
+        db_order
     ):
-        tryCreateOrder = tryCreateOrder + 1
+        order = None
+        order_params = None
+        try_create_order = 0
 
-        if creating_orders_type == 'buy':
-            db_order = db_order_buy
-        else:
-            db_order = db_order_sell
+        while True:
+            if try_create_order > 10:
+                print('Too much tries when stop price like last market price')
 
-        if tryCreateOrder > 10:
-            print('Too much tries when stop price like last market price')
+                db_order.status = 'CANCELED'
+                db_order.close_reason = f'Quantity bigger or less then maximums for {symbol}'
+                break
 
-            db_order.status = 'CANCELED'
-            db_order.close_reason = f'Quantity bigger or less then maximums for {symbol}'
-            await self.session.commit()
-
-            return None
-
-        try:
-            order = await self._safe_from_time_err_call_binance(
-                self.binance_client.futures_create_order,
-                symbol=symbol,
-                side=order_side,
-                positionSide=order_position_side,
-                type=futures_order_type,
-                quantity=order_quantity,
-                stopPrice=order_stop_price,
-                newClientOrderId=db_order.client_order_id,
-                workingType="MARK_PRICE",
-                priceProtect=True,
-                newOrderRespType="RESULT",
-                recvWindow=3000,
-                tryCreateOrder=tryCreateOrder,
+            order_params = await self._get_order_params(
+                bot_config, balanceUSDT,
+                symbol, tick_size, lot_size, max_price, min_price, max_qty, min_qty,
+                db_order
             )
 
-            if 'orderId' in order and 'status' in order:
-                db_order.exchange_order_id = str(order['orderId'])
-                await self.session.commit()
+            if not order_params:
+                return None
 
-            return order
-        except BinanceAPIException as e:
-            if e.code == -2021:
-                order = await self.create_orders(
-                    balanceUSDT=balanceUSDT,
-                    balanceUSDT099=balanceUSDT099,
-                    bot_config=bot_config,
+            if creating_orders_type == 'buy':
+                order_quantity = order_params['quantityOrder_buy_str']
+                order_stop_price = order_params['entry_price_buy_str']
+            else:
+                order_quantity = order_params['quantityOrder_sell_str']
+                order_stop_price = order_params['entry_price_sell_str']
+
+            try:
+                order = await self._safe_from_time_err_call_binance(
+                    self.binance_client.futures_create_order,
                     symbol=symbol,
-                    tick_size=tick_size,
-                    lot_size=lot_size,
-                    max_price=max_price,
-                    min_price=min_price,
-                    max_qty=max_qty,
-                    min_qty=min_qty,
-                    creating_orders_type=creating_orders_type,
-                    tryCreateOrder=tryCreateOrder,
-                    db_order_buy=db_order_buy,
-                    db_order_sell=db_order_sell
+                    side=order_side,
+                    positionSide=order_position_side,
+                    type=futures_order_type,
+                    quantity=order_quantity,
+                    stopPrice=order_stop_price,
+                    newClientOrderId=db_order.client_order_id,
+                    workingType="MARK_PRICE",
+                    priceProtect=True,
+                    newOrderRespType="RESULT",
+                    recvWindow=3000,
                 )
 
-                if 'orderId' in order and 'status' in order:
-                    db_order.exchange_order_id = str(order['orderId'])
-                    await self.session.commit()
+                break
+            except BinanceAPIException as e:
+                if e.code == -2021:
+                    try_create_order = try_create_order + 1
+                    continue
+                else:
+                    db_order.status = 'CANCELED'
+                    db_order.close_reason = f'Binance error while creating order: {e}'
+                    break
 
-                return order
-            else:
-                raise
+        db_order.quote_quantity = balanceUSDT
+        if order_params:
+            db_order.asset_quantity = Decimal(order_params['quantityOrder_buy_str'])
+            db_order.start_price = order_params['initial_price']
+            db_order.activation_price = Decimal(order_params['entry_price_buy_str'])
 
-    async def delete_order(
+        if order and 'orderId' in order and 'status' in order:
+            db_order.exchange_order_id = str(order['orderId'])
+        await self.session.commit()
+
+        return order
+
+    async def delete_order(self, symbol, db_order, orig_client_order_id, status, close_reason):
+        deleting_order = {
+            'symbol': symbol,
+            'side': db_order.side,
+            'origClientOrderId': orig_client_order_id,
+        }
+
+        db_order.status = status
+        db_order.close_reason = close_reason
+
+        await self.session.commit()
+
+        if deleting_order:
+            await self.delete_binance_order(
+                order=deleting_order
+            )
+
+    async def delete_binance_order(
             self, order
     ):
         try:
@@ -732,36 +642,84 @@ class BinanceBot(Command):
     async def delete_second_order(
             self, symbol, first_order_updating_data, exchange_orders, db_order_sell, db_order_buy
     ):
-        deleting_order = None
+        deleted_second_order = True
 
         if first_order_updating_data['c'] == exchange_orders['order_buy']['clientOrderId']:
-            deleting_order = {
-                'symbol': symbol,
-                'side': 'SELL',
-                'origClientOrderId': exchange_orders['order_sell']['clientOrderId'],
-            }
-
-            db_order_sell.status = 'CANCELED'
-            db_order_sell.close_reason = f'Buy order activated first'
-        elif first_order_updating_data['c'] == exchange_orders['order_sell']['clientOrderId']:
-            deleting_order = {
-                'symbol': symbol,
-                'side': 'BUY',
-                'origClientOrderId': exchange_orders['order_buy']['clientOrderId'],
-            }
-
-            db_order_buy.status = 'CANCELED'
-            db_order_buy.close_reason = f'Sell order activated first'
-
-        await self.session.commit()
-
-        if deleting_order:
             await self.delete_order(
-                order=deleting_order
+                symbol=symbol,
+                db_order=db_order_sell,
+                orig_client_order_id=exchange_orders['order_sell']['clientOrderId'],
+                status='CANCELED',
+                close_reason=f'Buy order activated first'
+            )
+        elif first_order_updating_data['c'] == exchange_orders['order_sell']['clientOrderId']:
+            await self.delete_order(
+                symbol=symbol,
+                db_order=db_order_buy,
+                orig_client_order_id=exchange_orders['order_buy']['clientOrderId'],
+                status='CANCELED',
+                close_reason=f'Sell order activated first'
             )
         else:
+            deleted_second_order = False
             print('❌ Can\'t get first order. stop.')
-            return
+
+        return deleted_second_order
+
+    async def _get_order_params(
+            self, bot_config, balanceUSDT099,
+            symbol, tick_size, lot_size, max_price, min_price, max_qty, min_qty,
+            db_order
+    ):
+        futures_mark_price = await self._safe_from_time_err_call_binance(
+            self.binance_client.futures_mark_price,
+            symbol=symbol
+        )
+        initial_price = Decimal(futures_mark_price['markPrice'])
+
+        entry_price_buy = initial_price + bot_config.start_updown_ticks * tick_size
+        entry_price_buy_str = self._round_price_for_order(price=entry_price_buy, tick_size=tick_size)
+
+        entry_price_sell = initial_price - bot_config.start_updown_ticks * tick_size
+        entry_price_sell_str = self._round_price_for_order(price=entry_price_sell, tick_size=tick_size)
+
+        quantityOrder_buy_str = self._calculate_quantity_for_order(amount=balanceUSDT099, price=entry_price_buy, lot_size=lot_size)
+        quantityOrder_sell_str = self._calculate_quantity_for_order(amount=balanceUSDT099, price=entry_price_sell, lot_size=lot_size)
+
+        if any([
+            entry_price_buy > max_price,
+            entry_price_buy < min_price,
+            entry_price_sell > max_price,
+            entry_price_sell < min_price
+        ]):
+            print(f'Price bigger or less then maximums for {symbol}')
+
+            db_order.status = 'CANCELED'
+            db_order.close_reason = f'Price bigger or less then maximums for {symbol}'
+            await self.session.commit()
+
+            return None
+
+        if any([
+            Decimal(quantityOrder_buy_str) > max_qty,
+            Decimal(quantityOrder_buy_str) < min_qty,
+            Decimal(quantityOrder_sell_str) > max_qty,
+            Decimal(quantityOrder_sell_str) < min_qty
+        ]):
+            print(f'Quantity bigger or less then maximums for {symbol}')
+
+            db_order.status = 'CANCELED'
+            db_order.close_reason = f'Quantity bigger or less then maximums for {symbol}'
+            await self.session.commit()
+
+            return None
+        return {
+            'initial_price': initial_price,
+            'entry_price_buy_str': entry_price_buy_str,
+            'entry_price_sell_str': entry_price_sell_str,
+            'quantityOrder_buy_str': quantityOrder_buy_str,
+            'quantityOrder_sell_str': quantityOrder_sell_str,
+        }
 
     async def _safe_from_time_err_call_binance(self, func, *args, max_retries=20, retry_delay=1, **kwargs):
         for attempt in range(1, max_retries + 1):
