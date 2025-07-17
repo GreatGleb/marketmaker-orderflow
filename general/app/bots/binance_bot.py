@@ -208,7 +208,7 @@ class BinanceBot(Command):
 
         balanceUSDT099 = balanceUSDT * Decimal(0.99)
 
-        bot_config.start_updown_ticks = 100
+        bot_config.start_updown_ticks = 10000
 
         db_order_buy = MarketOrder(
             symbol=symbol,
@@ -249,11 +249,11 @@ class BinanceBot(Command):
         print(db_order_buy.client_order_id)
         print(db_order_sell.client_order_id)
 
-        order_update_listener = UserDataWebSocketClient(
+        self.order_update_listener = UserDataWebSocketClient(
             self.binance_client,
             waiting_orders=[db_order_buy, db_order_sell]
         )
-        await order_update_listener.start()
+        await self.order_update_listener.start()
 
         # price_provider = PriceProvider(redis=self.redis)
         exchange_orders = await self.create_orders(
@@ -291,43 +291,38 @@ class BinanceBot(Command):
             print(f"❌ Один из ордеров не может быть создан, второй ордер был отменён")
             return
 
-        first_order_updating_data = await order_update_listener.get_first_started_order()
-        print("✅ Первый ордер получен:", first_order_updating_data)
+        wait_for_order = await self._wait_until_orders_activated(bot_config, db_order_buy, db_order_sell, symbol)
+        if not wait_for_order['timeout_missed']:
+            print(f"A minute has passed, entry conditions have not been met")
+            return
 
-        await self.delete_second_order(
-            symbol=symbol,
-            first_order_updating_data=first_order_updating_data,
-            exchange_orders=exchange_orders,
-            db_order_sell=db_order_sell,
-            db_order_buy=db_order_buy
-        )
+        print("✅ Первый ордер получен:", wait_for_order['first_order_updating_data'])
 
-        if first_order_updating_data['c'] == exchange_orders['order_buy']['clientOrderId']:
+        if wait_for_order['first_order_updating_data']['c'] == exchange_orders['order_buy']['clientOrderId']:
             db_order = db_order_buy
+            second_order = db_order_sell
         else:
             db_order = db_order_sell
+            second_order = db_order_buy
 
-        timeoutOccurred = False
-
-        try:
-            timeout = Decimal(bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes)
-            timeout = int(timeout * 60)
-
-            await asyncio.wait_for(
-                self._wait_filling_of_order(db_order),
-                timeout=timeout
+        delete_task = asyncio.create_task(
+            self.delete_order(
+                symbol=symbol,
+                db_order=second_order,
+                orig_client_order_id=second_order.client_order_id,
+                status='CANCELED',
+                close_reason=f'Another order activated first'
             )
-        except asyncio.TimeoutError:
-            timeoutOccurred = True
+        )
+        # fill_check_task = asyncio.create_task(
+        #     self._wait_until_order_filled(bot_config, db_order, symbol)
+        # )
 
-        if timeoutOccurred:
-            print(f"Bot {bot_config.id}; A minute has passed, entry conditions have not been met")
-
-            #delete order
-
-            return False
-        else:
-            print(f'db_order - activated: {db_order.activation_time}, opened: {db_order.open_time}')
+        await delete_task
+        # timeout_missed = await fill_check_task
+        #
+        # if not timeout_missed:
+        #     return
 
         await asyncio.sleep(60)
 
@@ -336,7 +331,7 @@ class BinanceBot(Command):
         # add new stops orders for stop lose, take profit
         # wait for stop, update db order
 
-        # order_update_listener.stop()
+        # self.order_update_listener.stop()
         return
 
         print(
@@ -639,33 +634,6 @@ class BinanceBot(Command):
 
         return
 
-    async def delete_second_order(
-            self, symbol, first_order_updating_data, exchange_orders, db_order_sell, db_order_buy
-    ):
-        deleted_second_order = True
-
-        if first_order_updating_data['c'] == exchange_orders['order_buy']['clientOrderId']:
-            await self.delete_order(
-                symbol=symbol,
-                db_order=db_order_sell,
-                orig_client_order_id=exchange_orders['order_sell']['clientOrderId'],
-                status='CANCELED',
-                close_reason=f'Buy order activated first'
-            )
-        elif first_order_updating_data['c'] == exchange_orders['order_sell']['clientOrderId']:
-            await self.delete_order(
-                symbol=symbol,
-                db_order=db_order_buy,
-                orig_client_order_id=exchange_orders['order_buy']['clientOrderId'],
-                status='CANCELED',
-                close_reason=f'Sell order activated first'
-            )
-        else:
-            deleted_second_order = False
-            print('❌ Can\'t get first order. stop.')
-
-        return deleted_second_order
-
     async def _get_order_params(
             self, bot_config, balanceUSDT099,
             symbol, tick_size, lot_size, max_price, min_price, max_qty, min_qty,
@@ -734,12 +702,50 @@ class BinanceBot(Command):
                 else:
                     raise
 
+    async def _wait_until_orders_activated(self, bot_config, db_order_buy, db_order_sell, symbol):
+        timeout_missed = True
+        first_order_updating_data = None
+
+        try:
+            timeout = Decimal(bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes)
+            timeout = int(timeout * 60)
+
+            print(f'timeout {timeout}')
+
+            first_order_updating_data = await asyncio.wait_for(
+                self._wait_activating_of_order(),
+                timeout=timeout
+            )
+        except asyncio.TimeoutError:
+            timeout_missed = False
+
+        if not timeout_missed:
+            for db_order in [db_order_buy, db_order_sell]:
+                await self.delete_order(
+                    symbol=symbol,
+                    db_order=db_order,
+                    orig_client_order_id=db_order.client_order_id,
+                    status='CANCELED',
+                    close_reason=f'A minute has passed, entry conditions have not been met'
+                )
+
+        return {
+            'timeout_missed': timeout_missed,
+            'first_order_updating_data': first_order_updating_data,
+        }
+
     async def _wait_filling_of_order(self, db_order):
         while True:
             if db_order.open_time is not None:
+                print(f'Order was filled! activated: {db_order.activation_time}, opened: {db_order.open_time}')
                 return True
 
             await asyncio.sleep(0.1)
+
+    async def _wait_activating_of_order(self):
+        first_order_updating_data = await self.order_update_listener.get_first_started_order()
+
+        return first_order_updating_data
 
     async def _get_copy_bot_tf_params(self):
         copy_bot_min_time_profitability_min = 180

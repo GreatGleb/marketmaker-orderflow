@@ -16,6 +16,7 @@ class UserDataWebSocketClient:
         domain = "stream.binancefuture.com"
         self.url = f"wss://{domain}/ws/{self.listen_key}"
         self.first_order_started_event = asyncio.Event()
+        self.connected_event = asyncio.Event()
         self.keep_running = True
         self.first_order = None
         self.waiting_orders = {}
@@ -29,6 +30,7 @@ class UserDataWebSocketClient:
         while self.keep_running:
             try:
                 async with websockets.connect(self.url) as websocket:
+                    self.connected_event.set()
                     print("🔌 Подключено к USER DATA STREAM")
                     while self.keep_running:
                         msg = await websocket.recv()
@@ -52,6 +54,8 @@ class UserDataWebSocketClient:
     async def start(self):
         asyncio.create_task(self.keep_alive())
         asyncio.create_task(self.connect())
+
+        await self.connected_event.wait()
 
     def stop(self):
         self.keep_running = False
