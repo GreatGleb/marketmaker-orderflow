@@ -56,7 +56,6 @@ class StartTestBotsCommand(Command):
         tasks = []
 
         for bot in active_bots:
-
             async def _run_loop(bot_config=bot):
                 while not self.stop_event.is_set():
                     try:

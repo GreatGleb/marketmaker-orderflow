@@ -64,7 +64,6 @@ class ProfitableBotUpdaterCommand(Command):
     async def get_profitable_bots_id_by_tf(
         bot_crud, bot_profitability_timeframes
     ):
-
         tf_bot_ids = {}
 
         for tf in bot_profitability_timeframes:
