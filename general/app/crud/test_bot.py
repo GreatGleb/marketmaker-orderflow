@@ -56,7 +56,6 @@ class TestBotCrud(BaseCrud[TestBot]):
         if since is not None:
             now = datetime.now(UTC)
             time_ago = now - since
-            time_ago = time_ago.replace(tzinfo=None)
 
             profits_query = profits_query.where(
                 TestOrder.created_at >= time_ago

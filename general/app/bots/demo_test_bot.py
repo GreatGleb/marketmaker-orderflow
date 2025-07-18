@@ -56,6 +56,7 @@ class StartTestBotsCommand(Command):
         tasks = []
 
         for bot in active_bots:
+
             async def _run_loop(bot_config=bot):
                 while not self.stop_event.is_set():
                     try:
@@ -281,6 +282,8 @@ class StartTestBotsCommand(Command):
                 "stop_success_ticks": bot_config.stop_success_ticks,
                 "stop_reason_event": order.stop_reason_event,
                 "referral_bot_id": bot_config.referral_bot_id,
+                "created_at": datetime.now(UTC),
+                "updated_at": datetime.now(UTC),
             }
             await redis.rpush(
                 ORDER_QUEUE_KEY,

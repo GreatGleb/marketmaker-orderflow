@@ -35,7 +35,12 @@ class OrderBulkInsertCommand(Command):
         crud: TestOrderCrud = resolve_crud(TestOrderCrud),
         redis: Redis = Depends(get_redis),
     ):
-        DATETIME_FIELDS = ["open_time", "close_time"]
+        DATETIME_FIELDS = [
+            "open_time",
+            "close_time",
+            "created_at",
+            "updated_at",
+        ]
         BATCH_SIZE = 1000
 
         orders = []
