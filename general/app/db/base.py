@@ -64,7 +64,8 @@ class DatabaseSessionManager:
 
         try:
             yield session
-        except Exception:
+        except Exception as e:
+            print(f"Error in session block: {e}")
             await session.rollback()
             raise
         finally:
