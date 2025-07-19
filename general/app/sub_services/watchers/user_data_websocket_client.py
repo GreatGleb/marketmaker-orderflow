@@ -16,6 +16,7 @@ class UserDataWebSocketClient:
         domain = "stream.binancefuture.com"
         self.url = f"wss://{domain}/ws/{self.listen_key}"
         self.first_order_started_event = asyncio.Event()
+        self.first_order_filled_event = asyncio.Event()
         self.connected_event = asyncio.Event()
         self.keep_running = True
         self.first_order = None
@@ -81,33 +82,53 @@ class UserDataWebSocketClient:
         if not self.first_order_started_event.is_set() or (self.first_order and order['i'] == self.first_order['i']):
             self.first_order = order
 
-        self.waiting_orders[order['c']].exchange_status = order['X']
-
-        self.waiting_orders[order['c']].status = order['X']
-        if Decimal(order['n']) > 0:
-            if self.waiting_orders[order['c']].open_order_type:
-                if self.waiting_orders[order['c']].open_commission is None:
-                    self.waiting_orders[order['c']].open_commission = 0
-                self.waiting_orders[order['c']].open_commission = self.waiting_orders[order['c']].open_commission + Decimal(order['n'])
-            elif self.waiting_orders[order['c']].close_order_type:
-                if self.waiting_orders[order['c']].close_commission is None:
-                    self.waiting_orders[order['c']].close_commission = 0
-                self.waiting_orders[order['c']].close_commission = self.waiting_orders[order['c']].close_commission + Decimal(order['n'])
-
-        if order['X'] == 'FILLED' or order['X'] == 'PARTIALLY_FILLED':
-            if '_close' in order['c']:
-                self.waiting_orders[order['c']].close_price = Decimal(order['L'])
-                self.waiting_orders[order['c']].close_time = datetime.now(UTC).replace(tzinfo=None)
-            else:
-                self.waiting_orders[order['c']].open_price = Decimal(order['L'])
-                self.waiting_orders[order['c']].open_time = datetime.now(UTC).replace(tzinfo=None)
-
-        if order['X'] == 'EXPIRED':
-            self.waiting_orders[order['c']].activation_price = Decimal(order['sp'])
-            self.waiting_orders[order['c']].activation_time = datetime.now(UTC).replace(tzinfo=None)
-
         if order['X'] == 'EXPIRED' and not self.first_order_started_event.is_set():
             self.first_order_started_event.set()
+
+        current_order = self.waiting_orders[order['c']]
+
+        if order['X'] == 'EXPIRED':
+            current_order.activation_price = Decimal(order['sp'])
+            current_order.activation_time = datetime.now(UTC).replace(tzinfo=None)
+
+        current_order.exchange_status = order['X']
+        current_order.status = order['X']
+
+        if order['X'] == 'FILLED':
+            if self.first_order and order['i'] == self.first_order['i']:
+                self.first_order_filled_event.set()
+
+            if 'stop' in order['c']:
+                first_underscore_index = order['c'].find('_')
+                second_underscore_index = order['c'].find('_', first_underscore_index + 1)
+                if second_underscore_index != -1:
+                    original_order_id = order['c'][:second_underscore_index]
+                else:
+                    original_order_id = order['c']
+
+                original_order = self.waiting_orders.get(original_order_id)
+                if original_order:
+                    original_order.close_price = Decimal(order['L'])
+                    original_order.close_time = datetime.now(UTC).replace(tzinfo=None)
+                    original_order.status = 'CLOSED'
+
+                    if 'lose' in order['c']:
+                        original_order.closed_reason = 'stop lose'
+                    if 'win' in order['c']:
+                        original_order.closed_reason = 'stop win'
+            else:
+                current_order.open_price = Decimal(order['L'])
+                current_order.open_time = datetime.now(UTC).replace(tzinfo=None)
+
+        if Decimal(order['n']) > 0:
+            if current_order.open_order_type:
+                if current_order.open_commission is None:
+                    current_order.open_commission = 0
+                current_order.open_commission = current_order.open_commission + Decimal(order['n'])
+            elif current_order.close_order_type:
+                if current_order.close_commission is None:
+                    current_order.close_commission = 0
+                current_order.close_commission = current_order.close_commission + Decimal(order['n'])
 
     async def get_first_started_order(self):
         if self.first_order_started_event.is_set():
@@ -116,3 +137,19 @@ class UserDataWebSocketClient:
         await self.first_order_started_event.wait()
 
         return self.first_order
+
+    async def get_first_order_filled(self):
+        if self.first_order_filled_event.is_set():
+            return self.first_order
+
+        await self.first_order_filled_event.wait()
+
+        return self.first_order
+
+    def add_waiting_order(self, order):
+        if order.client_order_id not in self.waiting_orders:
+            self.waiting_orders_id.append(order.client_order_id)
+            self.waiting_orders[order.client_order_id] = order
+            print(f"✅ Ордер с client_order_id '{order.client_order_id}' добавлен в ожидающие.")
+        else:
+            print(f"⚠️ Ордер с client_order_id '{order.client_order_id}' уже существует в ожидающих ордерах. Игнорируем добавление.")

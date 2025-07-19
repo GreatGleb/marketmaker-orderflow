@@ -1,44 +1,27 @@
 import asyncio
-import enum
-import threading
-from datetime import datetime, timedelta, timezone
-from decimal import Decimal, ROUND_HALF_UP
-from sqlalchemy import distinct, select
 import json
-from dotenv import load_dotenv
+import math
 import os
 import time
-import math
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 
 from binance.client import Client
-from binance.enums import *
+from binance.enums import FUTURE_ORDER_TYPE_STOP_MARKET, FUTURE_ORDER_TYPE_MARKET, FUTURE_ORDER_TYPE_TRAILING_STOP_MARKET, SIDE_SELL, SIDE_BUY
 from binance.exceptions import BinanceAPIException
-
-from sqlalchemy.ext.asyncio import AsyncSession
+from dotenv import load_dotenv
 from fastapi import Depends
 from redis.asyncio import Redis
-from app.dependencies import (
-    get_session,
-    get_redis,
-    resolve_crud,
-)
+from sqlalchemy import distinct, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.crud.asset_history import AssetHistoryCrud
 from app.crud.exchange_pair_spec import AssetExchangeSpecCrud
 from app.crud.test_bot import TestBotCrud
-from app.crud.test_orders import TestOrderCrud
-from app.db.base import DatabaseSessionManager
-from app.config import settings
-from app.db.models import TestBot, TestOrder
-from app.dependencies import redis_context
+from app.db.models import MarketOrder, TestBot, TestOrder
+from app.dependencies import get_redis, get_session, resolve_crud
+from app.sub_services.logic.price_calculator import PriceCalculator
+from app.sub_services.watchers.price_provider import PriceProvider
 from app.sub_services.watchers.user_data_websocket_client import UserDataWebSocketClient
-
-
-from app.db.models import MarketOrder
-from app.sub_services.watchers.price_provider import (
-    PriceWatcher,
-    PriceProvider,
-)
 from app.utils import Command
 from app.workers.profitable_bot_updater import ProfitableBotUpdaterCommand
 
@@ -52,6 +35,7 @@ class BinanceBot(Command):
         self.bot_crud = None
         self.binance_client = None
         self.symbols_characteristics = None
+        self.stop_custom_trailing = None
         self.stop_event = stop_event
 
     async def command(
@@ -63,6 +47,7 @@ class BinanceBot(Command):
         self.session = session
         self.redis = redis
         self.bot_crud = bot_crud
+        self.price_provider = PriceProvider(redis=self.redis)
 
         print('getting tick_size data')
         exchange_crud = AssetExchangeSpecCrud(self.session)
@@ -82,11 +67,10 @@ class BinanceBot(Command):
             print('Mod not dual side position, can\'t to create new orders!')
             return
 
-        # position_info = client.futures_account()
-        # # Запись в файл JSON
-        # file_name = "position_info.json"
-        # with open(file_name, 'w', encoding='utf-8') as f:
-        #     json.dump(position_info, f, ensure_ascii=False, indent=4)
+        position_info = await self._safe_from_time_err_call_binance(self.binance_client.futures_account)
+        file_name = "position_info.json"
+        with open(file_name, 'w', encoding='utf-8') as f:
+            json.dump(position_info, f, ensure_ascii=False, indent=4)
 
         print('finished creating binance client')
 
@@ -206,9 +190,11 @@ class BinanceBot(Command):
         if balanceUSDT > 100:
             balanceUSDT = 100
 
-        balanceUSDT099 = balanceUSDT * Decimal(0.99)
+        balanceUSDT099 = Decimal(balanceUSDT) * Decimal(0.99)
 
-        bot_config.start_updown_ticks = 10000
+        bot_config.start_updown_ticks = 10
+        bot_config.stop_loss_ticks = 70
+        bot_config.stop_success_ticks = 40
 
         db_order_buy = MarketOrder(
             symbol=symbol,
@@ -255,7 +241,6 @@ class BinanceBot(Command):
         )
         await self.order_update_listener.start()
 
-        # price_provider = PriceProvider(redis=self.redis)
         exchange_orders = await self.create_orders(
             balanceUSDT=balanceUSDT099,
             bot_config=bot_config,
@@ -273,17 +258,13 @@ class BinanceBot(Command):
         if not exchange_orders['order_buy'] or not exchange_orders['order_sell']:
             if exchange_orders['order_buy']:
                 await self.delete_order(
-                    symbol=symbol,
                     db_order=db_order_sell,
-                    orig_client_order_id=exchange_orders['order_buy']['clientOrderId'],
                     status='CANCELED',
                     close_reason=f'Can\'t create sell order, cancel both'
                 )
             if exchange_orders['order_sell']:
                 await self.delete_order(
-                    symbol=symbol,
                     db_order=db_order_sell,
-                    orig_client_order_id=exchange_orders['order_sell']['clientOrderId'],
                     status='CANCELED',
                     close_reason=f'Can\'t create buy order, cancel both'
                 )
@@ -291,12 +272,10 @@ class BinanceBot(Command):
             print(f"❌ Один из ордеров не может быть создан, второй ордер был отменён")
             return
 
-        wait_for_order = await self._wait_until_orders_activated(bot_config, db_order_buy, db_order_sell, symbol)
+        wait_for_order = await self._wait_until_order_activated(bot_config, db_order_buy, db_order_sell)
         if not wait_for_order['timeout_missed']:
             print(f"A minute has passed, entry conditions have not been met")
             return
-
-        print("✅ Первый ордер получен:", wait_for_order['first_order_updating_data'])
 
         if wait_for_order['first_order_updating_data']['c'] == exchange_orders['order_buy']['clientOrderId']:
             db_order = db_order_buy
@@ -307,136 +286,41 @@ class BinanceBot(Command):
 
         delete_task = asyncio.create_task(
             self.delete_order(
-                symbol=symbol,
                 db_order=second_order,
-                orig_client_order_id=second_order.client_order_id,
                 status='CANCELED',
                 close_reason=f'Another order activated first'
             )
         )
-        # fill_check_task = asyncio.create_task(
-        #     self._wait_until_order_filled(bot_config, db_order, symbol)
-        # )
 
+        wait_filled_task = asyncio.create_task(
+            self._wait_until_order_filled(bot_config, db_order)
+        )
+
+        wait_filled = await wait_filled_task
+        if not wait_filled['timeout_missed']:
+            print(f"A minute has passed, order did\'nt fill")
+            await delete_task
+            return
+
+        print("✅ Первый ордер получен:", wait_for_order['first_order_updating_data'])
+        setting_sl_sw_to_order = asyncio.create_task(
+            self.setting_sl_sw_to_order(db_order, bot_config, tick_size)
+        )
+
+        await setting_sl_sw_to_order
         await delete_task
-        # timeout_missed = await fill_check_task
-        #
-        # if not timeout_missed:
-        #     return
+
+        try:
+            await self.session.commit()
+        except Exception as e:
+            self.session.rollback()
+            print(f"❌ Error DB: {e}")
+            return
 
         await asyncio.sleep(60)
 
-        # add model for market order
-        # create new db order of first filled order
-        # add new stops orders for stop lose, take profit
-        # wait for stop, update db order
-
         # self.order_update_listener.stop()
         return
-
-        print(
-            f"⏳ Бот {bot_config.id} | Ожидаем входа:"
-            f" BUY ≥ {entry_price_buy:.4f}, SELL ≤ {entry_price_sell:.4f}"
-        )
-
-        open_price = entry_price
-        priceFromPreviousStep = entry_price
-        close_not_lose_price = calculate_close_not_lose_price(open_price, trade_type)
-        stop_loss_price = calculate_stop_lose_price(bot_config, tick_size, open_price, trade_type)
-        original_take_profit_price = calculate_take_profit_price(bot_config, tick_size, open_price, trade_type)
-        take_profit_price = original_take_profit_price
-
-        print(
-            f"🔎 Бот {bot_config.id} | {trade_type} | Вход: {open_price:.4f} | "
-            f"SL: {stop_loss_price:.4f} | TP: {take_profit_price:.4f}"
-        )
-
-        order = TestOrder(
-            stop_loss_price=Decimal(stop_loss_price),
-            stop_success_ticks=bot_config.stop_success_ticks,
-            open_price=open_price,
-            open_time=datetime.now(UTC),
-            open_fee=(Decimal(bot_config.balance) * Decimal(COMMISSION_OPEN)),
-        )
-
-        while not self.stop_event.is_set():
-            updated_price = await get_price_from_redis(self.redis, symbol)
-            new_tk_p = calculate_take_profit_price(bot_config, tick_size, updated_price, trade_type)
-            new_sl_p = calculate_stop_lose_price(bot_config, tick_size, updated_price, trade_type)
-
-            if trade_type == TradeType.BUY:
-                if priceFromPreviousStep < updated_price and new_tk_p > take_profit_price:
-                    take_profit_price = new_tk_p
-                elif new_sl_p > order.stop_loss_price:
-                    order.stop_loss_price = new_sl_p
-                if updated_price <= order.stop_loss_price:
-                    order.stop_reason_event = 'stop-losed'
-                    # print(f"Бот {bot_config.id} | 📉⛔ BUY order closed by STOP-LOSE at {updated_price}")
-                    break
-                if updated_price > close_not_lose_price and updated_price <= take_profit_price:
-                    order.stop_reason_event = 'stop-won'
-                    print(f"Бот {bot_config.id} | 📈✅ BUY order closed by STOP-WIN at {updated_price}, Take profit: {take_profit_price}")
-                    break
-            else:
-                if priceFromPreviousStep > updated_price and new_tk_p < take_profit_price:
-                    take_profit_price = new_tk_p
-                elif new_sl_p < order.stop_loss_price:
-                    order.stop_loss_price = new_sl_p
-                if updated_price >= order.stop_loss_price:
-                    order.stop_reason_event = 'stop-losed'
-                    # print(f"Бот {bot_config.id} | 📉⛔ SELL order closed by STOP-LOSE at {updated_price}")
-                    break
-                if updated_price < close_not_lose_price and updated_price >= take_profit_price:
-                    order.stop_reason_event = 'stop-won'
-                    print(f"Бот {bot_config.id} | 📈✅ SELL order closed by STOP-WIN at {updated_price}, Take profit: {take_profit_price}")
-                    break
-
-            priceFromPreviousStep = updated_price
-
-            await asyncio.sleep(0.1)
-
-        # Закрытие сделки
-        close_price = await get_price_from_redis(self.redis, symbol)
-        balance = bot_config.balance
-        amount = Decimal(balance) / Decimal(open_price)
-        commission_open = amount * open_price * COMMISSION_OPEN
-        commission_close = amount * close_price * COMMISSION_CLOSE
-        total_commission = commission_open + commission_close
-
-        if trade_type == TradeType.BUY:
-            pnl = (amount * close_price) - (amount * open_price) - total_commission
-        elif trade_type == TradeType.SELL:
-            pnl = (amount * open_price) - (amount * close_price) - total_commission
-
-        # print(
-        #     f"💬 Бот {bot_config.id} | {trade_type} "
-        #     f"| Entry: {open_price:.4f} | "
-        #     f"Close: {close_price:.4f} | PnL: {pnl:.4f}"
-        # )
-        try:
-            # await TestOrderCrud(session).create(
-            #     {
-            #         "asset_symbol": symbol,
-            #         "order_type": trade_type,
-            #         "balance": balance,
-            #         "open_price": open_price,
-            #         "open_time": order.open_time,
-            #         "open_fee": order.open_fee,
-            #         "stop_loss_price": order.stop_loss_price,
-            #         "bot_id": bot_config.id,
-            #         "close_price": close_price,
-            #         "close_time": datetime.now(UTC),
-            #         "close_fee": order.open_price * Decimal(COMMISSION_CLOSE),
-            #         "profit_loss": pnl,
-            #         "is_active": False,
-            #         "start_updown_ticks": bot_config.start_updown_ticks,
-            #         "stop_loss_ticks": bot_config.stop_loss_ticks,
-            #         "stop_success_ticks": bot_config.stop_success_ticks,
-            #     }
-            # )
-            await self.session.commit()
-        except Exception as e:
-            print(f"❌ Ошибка при записи ордера бота {bot_config.id}: {e}")
 
     async def create_orders(
         self, balanceUSDT, bot_config,
@@ -555,87 +439,598 @@ class BinanceBot(Command):
 
         if order and 'orderId' in order and 'status' in order:
             db_order.exchange_order_id = str(order['orderId'])
-        await self.session.commit()
 
         return order
 
-    async def delete_order(self, symbol, db_order, orig_client_order_id, status, close_reason):
-        deleting_order = {
-            'symbol': symbol,
-            'side': db_order.side,
-            'origClientOrderId': orig_client_order_id,
-        }
-
+    async def delete_order(self, db_order, status=None, close_reason=None, client_order_id=None):
         db_order.status = status
         db_order.close_reason = close_reason
 
-        await self.session.commit()
-
-        if deleting_order:
-            await self.delete_binance_order(
-                order=deleting_order
-            )
+        await self.delete_binance_order(
+            db_order=db_order,
+            client_order_id=client_order_id
+        )
 
     async def delete_binance_order(
-            self, order
+            self, db_order, client_order_id=None
     ):
-        try:
-            await self._safe_from_time_err_call_binance(
-                self.binance_client.futures_cancel_order,
-                symbol=order['symbol'],
-                origClientOrderId=order['origClientOrderId']
-            )
-        except Exception as e:
-            print("Не могу удалить ордер, он уже отменён или исполнен:", e)
+        print(db_order.open_time)
+        print('db_order.open_time')
+        print('delete_binance_order')
 
-        if order['side'] == 'BUY':
-            order_side = SIDE_SELL
-            order_position_side = 'LONG'
-        else:
-            order_side = SIDE_BUY
-            order_position_side = 'SHORT'
-
-        order = await self._safe_from_time_err_call_binance(
-            self.binance_client.futures_get_order,
-            symbol=order['symbol'],
-            origClientOrderId=order['origClientOrderId']
-        )
-        executed_qty = float(order["executedQty"])
-
-        positions = await self._safe_from_time_err_call_binance(
-            self.binance_client.futures_position_information,
-            symbol=order['symbol']
-        )
-        position_amt = 0
-        for pos in positions:
-            if pos['positionSide'] == order_position_side:
-                position_amt = Decimal(pos['positionAmt'])
-
-        if executed_qty > 0 and position_amt != 0:
+        if db_order.open_time is None:
             try:
                 await self._safe_from_time_err_call_binance(
-                    self.binance_client.futures_create_order,
-                    symbol=order['symbol'],
-                    side=order_side,
-                    positionSide=order_position_side,
-                    type=FUTURE_ORDER_TYPE_MARKET,
-                    quantity=executed_qty,
-                    reduceOnly=True
+                    self.binance_client.futures_cancel_order,
+                    symbol=db_order.symbol,
+                    origClientOrderId=db_order.client_order_id
                 )
-            except:
-                await self._safe_from_time_err_call_binance(
-                    self.binance_client.futures_create_order,
-                    symbol=order['symbol'],
-                    side=order_side,
-                    positionSide=order_position_side,
-                    type=FUTURE_ORDER_TYPE_MARKET,
-                    quantity=executed_qty
+            except Exception as e:
+                print("Не могу удалить ордер, он уже отменён или исполнен:", e)
+
+        if not (
+            (db_order.side == 'BUY' and db_order.position_side == 'SHORT') or (db_order.side == 'SELL' and db_order.position_side == 'LONG')
+        ):
+            if db_order.open_time is not None and db_order.asset_quantity > 0:
+                executed_qty = str(db_order.asset_quantity)
+            else:
+                binance_deleting_order = await self._safe_from_time_err_call_binance(
+                    self.binance_client.futures_get_order,
+                    symbol=db_order.symbol,
+                    origClientOrderId=db_order.client_order_id
                 )
+
+                print(binance_deleting_order)
+                print('deleting binance order')
+                executed_qty = binance_deleting_order["executedQty"]
+
+            if db_order.side == 'BUY':
+                order_side = SIDE_SELL
+                order_position_side = 'LONG'
+            else:
+                order_side = SIDE_BUY
+                order_position_side = 'SHORT'
+
+            # positions = await self._safe_from_time_err_call_binance(
+            #     self.binance_client.futures_position_information,
+            #     symbol=db_order.symbol
+            # )
+            # print(positions)
+            # print('positions')
+            # position_amt = 0
+            # for pos in positions:
+            #     if pos['positionSide'] == order_position_side:
+            #         position_amt = Decimal(pos['positionAmt'])
+            #         print(f"Symbol: {pos.get('symbol')}, Position amount: {pos.get('positionAmt')}, Leverage: {pos.get('leverage')}")
+            # if executed_qty > 0 and position_amt != 0:
+
+            print(client_order_id)
+            print('client_order_id')
+            print('delete_binance_order')
+
+            if Decimal(executed_qty) > 0:
+                try:
+                    if client_order_id:
+                        await self._safe_from_time_err_call_binance(
+                            self.binance_client.futures_create_order,
+                            symbol=db_order.symbol,
+                            side=order_side,
+                            positionSide=order_position_side,
+                            type=FUTURE_ORDER_TYPE_MARKET,
+                            quantity=executed_qty,
+                            reduceOnly=True,
+                            newClientOrderId=client_order_id
+                        )
+                    else:
+                        await self._safe_from_time_err_call_binance(
+                            self.binance_client.futures_create_order,
+                            symbol=db_order.symbol,
+                            side=order_side,
+                            positionSide=order_position_side,
+                            type=FUTURE_ORDER_TYPE_MARKET,
+                            quantity=executed_qty,
+                            reduceOnly=True
+                        )
+                except:
+                    try:
+                        if client_order_id:
+                            await self._safe_from_time_err_call_binance(
+                                self.binance_client.futures_create_order,
+                                symbol=db_order.symbol,
+                                side=order_side,
+                                positionSide=order_position_side,
+                                type=FUTURE_ORDER_TYPE_MARKET,
+                                quantity=executed_qty,
+                                newClientOrderId=client_order_id
+                            )
+                        else:
+                            await self._safe_from_time_err_call_binance(
+                                self.binance_client.futures_create_order,
+                                symbol=db_order.symbol,
+                                side=order_side,
+                                positionSide=order_position_side,
+                                type=FUTURE_ORDER_TYPE_MARKET,
+                                quantity=executed_qty
+                            )
+                    except:
+                        print('Can\'nt delete binance order')
 
         return
 
+    async def setting_sl_sw_to_order(self, db_order, bot_config, tick_size):
+        sl_sw_params = self._get_sl_sw_params(db_order, bot_config, tick_size)
+
+        sl_custom_trailing = sl_sw_params['sl']['is_need_custom_callback']
+        sw_custom_trailing = sl_sw_params['sw']['is_need_custom_callback']
+
+        if sl_custom_trailing == sw_custom_trailing:
+            if sl_custom_trailing:
+                await self.creating_custom_trailing(db_order, bot_config, tick_size, sl_sw_params)
+            else:
+                await self.creating_binance_trailing_order(db_order, bot_config, tick_size, sl_sw_params)
+        else:
+            await self.creating_binance_n_custom_trailing(db_order, bot_config, tick_size, sl_sw_params)
+
+        print('order closed')
+
+    def _get_sl_sw_params(self, db_order, bot_config, tick_size):
+        if db_order.side == 'BUY':
+            side = 'SELL'
+            order_position_side = 'LONG'
+        else:
+            side = 'BUY'
+            order_position_side = 'SHORT'
+
+        params = {
+            'side': side,
+            'order_position_side': order_position_side,
+        }
+
+        for key, tick_count in {'sl': bot_config.stop_loss_ticks, 'sw': bot_config.stop_success_ticks}.items():
+            tick_value = tick_size * tick_count
+
+            is_need_custom_callback = False
+
+            callback_rate = (tick_value / db_order.activation_price) * 100
+            binance_callback_rate = callback_rate
+            if callback_rate < 0.1:
+                print(f"Минимальный callbackRate на Binance — 0.1%. У тебя {callback_rate}%, увеличь количество тиков.")
+                binance_callback_rate = 0.1
+                is_need_custom_callback = True
+            elif callback_rate > 10:
+                binance_callback_rate = 10
+                is_need_custom_callback = True
+
+            binance_callback_rate = round(binance_callback_rate, 2)
+
+            params[key] = {
+                'callback_rate': callback_rate,
+                'binance_callback_rate': binance_callback_rate,
+                'is_need_custom_callback': is_need_custom_callback
+            }
+
+        return params
+
+    async def creating_custom_trailing(self, db_order, bot_config, tick_size, sl_sw_params, base_order_name=None):
+        close_not_lose_price = (
+            PriceCalculator.calculate_close_not_lose_price(
+                open_price=db_order.open_price, trade_type=db_order.side
+            )
+        )
+
+        current_stop_type = None
+        last_custom_stop_order_name = None
+        current_stop_client_order_id_number = 0
+
+        max_price = await self.price_provider.get_price(symbol=db_order.symbol)
+        min_price = await self.price_provider.get_price(symbol=db_order.symbol)
+
+        while db_order.close_time is None or not self.stop_custom_trailing:
+            is_need_so_set_new_sl_sw = False
+            updated_price = await self.price_provider.get_price(symbol=db_order.symbol)
+
+            if db_order.side == 'BUY':
+                if updated_price > close_not_lose_price:
+                    if updated_price > max_price:
+                        max_price = updated_price
+                    if updated_price > max_price or current_stop_type != 'stop_win':
+                        current_stop_client_order_id_number += 1
+                        current_stop_type = 'stop_win'
+                        is_need_so_set_new_sl_sw = True
+                else:
+                    if updated_price > max_price:
+                        max_price = updated_price
+                    if updated_price > max_price or current_stop_type != 'stop_lose':
+                        current_stop_client_order_id_number += 1
+                        current_stop_type = 'stop_lose'
+                        is_need_so_set_new_sl_sw = True
+            else:
+                if updated_price < close_not_lose_price:
+                    if updated_price < min_price:
+                        min_price = updated_price
+                    if updated_price < min_price or current_stop_type != 'stop_win':
+                        current_stop_client_order_id_number += 1
+                        current_stop_type = 'stop_win'
+                        is_need_so_set_new_sl_sw = True
+                else:
+                    if updated_price < min_price:
+                        min_price = updated_price
+                    if updated_price < min_price or current_stop_type != 'stop_lose':
+                        current_stop_client_order_id_number += 1
+                        current_stop_type = 'stop_lose'
+                        is_need_so_set_new_sl_sw = True
+
+            if not base_order_name:
+                base_order_name = db_order.client_order_id + f'_{current_stop_type}'
+
+            current_custom_stop_order_name = f'{base_order_name}_custom_{current_stop_client_order_id_number}'
+
+            if current_stop_type == 'stop_win':
+                callback = sl_sw_params['sw']
+            else:
+                callback = sl_sw_params['sl']
+
+            if is_need_so_set_new_sl_sw and callback['is_need_custom_callback']:
+                if last_custom_stop_order_name:
+                    await self.delete_old_sl_sw(
+                        db_order=db_order,
+                        old_stop_order_id=last_custom_stop_order_name,
+                        sl_sw_params=sl_sw_params
+                    )
+
+                is_need_to_stop_order = await self._check_if_price_less_then_stops(
+                    close_not_lose_price=close_not_lose_price,
+                    bot_config=bot_config,
+                    tick_size=tick_size,
+                    db_order=db_order
+                )
+
+                if not is_need_to_stop_order:
+                    order_stop_price = await self._get_order_stop_price_for_custom_trailing(
+                        db_order=db_order,
+                        stop_type=current_stop_type,
+                        prices={'max': max_price, 'min': min_price},
+                        bot_config=bot_config,
+                        tick_size=tick_size
+                    )
+
+                    await self.create_new_sl_sw_order_custom_trailing(
+                        db_order=db_order,
+                        sl_sw_params=sl_sw_params,
+                        client_order_id=current_custom_stop_order_name,
+                        order_stop_price=order_stop_price
+                    )
+                else:
+                    await self.delete_order(
+                        db_order=db_order,
+                        status='CLOSED',
+                        close_reason=f'When was process of changing stop lose/win - after deleting stop lose/win - price came to stop levels',
+                        client_order_id=current_custom_stop_order_name
+                    )
+                    print('When was process of changing stop lose/win - after deleting stop lose/win - price came to stop levels')
+                    break
+
+                last_custom_stop_order_name = current_custom_stop_order_name
+            elif is_need_so_set_new_sl_sw and not callback['is_need_custom_callback']:
+                break
+
+        self.stop_custom_trailing = False
+
+        return
+
+    async def creating_binance_trailing_order(self, db_order, bot_config, tick_size, sl_sw_params):
+        close_not_lose_price = (
+            PriceCalculator.calculate_close_not_lose_price(
+                open_price=db_order.open_price, trade_type=db_order.side
+            )
+        )
+
+        current_stop_type = None
+        current_stop_client_order_id_number = 0
+        last_stop_order_name = None
+
+        while db_order.close_time is None:
+            updated_price = await self.price_provider.get_price(symbol=db_order.symbol)
+            is_need_so_set_new_sl_sw = False
+
+            if db_order.side == 'BUY':
+                if updated_price > close_not_lose_price and current_stop_type != 'stop_win':
+                    current_stop_client_order_id_number += 1
+                    current_stop_type = 'stop_win'
+                    is_need_so_set_new_sl_sw = True
+                elif updated_price < close_not_lose_price and current_stop_type != 'stop_lose':
+                    current_stop_client_order_id_number += 1
+                    current_stop_type = 'stop_lose'
+                    is_need_so_set_new_sl_sw = True
+            else:
+                if updated_price < close_not_lose_price and current_stop_type != 'stop_win':
+                    current_stop_client_order_id_number += 1
+                    current_stop_type = 'stop_win'
+                    is_need_so_set_new_sl_sw = True
+                elif updated_price > close_not_lose_price and current_stop_type != 'stop_lose':
+                    current_stop_client_order_id_number += 1
+                    current_stop_type = 'stop_lose'
+                    is_need_so_set_new_sl_sw = True
+
+            current_stop_order_name = db_order.client_order_id + f'_{current_stop_type}_{current_stop_client_order_id_number}'
+
+            if is_need_so_set_new_sl_sw:
+                if last_stop_order_name:
+                    await self.delete_old_sl_sw(
+                        db_order=db_order,
+                        old_stop_order_id=last_stop_order_name,
+                        sl_sw_params=sl_sw_params
+                    )
+
+                is_need_to_stop_order = await self._check_if_price_less_then_stops(
+                    close_not_lose_price=close_not_lose_price,
+                    bot_config=bot_config,
+                    tick_size=tick_size,
+                    db_order=db_order
+                )
+
+                if not is_need_to_stop_order:
+                    await self.create_new_sl_sw_order_binance_trailing(
+                        db_order=db_order,
+                        sl_sw_params=sl_sw_params,
+                        client_order_id=current_stop_order_name,
+                        stop_type=current_stop_type
+                    )
+                else:
+                    await self.delete_order(
+                        db_order=db_order,
+                        status='CLOSED',
+                        close_reason=f'When was process of changing stop lose/win - after deleting stop lose/win - price came to stop levels',
+                        client_order_id=current_stop_order_name,
+                    )
+                    print('When was process of changing stop lose/win - after deleting stop lose/win - price came to stop levels')
+                    break
+                last_stop_order_name = current_stop_order_name
+
+    async def creating_binance_n_custom_trailing(self, db_order, bot_config, tick_size, sl_sw_params):
+        close_not_lose_price = (
+            PriceCalculator.calculate_close_not_lose_price(
+                open_price=db_order.open_price, trade_type=db_order.side
+            )
+        )
+
+        current_param = None
+        current_stop_type = None
+        current_stop_client_order_id_number = 0
+        last_binance_stop_order_name = None
+
+        while db_order.close_time is None:
+            updated_price = await self.price_provider.get_price(symbol=db_order.symbol)
+            is_need_so_change_mode = False
+
+            if db_order.side == 'BUY':
+                if updated_price > close_not_lose_price and current_param != 'sw':
+                    current_stop_client_order_id_number += 1
+                    current_param = 'sw'
+                    is_need_so_change_mode = True
+                elif updated_price < close_not_lose_price and current_param != 'sl':
+                    current_stop_client_order_id_number += 1
+                    current_param = 'sl'
+                    is_need_so_change_mode = True
+            else:
+                if updated_price < close_not_lose_price and current_param != 'sw':
+                    current_stop_client_order_id_number += 1
+                    current_param = 'sw'
+                    is_need_so_change_mode = True
+                elif updated_price > close_not_lose_price and current_param != 'sl':
+                    current_stop_client_order_id_number += 1
+                    current_param = 'sl'
+                    is_need_so_change_mode = True
+
+            if current_param == 'sl':
+                if not sl_sw_params[current_param]['is_need_custom_callback']:
+                    current_stop_type = 'stop_lose'
+            else:
+                if not sl_sw_params[current_param]['is_need_custom_callback']:
+                    current_stop_type = 'stop_win'
+
+            current_stop_order_name = db_order.client_order_id + f'_{current_stop_type}_{current_stop_client_order_id_number}'
+
+            if is_need_so_change_mode:
+                if sl_sw_params[current_param]['is_need_custom_callback']:
+                    if last_binance_stop_order_name:
+                        await self.delete_old_sl_sw(
+                            db_order=db_order,
+                            old_stop_order_id=last_binance_stop_order_name,
+                            sl_sw_params=sl_sw_params
+                        )
+                else:
+                    # delete custom trailing stop
+                    self.stop_custom_trailing = True
+                    await self.wait_when_custom_trailing_will_stop()
+
+                is_need_to_stop_order = await self._check_if_price_less_then_stops(
+                    close_not_lose_price=close_not_lose_price,
+                    bot_config=bot_config,
+                    tick_size=tick_size,
+                    db_order=db_order
+                )
+
+                if is_need_to_stop_order:
+                    await self.delete_order(
+                        db_order=db_order,
+                        status='CLOSED',
+                        close_reason=f'When was process of changing stop lose/win - after deleting stop lose/win - price came to stop levels',
+                        client_order_id=current_stop_order_name,
+                    )
+                    print('When was process of changing stop lose/win - after deleting stop lose/win - price came to stop levels')
+                    break
+
+                if sl_sw_params[current_param]['is_need_custom_callback']:
+                    await self.creating_custom_trailing(db_order, bot_config, tick_size, sl_sw_params, base_order_name=current_stop_order_name)
+                else:
+                    await self.create_new_sl_sw_order_binance_trailing(
+                        db_order=db_order,
+                        sl_sw_params=sl_sw_params,
+                        client_order_id=current_stop_order_name,
+                        stop_type=current_stop_type
+                    )
+                    last_binance_stop_order_name = current_stop_order_name
+
+        return
+
+    async def wait_when_custom_trailing_will_stop(self):
+        while True:
+            if not self.stop_custom_trailing:
+                return
+            else:
+                await asyncio.sleep(0.02)
+
+    async def _get_order_stop_price_for_custom_trailing(self, db_order, stop_type, prices, bot_config, tick_size):
+        if stop_type == 'stop_win':
+            tick_count = bot_config.stop_success_ticks * tick_size
+        else:
+            tick_count = bot_config.stop_loss_ticks * tick_size
+
+        if db_order.side == 'BUY':
+            stop_price = prices['max'] - tick_count
+        else:
+            stop_price = prices['min'] + tick_count
+
+        return stop_price
+
+    async def create_new_sl_sw_order_custom_trailing(self, db_order, sl_sw_params, client_order_id, order_stop_price):
+        trailing_order = MarketOrder(
+            symbol=db_order.symbol,
+            side=sl_sw_params['side'],
+            position_side=sl_sw_params['order_position_side'],
+            open_order_type=FUTURE_ORDER_TYPE_TRAILING_STOP_MARKET,
+            status='NEW',
+            client_order_id=client_order_id
+        )
+
+        self.order_update_listener.add_waiting_order(trailing_order)
+
+        try:
+            await self._safe_from_time_err_call_binance(
+                self.binance_client.futures_create_order,
+                symbol=db_order.symbol,
+                side=trailing_order.side,
+                positionSide=trailing_order.position_side,
+                type=FUTURE_ORDER_TYPE_STOP_MARKET,
+                quantity=db_order.asset_quantity,
+                stopPrice=order_stop_price,
+                reduceOnly=True,
+                newClientOrderId=trailing_order.client_order_id,
+                workingType="MARK_PRICE",
+                priceProtect=True,
+            )
+        except:
+            try:
+                await self._safe_from_time_err_call_binance(
+                    self.binance_client.futures_create_order,
+                    symbol=db_order.symbol,
+                    side=trailing_order.side,
+                    positionSide=trailing_order.position_side,
+                    type=FUTURE_ORDER_TYPE_STOP_MARKET,
+                    quantity=db_order.asset_quantity,
+                    stopPrice=order_stop_price,
+                    newClientOrderId=trailing_order.client_order_id,
+                    workingType="MARK_PRICE",
+                    priceProtect=True,
+                )
+            except BinanceAPIException as e:
+                if e.code == -2021:
+                    await self.delete_order(
+                        db_order=db_order,
+                        status='CLOSED',
+                        close_reason=f'When was process of changing custom stop lose/win - price came to stop levels',
+                        client_order_id=trailing_order.client_order_id
+                    )
+
+    async def create_new_sl_sw_order_binance_trailing(self, db_order, sl_sw_params, client_order_id, stop_type):
+        trailing_order = MarketOrder(
+            symbol=db_order.symbol,
+            side=sl_sw_params['side'],
+            position_side=sl_sw_params['order_position_side'],
+            open_order_type=FUTURE_ORDER_TYPE_TRAILING_STOP_MARKET,
+            status='NEW',
+            client_order_id=client_order_id
+        )
+
+        self.order_update_listener.add_waiting_order(trailing_order)
+
+        if stop_type == 'stop_win':
+            callback = sl_sw_params['sw']
+        else:
+            callback = sl_sw_params['sl']
+
+        try:
+            await self._safe_from_time_err_call_binance(
+                self.binance_client.futures_create_order,
+                symbol=db_order.symbol,
+                side=trailing_order.side,
+                positionSide=trailing_order.position_side,
+                type=FUTURE_ORDER_TYPE_TRAILING_STOP_MARKET,
+                quantity=db_order.asset_quantity,
+                callbackRate=callback['binance_callback_rate'],
+                reduceOnly=True,
+                newClientOrderId=trailing_order.client_order_id
+            )
+        except:
+            await self._safe_from_time_err_call_binance(
+                self.binance_client.futures_create_order,
+                symbol=db_order.symbol,
+                side=trailing_order.side,
+                positionSide=trailing_order.position_side,
+                type=FUTURE_ORDER_TYPE_TRAILING_STOP_MARKET,
+                quantity=db_order.asset_quantity,
+                callbackRate=callback['binance_callback_rate'],
+                newClientOrderId=trailing_order.client_order_id
+            )
+
+    async def delete_old_sl_sw(self, db_order, old_stop_order_id, sl_sw_params):
+        old_trailing_order = MarketOrder(
+            symbol=db_order.symbol,
+            side=sl_sw_params['side'],
+            position_side=sl_sw_params['order_position_side'],
+            open_order_type=FUTURE_ORDER_TYPE_TRAILING_STOP_MARKET,
+            client_order_id=old_stop_order_id
+        )
+
+        await self.delete_order(db_order=old_trailing_order)
+
+        return
+
+    async def _check_if_price_less_then_stops(self, close_not_lose_price, bot_config, tick_size, db_order):
+        current_price = await self.price_provider.get_price(symbol=db_order.symbol)
+
+        sw_tick_value = bot_config.stop_success_ticks * tick_size
+        sl_tick_value = bot_config.stop_loss_ticks * tick_size
+
+        if db_order.side == 'BUY':
+            sw_price = current_price - sw_tick_value
+            sl_price = current_price - sl_tick_value
+        else:
+            sw_price = current_price + sw_tick_value
+            sl_price = current_price + sl_tick_value
+
+        is_need_to_stop_order = False
+
+        if db_order.side == 'BUY':
+            if current_price > close_not_lose_price:
+                if current_price < sw_price:
+                    is_need_to_stop_order = True
+            else:
+                if current_price < sl_price:
+                    is_need_to_stop_order = True
+        else:
+            if current_price < close_not_lose_price:
+                if current_price > sw_price:
+                    is_need_to_stop_order = True
+            else:
+                if current_price > sl_price:
+                    is_need_to_stop_order = True
+
+        return is_need_to_stop_order
+
     async def _get_order_params(
-            self, bot_config, balanceUSDT099,
+            self, bot_config, balanceUSDT,
             symbol, tick_size, lot_size, max_price, min_price, max_qty, min_qty,
             db_order
     ):
@@ -651,8 +1046,8 @@ class BinanceBot(Command):
         entry_price_sell = initial_price - bot_config.start_updown_ticks * tick_size
         entry_price_sell_str = self._round_price_for_order(price=entry_price_sell, tick_size=tick_size)
 
-        quantityOrder_buy_str = self._calculate_quantity_for_order(amount=balanceUSDT099, price=entry_price_buy, lot_size=lot_size)
-        quantityOrder_sell_str = self._calculate_quantity_for_order(amount=balanceUSDT099, price=entry_price_sell, lot_size=lot_size)
+        quantityOrder_buy_str = self._calculate_quantity_for_order(amount=balanceUSDT, price=entry_price_buy, lot_size=lot_size)
+        quantityOrder_sell_str = self._calculate_quantity_for_order(amount=balanceUSDT, price=entry_price_sell, lot_size=lot_size)
 
         if any([
             entry_price_buy > max_price,
@@ -664,7 +1059,6 @@ class BinanceBot(Command):
 
             db_order.status = 'CANCELED'
             db_order.close_reason = f'Price bigger or less then maximums for {symbol}'
-            await self.session.commit()
 
             return None
 
@@ -678,7 +1072,6 @@ class BinanceBot(Command):
 
             db_order.status = 'CANCELED'
             db_order.close_reason = f'Quantity bigger or less then maximums for {symbol}'
-            await self.session.commit()
 
             return None
         return {
@@ -702,15 +1095,13 @@ class BinanceBot(Command):
                 else:
                     raise
 
-    async def _wait_until_orders_activated(self, bot_config, db_order_buy, db_order_sell, symbol):
+    async def _wait_until_order_activated(self, bot_config, db_order_buy, db_order_sell):
         timeout_missed = True
         first_order_updating_data = None
 
         try:
             timeout = Decimal(bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes)
             timeout = int(timeout * 60)
-
-            print(f'timeout {timeout}')
 
             first_order_updating_data = await asyncio.wait_for(
                 self._wait_activating_of_order(),
@@ -722,9 +1113,7 @@ class BinanceBot(Command):
         if not timeout_missed:
             for db_order in [db_order_buy, db_order_sell]:
                 await self.delete_order(
-                    symbol=symbol,
                     db_order=db_order,
-                    orig_client_order_id=db_order.client_order_id,
                     status='CANCELED',
                     close_reason=f'A minute has passed, entry conditions have not been met'
                 )
@@ -734,16 +1123,40 @@ class BinanceBot(Command):
             'first_order_updating_data': first_order_updating_data,
         }
 
-    async def _wait_filling_of_order(self, db_order):
-        while True:
-            if db_order.open_time is not None:
-                print(f'Order was filled! activated: {db_order.activation_time}, opened: {db_order.open_time}')
-                return True
+    async def _wait_until_order_filled(self, bot_config, db_order):
+        timeout_missed = True
+        first_order_updating_data = None
 
-            await asyncio.sleep(0.1)
+        try:
+            timeout = Decimal(bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes)
+            timeout = int(timeout * 60)
+
+            first_order_updating_data = await asyncio.wait_for(
+                self._wait_filling_of_order(),
+                timeout=timeout
+            )
+        except asyncio.TimeoutError:
+            timeout_missed = False
+
+        if not timeout_missed:
+            await self.delete_order(
+                db_order=db_order,
+                status='CANCELED',
+                close_reason=f'A minute has passed, order did\'nt fill'
+            )
+
+        return {
+            'timeout_missed': timeout_missed,
+            'first_order_updating_data': first_order_updating_data,
+        }
 
     async def _wait_activating_of_order(self):
         first_order_updating_data = await self.order_update_listener.get_first_started_order()
+
+        return first_order_updating_data
+
+    async def _wait_filling_of_order(self):
+        first_order_updating_data = await self.order_update_listener.get_first_order_filled()
 
         return first_order_updating_data
 
