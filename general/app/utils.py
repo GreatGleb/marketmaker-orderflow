@@ -34,26 +34,25 @@ class Command:
         pass
 
     @staticmethod
-    async def _execute_command(request: Request, dependant: Dependant):
-        async with AsyncExitStack() as async_exit_stack:
-            solved = await solve_dependencies(
-                request=request,
-                dependant=dependant,
-                async_exit_stack=async_exit_stack,
-                embed_body_fields=False,
-            )
-            values = solved.values
-            errors = solved.errors
+    async def _execute_command(request: Request, dependant: Dependant, async_exit_stack: AsyncExitStack):
+        solved = await solve_dependencies(
+            request=request,
+            dependant=dependant,
+            async_exit_stack=async_exit_stack,
+            embed_body_fields=False,
+        )
+        values = solved.values
+        errors = solved.errors
 
-            if errors:
-                raise ValidationError(errors, None)
+        if errors:
+            raise ValidationError(errors, None)
 
-            if inspect.iscoroutinefunction(dependant.call):
-                result = await dependant.call(**values)
-            else:
-                result = dependant.call(**values)
+        if inspect.iscoroutinefunction(dependant.call):
+            result = await dependant.call(**values)
+        else:
+            result = dependant.call(**values)
 
-            return result
+        return result
 
     async def run_async(self):
         async with AsyncExitStack() as cm:
@@ -68,7 +67,7 @@ class Command:
             dependant = get_dependant(
                 path=f"command:{self.__class__.__name__}", call=self.command
             )
-            return await self._execute_command(request, dependant)
+            return await self._execute_command(request, dependant, cm)
 
     def run(self) -> CommandResult:
         return asyncio.get_event_loop().run_until_complete(self.run_async())
