@@ -309,33 +309,6 @@ def upgrade() -> None:
         existing_nullable=False,
         existing_server_default=sa.text("CURRENT_TIMESTAMP"),
     )
-    op.drop_index(
-        op.f("idx_market_orders_activation_time"), table_name="market_orders"
-    )
-    op.drop_index(
-        op.f("idx_market_orders_client_order_id"), table_name="market_orders"
-    )
-    op.drop_index(
-        op.f("idx_market_orders_close_time"), table_name="market_orders"
-    )
-    op.drop_index(
-        op.f("idx_market_orders_created_at"), table_name="market_orders"
-    )
-    op.drop_index(
-        op.f("idx_market_orders_exchange_order_id"), table_name="market_orders"
-    )
-    op.drop_index(
-        op.f("idx_market_orders_open_time"), table_name="market_orders"
-    )
-    op.drop_index(
-        op.f("idx_market_orders_profit_loss"), table_name="market_orders"
-    )
-    op.create_index(
-        op.f("ix_market_orders_created_at"),
-        "market_orders",
-        ["created_at"],
-        unique=False,
-    )
     op.alter_column(
         "test_bots",
         "created_at",
@@ -448,51 +421,6 @@ def downgrade() -> None:
         existing_comment="Date and time of create",
         existing_nullable=False,
         existing_server_default=sa.text("now()"),
-    )
-    op.drop_index(
-        op.f("ix_market_orders_created_at"), table_name="market_orders"
-    )
-    op.create_index(
-        op.f("idx_market_orders_profit_loss"),
-        "market_orders",
-        ["profit_loss"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("idx_market_orders_open_time"),
-        "market_orders",
-        ["open_time"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("idx_market_orders_exchange_order_id"),
-        "market_orders",
-        ["exchange_order_id"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("idx_market_orders_created_at"),
-        "market_orders",
-        ["created_at"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("idx_market_orders_close_time"),
-        "market_orders",
-        ["close_time"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("idx_market_orders_client_order_id"),
-        "market_orders",
-        ["client_order_id"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("idx_market_orders_activation_time"),
-        "market_orders",
-        ["activation_time"],
-        unique=False,
     )
     op.alter_column(
         "market_orders",
