@@ -625,7 +625,7 @@ class BinanceBot(Command):
         max_price = await self.price_provider.get_price(symbol=db_order.symbol)
         min_price = await self.price_provider.get_price(symbol=db_order.symbol)
 
-        while db_order.close_time is None or not self.stop_custom_trailing:
+        while db_order.close_time is None and not self.stop_custom_trailing:
             is_need_so_set_new_sl_sw = False
             updated_price = await self.price_provider.get_price(symbol=db_order.symbol)
 
