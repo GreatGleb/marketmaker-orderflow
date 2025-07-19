@@ -20,14 +20,14 @@ class BaseId(Base):
         types.Integer, primary_key=True, nullable=False, autoincrement=True
     )
     created_at: Mapped[datetime] = mapped_column(
-        types.DateTime,
+        types.DateTime(timezone=True),
         server_default=func.now(),
         nullable=False,
         index=True,
         comment="Date and time of create",
     )
     updated_at: Mapped[datetime] = mapped_column(
-        types.DateTime,
+        types.DateTime(timezone=True),
         server_default=func.now(),
         onupdate=func.now(),
         nullable=False,
