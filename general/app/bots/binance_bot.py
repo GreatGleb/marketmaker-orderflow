@@ -139,8 +139,6 @@ class BinanceBot(Command):
             min_timeframe_asset_volatility = refer_bot['min_timeframe_asset_volatility'],
             time_to_wait_for_entry_price_to_open_order_in_minutes = refer_bot['time_to_wait_for_entry_price_to_open_order_in_minutes']
         )
-
-        # symbol = await self.redis.get(f"most_volatile_symbol_{bot_config.min_timeframe_asset_volatility}")
         symbol = 'BTCUSDT'
 
         try:
@@ -191,10 +189,6 @@ class BinanceBot(Command):
             balanceUSDT = 100
 
         balanceUSDT099 = Decimal(balanceUSDT) * Decimal(0.99)
-
-        bot_config.start_updown_ticks = 10
-        bot_config.stop_loss_ticks = 70
-        bot_config.stop_success_ticks = 40
 
         db_order_buy = MarketOrder(
             symbol=symbol,
@@ -454,11 +448,7 @@ class BinanceBot(Command):
     async def delete_binance_order(
             self, db_order, client_order_id=None
     ):
-        print(db_order.open_time)
-        print('db_order.open_time')
-        print('delete_binance_order')
-
-        if db_order.open_time is None:
+        if db_order.close_order_type is None:
             try:
                 await self._safe_from_time_err_call_binance(
                     self.binance_client.futures_cancel_order,
@@ -480,8 +470,6 @@ class BinanceBot(Command):
                     origClientOrderId=db_order.client_order_id
                 )
 
-                print(binance_deleting_order)
-                print('deleting binance order')
                 executed_qty = binance_deleting_order["executedQty"]
 
             if db_order.side == 'BUY':
@@ -503,10 +491,6 @@ class BinanceBot(Command):
             #         position_amt = Decimal(pos['positionAmt'])
             #         print(f"Symbol: {pos.get('symbol')}, Position amount: {pos.get('positionAmt')}, Leverage: {pos.get('leverage')}")
             # if executed_qty > 0 and position_amt != 0:
-
-            print(client_order_id)
-            print('client_order_id')
-            print('delete_binance_order')
 
             if Decimal(executed_qty) > 0:
                 try:
@@ -562,6 +546,8 @@ class BinanceBot(Command):
 
         sl_custom_trailing = sl_sw_params['sl']['is_need_custom_callback']
         sw_custom_trailing = sl_sw_params['sw']['is_need_custom_callback']
+
+        db_order.close_order_type = FUTURE_ORDER_TYPE_MARKET
 
         if sl_custom_trailing == sw_custom_trailing:
             if sl_custom_trailing:

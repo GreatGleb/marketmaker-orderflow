@@ -87,42 +87,50 @@ class UserDataWebSocketClient:
 
         current_order = self.waiting_orders[order['c']]
 
+        current_order.exchange_status = order['X']
+        current_order.status = order['X']
+
         if order['X'] == 'EXPIRED':
             current_order.activation_price = Decimal(order['sp'])
             current_order.activation_time = datetime.now(UTC).replace(tzinfo=None)
 
-        current_order.exchange_status = order['X']
-        current_order.status = order['X']
+        original_order = None
+
+        if 'stop' in order['c']:
+            first_underscore_index = order['c'].find('_')
+            second_underscore_index = order['c'].find('_', first_underscore_index + 1)
+            if second_underscore_index != -1:
+                original_order_id = order['c'][:second_underscore_index]
+            else:
+                original_order_id = order['c']
+
+            original_order = self.waiting_orders.get(original_order_id)
 
         if order['X'] == 'FILLED':
             if self.first_order and order['i'] == self.first_order['i']:
                 self.first_order_filled_event.set()
 
-            if 'stop' in order['c']:
-                first_underscore_index = order['c'].find('_')
-                second_underscore_index = order['c'].find('_', first_underscore_index + 1)
-                if second_underscore_index != -1:
-                    original_order_id = order['c'][:second_underscore_index]
-                else:
-                    original_order_id = order['c']
-
-                original_order = self.waiting_orders.get(original_order_id)
-                if original_order:
-                    original_order.close_price = Decimal(order['L'])
-                    original_order.close_time = datetime.now(UTC).replace(tzinfo=None)
+            if original_order:
+                original_order.close_price = Decimal(order['L'])
+                original_order.close_time = datetime.now(UTC).replace(tzinfo=None)
             else:
                 current_order.open_price = Decimal(order['L'])
                 current_order.open_time = datetime.now(UTC).replace(tzinfo=None)
 
+        if Decimal(order['rp']) and original_order:
+            if original_order.profit_loss is None:
+                original_order.profit_loss = 0
+            original_order.profit_loss = original_order.profit_loss + Decimal(order['rp'])
+
         if Decimal(order['n']) > 0:
-            if current_order.open_order_type:
+            if original_order:
+                if original_order.close_commission is None:
+                    original_order.close_commission = 0
+                original_order.close_commission = original_order.close_commission + Decimal(order['n'])
+            elif current_order.open_order_type:
                 if current_order.open_commission is None:
                     current_order.open_commission = 0
                 current_order.open_commission = current_order.open_commission + Decimal(order['n'])
-            elif current_order.close_order_type:
-                if current_order.close_commission is None:
-                    current_order.close_commission = 0
-                current_order.close_commission = current_order.close_commission + Decimal(order['n'])
 
     async def get_first_started_order(self):
         if self.first_order_started_event.is_set():
