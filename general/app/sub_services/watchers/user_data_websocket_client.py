@@ -115,9 +115,9 @@ class UserDataWebSocketClient:
                 original_order.close_time = datetime.now(UTC).replace(tzinfo=None)
 
                 if 'win' in order['c']:
-                    original_order.close_reason = 'Stop win custom'
+                    original_order.close_reason = 'Stop win'
                 elif 'lose' in order['c']:
-                    original_order.close_reason = 'Stop lose custom'
+                    original_order.close_reason = 'Stop lose'
 
                 if 'custom' in order['c']:
                     original_order.close_reason = f'{original_order.close_reason} custom'
