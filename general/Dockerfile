@@ -14,6 +14,11 @@ ENV PYTHONFAULTHANDLER=1 \
 
 EXPOSE 8000
 
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends supervisor && \
+    mkdir -p /var/log/supervisor && \
+    rm -rf /var/lib/apt/lists/*
+
 RUN pip install idna "poetry==$POETRY_VERSION" && poetry --version
 
 RUN mkdir -p /opt/services/app/src
@@ -27,3 +32,5 @@ RUN poetry install
 COPY . .
 
 RUN chmod +x boot.sh
+
+COPY supervisord.conf /etc/supervisor/supervisord.conf

@@ -6,4 +6,4 @@ set -euo pipefail
 
 alembic upgrade head
 
-fastapi run main.py --port 8000 --reload
+exec /usr/bin/supervisord -c /etc/supervisor/supervisord.conf
