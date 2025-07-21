@@ -65,6 +65,7 @@ case "$1" in
         echo -e "${GREEN}Выполняю начальную загрузку данных...${NC}"
         run_script_in_container "app.scripts.seed_binance_data"
         run_script_in_container "app.scripts.seed_watched_pairs_usdt"
+        run_script_in_container "app.scripts.set_isolate_mode_and_leverage_for_binance_pairs"
         echo -e "${GREEN}Загрузка данных завершена.${NC}"
         ;;
     logs)

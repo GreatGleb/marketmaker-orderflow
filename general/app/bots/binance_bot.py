@@ -28,15 +28,21 @@ from app.workers.profitable_bot_updater import ProfitableBotUpdaterCommand
 UTC = timezone.utc
 
 class BinanceBot(Command):
-    def __init__(self, stop_event):
+    def __init__(self, stop_event = None):
         super().__init__()
         self.redis = None
         self.session = None
         self.bot_crud = None
-        self.binance_client = None
         self.symbols_characteristics = None
         self.stop_custom_trailing = None
         self.stop_event = stop_event
+
+        load_dotenv()
+        api_key = os.getenv("api_key_testnet")
+        api_secret = os.getenv("api_secret_testnet")
+
+        self.binance_client = Client(api_key, api_secret, testnet=True)
+        self.binance_client.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
 
     async def command(
         self,
@@ -53,24 +59,10 @@ class BinanceBot(Command):
         exchange_crud = AssetExchangeSpecCrud(self.session)
         self.symbols_characteristics = await exchange_crud.get_symbols_characteristics_from_active_pairs()
 
-        print('creating binance client')
-
-        load_dotenv()
-        api_key = os.getenv("api_key_testnet")
-        api_secret = os.getenv("api_secret_testnet")
-
-        self.binance_client = Client(api_key, api_secret, testnet=True)
-        self.binance_client.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
-
         is_set_dual_mode = await self.check_and_set_dual_mode()
         if not is_set_dual_mode:
             print('Mod not dual side position, can\'t to create new orders!')
             return
-
-        position_info = await self._safe_from_time_err_call_binance(self.binance_client.futures_account)
-        file_name = "position_info.json"
-        with open(file_name, 'w', encoding='utf-8') as f:
-            json.dump(position_info, f, ensure_ascii=False, indent=4)
 
         print('finished creating binance client')
 
@@ -139,7 +131,17 @@ class BinanceBot(Command):
             min_timeframe_asset_volatility = refer_bot['min_timeframe_asset_volatility'],
             time_to_wait_for_entry_price_to_open_order_in_minutes = refer_bot['time_to_wait_for_entry_price_to_open_order_in_minutes']
         )
-        symbol = 'BTCUSDT'
+        symbol = await self.redis.get(f"most_volatile_symbol_{bot_config.min_timeframe_asset_volatility}")
+
+        # bot_config = TestBot(
+        #     symbol='BTCUSDT',
+        #     stop_success_ticks = 40,
+        #     stop_loss_ticks = 70,
+        #     start_updown_ticks = 10,
+        #     min_timeframe_asset_volatility = 3,
+        #     time_to_wait_for_entry_price_to_open_order_in_minutes = 0.5
+        # )
+        # symbol = 'BTCUSDT'
 
         try:
             symbol_characteristics = self.symbols_characteristics.get(symbol)
@@ -158,14 +160,6 @@ class BinanceBot(Command):
             return
 
         print(f'current symbol: {symbol}')
-
-        try:
-            await self._safe_from_time_err_call_binance(
-                self.binance_client.futures_change_margin_type,
-                symbol=symbol, marginType='ISOLATED'
-            )
-        except:
-            pass
 
         print('start get balance')
 

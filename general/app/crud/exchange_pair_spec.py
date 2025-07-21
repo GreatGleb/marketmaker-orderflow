@@ -1,10 +1,10 @@
-from sqlalchemy import select
+from sqlalchemy import select, distinct
 from decimal import Decimal
+import json
 
 from app.db.models import AssetExchangeSpec
 from app.crud.base import BaseCrud
 from app.crud.asset_history import AssetHistoryCrud
-
 
 class AssetExchangeSpecCrud(BaseCrud[AssetExchangeSpec]):
     def __init__(self, session):
@@ -120,3 +120,41 @@ class AssetExchangeSpecCrud(BaseCrud[AssetExchangeSpec]):
             transformed_data[dict_key] = processed_filter_item
 
         return transformed_data
+
+    async def set_isolate_mode_and_leverage(self, binance_bot):
+        stmt = select(distinct(AssetExchangeSpec.symbol)).where(AssetExchangeSpec.source == 'BINANCE')
+        result = await self.session.execute(stmt)
+        all_symbols = result.scalars().all()
+
+        # position_info = await binance_bot._safe_from_time_err_call_binance(binance_bot.binance_client.futures_account)
+        # file_name = "position_info.json"
+        # with open(file_name, 'w', encoding='utf-8') as f:
+        #     json.dump(position_info, f, ensure_ascii=False, indent=4)
+
+        i = 0
+        for symbol in all_symbols:
+            print(f'{i} from {len(all_symbols)}')
+
+            try:
+                await binance_bot._safe_from_time_err_call_binance(
+                    binance_bot.binance_client.futures_change_margin_type,
+                    symbol=symbol, marginType='ISOLATED'
+                )
+            except Exception as e:
+                print(f'Error when set isolated mode: {e}')
+                pass
+
+            try:
+                await binance_bot._safe_from_time_err_call_binance(
+                    binance_bot.binance_client.futures_change_leverage,
+                    symbol=symbol, leverage=1
+                )
+            except Exception as e:
+                print(f'Error when leverage: {e}')
+                pass
+
+            i = i + 1
+
+        print('Finished setting isolate mode')
+
+        return
