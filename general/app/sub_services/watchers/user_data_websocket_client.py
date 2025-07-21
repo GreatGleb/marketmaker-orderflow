@@ -113,6 +113,14 @@ class UserDataWebSocketClient:
             if original_order:
                 original_order.close_price = Decimal(order['L'])
                 original_order.close_time = datetime.now(UTC).replace(tzinfo=None)
+
+                if 'win' in order['c']:
+                    original_order.close_reason = 'Stop win custom'
+                elif 'lose' in order['c']:
+                    original_order.close_reason = 'Stop lose custom'
+
+                if 'custom' in order['c']:
+                    original_order.close_reason = f'{original_order.close_reason} custom'
             else:
                 current_order.open_price = Decimal(order['L'])
                 current_order.open_time = datetime.now(UTC).replace(tzinfo=None)
