@@ -45,6 +45,9 @@ class ProfitableBotUpdaterCommand(Command):
                     "stop_success_ticks": refer_bot.stop_success_ticks,
                     "stop_loss_ticks": refer_bot.stop_loss_ticks,
                     "start_updown_ticks": refer_bot.start_updown_ticks,
+                    "stop_win_percents": str(refer_bot.stop_win_percents),
+                    "stop_loss_percents": str(refer_bot.stop_loss_percents),
+                    "start_updown_percents": str(refer_bot.start_updown_percents),
                     "min_timeframe_asset_volatility": str(
                         refer_bot.min_timeframe_asset_volatility
                     ),

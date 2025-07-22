@@ -94,6 +94,9 @@ class StartTestBotsCommand(Command):
         bot_config.stop_success_ticks = refer_bot["stop_success_ticks"]
         bot_config.stop_loss_ticks = refer_bot["stop_loss_ticks"]
         bot_config.start_updown_ticks = refer_bot["start_updown_ticks"]
+        bot_config.stop_win_percents = Decimal(refer_bot["stop_win_percents"])
+        bot_config.stop_loss_percents = Decimal(refer_bot["stop_loss_percents"])
+        bot_config.start_updown_percents = Decimal(refer_bot["start_updown_percents"])
         bot_config.min_timeframe_asset_volatility = refer_bot[
             "min_timeframe_asset_volatility"
         ]

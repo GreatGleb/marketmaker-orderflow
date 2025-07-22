@@ -128,6 +128,9 @@ class BinanceBot(Command):
             stop_success_ticks=refer_bot['stop_success_ticks'],
             stop_loss_ticks = refer_bot['stop_loss_ticks'],
             start_updown_ticks = refer_bot['start_updown_ticks'],
+            stop_win_percents = Decimal(refer_bot['stop_win_percents']),
+            stop_loss_percents = Decimal(refer_bot['stop_loss_percents']),
+            start_updown_percents = Decimal(refer_bot['start_updown_percents']),
             min_timeframe_asset_volatility = refer_bot['min_timeframe_asset_volatility'],
             time_to_wait_for_entry_price_to_open_order_in_minutes = refer_bot['time_to_wait_for_entry_price_to_open_order_in_minutes']
         )
