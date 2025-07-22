@@ -34,7 +34,7 @@ async def main():
 
     await asyncio.gather(
         VolatilePairCommand(stop_event=stop_event).run_async(),
-        ProfitableBotUpdaterCommand(stop_event=stop_event).run_async(),
+        # ProfitableBotUpdaterCommand(stop_event=stop_event).run_async(),
         StartTestBotsCommand(stop_event=stop_event).run_async(),
         # OrderBulkInsertCommand(stop_event=stop_event).run_async(),
     )
