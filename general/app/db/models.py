@@ -484,13 +484,21 @@ class MarketOrder(BaseId):
     __tablename__ = "market_orders"
 
     client_order_id: Mapped[Optional[str]] = mapped_column(
-        types.String, nullable=True, comment="Client-generated order ID"
+        types.String,
+        nullable=True,
+        index=True,
+        comment="Client-generated order ID"
     )
     exchange_name: Mapped[Optional[str]] = mapped_column(
-        types.String, nullable=True, comment="Name of the exchange"
+        types.String,
+        nullable=True,
+        comment="Name of the exchange"
     )
     exchange_order_id: Mapped[Optional[str]] = mapped_column(
-        types.String, nullable=True, comment="Order ID from the exchange"
+        types.String,
+        nullable=True,
+        index=True,
+        comment="Order ID from the exchange"
     )
     symbol: Mapped[str] = mapped_column(
         types.String, nullable=True, comment="Trading symbol, e.g., BTCUSDT"
@@ -550,16 +558,19 @@ class MarketOrder(BaseId):
     activation_time: Mapped[Optional[datetime]] = mapped_column(
         types.TIMESTAMP,
         nullable=True,
+        index=True,
         comment="Timestamp when order became active",
     )
     open_time: Mapped[Optional[datetime]] = mapped_column(
         types.TIMESTAMP,
         nullable=True,
+        index=True,
         comment="Timestamp when position was opened",
     )
     close_time: Mapped[Optional[datetime]] = mapped_column(
         types.TIMESTAMP,
         nullable=True,
+        index=True,
         comment="Timestamp when position was closed",
     )
     close_reason: Mapped[Optional[str]] = mapped_column(
@@ -583,5 +594,8 @@ class MarketOrder(BaseId):
         comment="Status of the order on the exchange",
     )
     profit_loss: Mapped[Optional[float]] = mapped_column(
-        types.Numeric, nullable=True, comment="Profit or loss from the order"
+        types.Numeric,
+        nullable=True,
+        index=True,
+        comment="Profit or loss from the order"
     )
