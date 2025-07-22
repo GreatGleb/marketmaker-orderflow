@@ -146,12 +146,12 @@ class StartTestBotsCommand(Command):
                 if not bot_config_updated:
                     return
 
-                bot_config = await ProfitableBotUpdaterCommand.update_config_for_percentage(
-                    bot_config=bot_config,
-                    price_provider=price_provider,
-                    symbol=symbol,
-                    tick_size=tick_size
-                )
+            bot_config = await ProfitableBotUpdaterCommand.update_config_for_percentage(
+                bot_config=bot_config,
+                price_provider=price_provider,
+                symbol=symbol,
+                tick_size=tick_size
+            )
 
             initial_price = await price_provider.get_price(symbol=symbol)
 
