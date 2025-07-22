@@ -16,7 +16,7 @@ async def update_bot_profits():
         now = datetime.now(UTC)
 
         bot_crud = TestBotCrud(session)
-        profits_data = await bot_crud.get_sorted_by_profit(since=timedelta(hours=3), just_copy_bots=True)#since=timedelta(hours=6), just_not_copy_bots=True, just_copy_bots=True
+        profits_data = await bot_crud.get_sorted_by_profit(since=timedelta(hours=6), just_copy_bots=True)#since=timedelta(hours=6), just_not_copy_bots=True, just_copy_bots=True
 
         earliest_query = select(
             func.min(TestOrder.created_at).label('earliest_date')
