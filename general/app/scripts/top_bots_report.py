@@ -27,8 +27,6 @@ async def update_bot_profits():
         update_data = []
         bot_stats = []
 
-        print(len(profits_data))
-
         for bot_id, total_profit, total_orders, successful_orders in profits_data:
             update_data.append({'id': bot_id, 'total_profit': total_profit})
 
@@ -41,8 +39,6 @@ async def update_bot_profits():
                 'success_percentage': success_percentage
             })
 
-        print('blya')
-
         # BATCH_SIZE = 1000
         # for i in range(0, len(update_data), BATCH_SIZE):
         #     batch = update_data[i:i + BATCH_SIZE]
@@ -53,7 +49,6 @@ async def update_bot_profits():
         #     await session.commit()
         #     print(f"Обновлено записей: {i + len(batch)}/{len(update_data)}")
 
-        print('blya s')
         # Сортируем по общей прибыли и выводим топ 10
         bot_stats.sort(key=lambda x: x['total_profit'], reverse=True)
 
