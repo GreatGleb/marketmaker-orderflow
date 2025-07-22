@@ -61,6 +61,28 @@ class ProfitableBotUpdaterCommand(Command):
         return refer_bot_dict
 
     @staticmethod
+    async def update_config_for_percentage(
+        bot_config, price_provider, symbol, tick_size
+    ) -> bool:
+        if not bot_config.stop_win_percents or not bot_config.stop_loss_percents or not bot_config.start_updown_percents:
+            return bot_config
+
+        price = await price_provider.get_price(symbol=symbol)
+
+        bot_config.stop_success_ticks = round((price * (bot_config.stop_win_percents/100))/tick_size)
+        bot_config.stop_loss_ticks = round((price * (bot_config.stop_loss_percents/100))/tick_size)
+        bot_config.start_updown_ticks = round((price * (bot_config.start_updown_percents/100))/tick_size)
+
+        if bot_config.stop_success_ticks < 1:
+            bot_config.stop_success_ticks = 1
+        if bot_config.stop_loss_ticks < 1:
+            bot_config.stop_loss_ticks = 1
+        if bot_config.start_updown_ticks < 1:
+            bot_config.start_updown_ticks = 1
+
+        return bot_config
+
+    @staticmethod
     async def get_profitable_bots_id_by_tf(
         bot_crud, bot_profitability_timeframes
     ):

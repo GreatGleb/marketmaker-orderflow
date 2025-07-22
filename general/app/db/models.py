@@ -2,7 +2,7 @@ from typing import Optional
 
 from datetime import datetime
 
-from sqlalchemy import func, types, ForeignKey
+from sqlalchemy import func, types, ForeignKey, Index
 from sqlalchemy.orm import (
     Mapped,
     mapped_column,
@@ -477,6 +477,16 @@ class TestBot(BaseId):
             nullable=True,
             comment="The maximum duration (in minutes) a bot will wait for the entry price to be reached before attempting to open an order",
         )
+    )
+
+    stop_win_percents: Mapped[Optional[float]] = mapped_column(
+        types.Numeric, nullable=True, comment="Stop win percentage"
+    )
+    stop_loss_percents: Mapped[Optional[float]] = mapped_column(
+        types.Numeric, nullable=True, comment="Stop loss percentage"
+    )
+    start_updown_percents: Mapped[Optional[float]] = mapped_column(
+        types.Numeric, nullable=True, comment="Start up/down percentage"
     )
 
 

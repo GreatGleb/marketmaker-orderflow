@@ -131,6 +131,7 @@ class BinanceBot(Command):
             min_timeframe_asset_volatility = refer_bot['min_timeframe_asset_volatility'],
             time_to_wait_for_entry_price_to_open_order_in_minutes = refer_bot['time_to_wait_for_entry_price_to_open_order_in_minutes']
         )
+
         symbol = await self.redis.get(f"most_volatile_symbol_{bot_config.min_timeframe_asset_volatility}")
 
         # bot_config = TestBot(
@@ -158,6 +159,13 @@ class BinanceBot(Command):
         if not tick_size or not max_price or not min_price or not lot_size or not min_qty or not max_qty:
             print(f"❌ Нет symbol_characteristics по {symbol}")
             return
+
+        bot_config = await ProfitableBotUpdaterCommand.update_config_for_percentage(
+            bot_config=bot_config,
+            price_provider=self.price_provider,
+            symbol=symbol,
+            tick_size=tick_size
+        )
 
         print(f'current symbol: {symbol}')
 

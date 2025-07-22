@@ -1,51 +1,121 @@
 from decimal import Decimal
+
+from sqlalchemy import select, func, text
+
+from app.crud.asset_history import AssetHistoryCrud
 from app.db.base import DatabaseSessionManager
 from app.crud.test_bot import TestBotCrud
 from app.config import settings
 import asyncio
 
+from app.db.models import AssetExchangeSpec, AssetHistory
+
+
+async def get_average_percentage_for_minimum_tick():
+    average_percent = 0.01
+
+    dsm = DatabaseSessionManager.create(settings.DB_URL)
+    async with (dsm.get_session() as session):
+        asset_crud = AssetHistoryCrud(session)
+        active_symbols = await asset_crud.get_all_active_pairs()
+
+        if not active_symbols:
+            return average_percent
+
+        stmt_active_symbols = (
+            select(AssetExchangeSpec.symbol)
+            .where(AssetExchangeSpec.symbol.in_(active_symbols))
+        )
+        result_symbols = await session.execute(stmt_active_symbols)
+
+        actual_active_symbols = {s[0] for s in result_symbols.all()}
+
+        subquery_ranked_prices = (
+            select(
+                AssetHistory.id,
+                AssetHistory.symbol,
+                AssetHistory.created_at,
+                AssetHistory.last_price,
+                func.row_number()
+                .over(
+                    partition_by=AssetHistory.symbol,
+                    order_by=AssetHistory.created_at.desc()
+                )
+                .label("rn")
+            )
+            .cte("ranked_prices")
+        )
+
+        stmt_latest_prices = (
+            select(
+                AssetHistory.symbol,
+                AssetExchangeSpec.filters,
+                subquery_ranked_prices.c.last_price,
+            )
+            .join(AssetHistory, AssetHistory.id == subquery_ranked_prices.c.id)
+            .join(AssetExchangeSpec, AssetExchangeSpec.symbol == AssetHistory.symbol)
+            .where(subquery_ranked_prices.c.rn == 1)
+            .where(AssetExchangeSpec.symbol.in_(actual_active_symbols))
+        )
+
+        result_latest_prices = await session.execute(stmt_latest_prices)
+        all_latest_prices_for_active_symbols = result_latest_prices.all()
+
+        percents = []
+        symbols_characteristics = {}
+        for symbol, filters, last_price in all_latest_prices_for_active_symbols:
+            if not filters:
+                continue
+
+            tick_size = Decimal(filters[0]['tickSize'])
+
+            percent = (1/(last_price/tick_size)) * 100
+            percents.append(percent)
+
+            symbols_characteristics[symbol] = [tick_size, last_price]
+
+        sum_of_percents = sum(percents)
+        average_percent = sum_of_percents / len(percents)
+
+        print(f'average_percent: {average_percent}')
+
+    return average_percent
 
 async def create_bots(symbol="BTCUSDT"):
+    average_percent_for_1_tick = await get_average_percentage_for_minimum_tick()
+
     dsm = DatabaseSessionManager.create(settings.DB_URL)
 
     async with dsm.get_session() as session:
         bot_crud = TestBotCrud(session)
 
-        # start_ticks_values = [10, 15, 20, 30, 40, 60, 80, 100, 120, 146, 184, 222, 260, 298, 336, 374, 412, 450, 500]  # Y axis
-        # stop_lose_ticks_values = [10, 20, 40, 60, 80, 90, 100, 126, 142, 158, 174, 190, 206, 222, 238, 254]  # X axis
-        # stop_win_ticks_values = [1, 5, 10, 20, 30, 40, 50, 60, 70]
-
-        # start_ticks_values = [10, 15, 20, 30, 40, 70, 80]  # Y axis
-        # stop_lose_ticks_values = [126, 132, 138, 144, 150, 156, 162, 168, 174]  # X axis
-        # stop_win_ticks_values = [100, 110, 120, 130, 140, 150, 160, 170]
-
-        # start_ticks_values = [10]  # Y axis
-        # stop_lose_ticks_values = [126]  # X axis
-        # stop_win_ticks_values = [100]
-
-        # start_ticks_values = [250, 500, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 12000, 13000, 14000, 15000, 20000, 30000]  # Y axis
-        # stop_lose_ticks_values = [50, 100, 200, 300, 500, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 20000, 50000]  # X axis
-        # stop_win_ticks_values = [20, 40, 60, 160, 300, 600, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000]
-
         start_ticks_values = [10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 70, 80, 100]
         stop_lose_ticks_values = [40, 45, 50, 55, 60, 70, 80, 90, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]
         stop_win_ticks_values = [5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+
+        start_percents_values = [x * average_percent_for_1_tick for x in start_ticks_values]
+        stop_lose_percents_values = [x * average_percent_for_1_tick for x in stop_lose_ticks_values]
+        stop_win_percents_values = [x * average_percent_for_1_tick for x in stop_win_ticks_values]
+
         min_tf_volatility_values = [0.5, 1, 2, 3]
         wait_open_order_values = [0.5]
 
         try:
-            for start in start_ticks_values:
-                for stop_lose in stop_lose_ticks_values:
+            sql_command = "TRUNCATE TABLE test_bots RESTART IDENTITY CASCADE;"
+            await session.execute(text(sql_command))
+
+            for start in start_percents_values:
+                for stop_lose in stop_lose_percents_values:
                     new_bots = []
-                    for stop_win in stop_win_ticks_values:
+                    for stop_win in stop_win_percents_values:
                         for min_tf in min_tf_volatility_values:
                             for wait_min in wait_open_order_values:
                                 bot_data = {
                                     "symbol": symbol,
                                     "balance": Decimal("1000.0"),
-                                    "stop_success_ticks": stop_win,
-                                    "stop_loss_ticks": stop_lose,
-                                    "start_updown_ticks": start,
+                                    "stop_win_percents": stop_win,
+                                    "stop_loss_percents": stop_lose,
+                                    "start_updown_percents": start,
                                     "min_timeframe_asset_volatility": min_tf,
                                     "time_to_wait_for_entry_price_to_open_order_in_minutes": wait_min,
                                     "is_active": True,
@@ -66,9 +136,6 @@ async def create_bots(symbol="BTCUSDT"):
                 bot_data = {
                     "symbol": symbol,
                     "balance": Decimal("1000.0"),
-                    "stop_success_ticks": 0,
-                    "stop_loss_ticks": 0,
-                    "start_updown_ticks": 0,
                     "copy_bot_min_time_profitability_min": min_time,
                     "is_active": True,
                 }
