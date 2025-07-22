@@ -67,6 +67,7 @@ class StartTestBotsCommand(Command):
                             redis=redis,
                             stop_event=self.stop_event,
                             price_provider=price_provider,
+                            bot_crud=bot_crud,
                         )
                     except Exception as e:
                         print(f"❌ Ошибка в боте {bot_config.id}: {e}")
@@ -78,7 +79,7 @@ class StartTestBotsCommand(Command):
 
     @staticmethod
     async def update_config_from_referral_bot(
-        bot_config: TestBot, redis
+        bot_config: TestBot, redis, bot_crud
     ) -> bool:
         refer_bot_js = await redis.get(f"copy_bot_{bot_config.id}")
         refer_bot = json.loads(refer_bot_js) if refer_bot_js else None
@@ -101,6 +102,24 @@ class StartTestBotsCommand(Command):
         )
         bot_config.referral_bot_id = refer_bot["id"]
 
+        tf_bot_ids = (
+            await ProfitableBotUpdaterCommand.get_profitable_bots_id_by_tf(
+                bot_crud=bot_crud,
+                bot_profitability_timeframes=[
+                    bot_config.copy_bot_min_time_profitability_min
+                ],
+            )
+        )
+
+        refer_bot = await ProfitableBotUpdaterCommand.get_bot_config_by_params(
+            bot_crud=bot_crud,
+            tf_bot_ids=tf_bot_ids,
+            copy_bot_min_time_profitability_min=bot_config.copy_bot_min_time_profitability_min,
+        )
+
+        if refer_bot:
+            bot_config.referral_bot_from_profit_func = refer_bot["id"]
+
         return True
 
     @staticmethod
@@ -116,12 +135,14 @@ class StartTestBotsCommand(Command):
         shared_data,
         stop_event,
         price_provider,
+        bot_crud,
     ):
         setattr(bot_config, "referral_bot_id", None)
+        setattr(bot_config, "referral_bot_from_profit_func", None)
 
         if bot_config.copy_bot_min_time_profitability_min:
             bot_config_updated = await self.update_config_from_referral_bot(
-                bot_config, redis
+                bot_config=bot_config, redis=redis, bot_crud=bot_crud
             )
             if not bot_config_updated:
                 return
@@ -140,17 +161,19 @@ class StartTestBotsCommand(Command):
             if bot_config.copy_bot_min_time_profitability_min:
                 bot_config_updated = (
                     await self.update_config_from_referral_bot(
-                        bot_config, redis
+                        bot_config=bot_config, redis=redis, bot_crud=bot_crud
                     )
                 )
                 if not bot_config_updated:
                     return
 
-            bot_config = await ProfitableBotUpdaterCommand.update_config_for_percentage(
-                bot_config=bot_config,
-                price_provider=price_provider,
-                symbol=symbol,
-                tick_size=tick_size
+            bot_config = (
+                await ProfitableBotUpdaterCommand.update_config_for_percentage(
+                    bot_config=bot_config,
+                    price_provider=price_provider,
+                    symbol=symbol,
+                    tick_size=tick_size,
+                )
             )
 
             initial_price = await price_provider.get_price(symbol=symbol)
@@ -290,6 +313,7 @@ class StartTestBotsCommand(Command):
                 "stop_success_ticks": bot_config.stop_success_ticks,
                 "stop_reason_event": order.stop_reason_event,
                 "referral_bot_id": bot_config.referral_bot_id,
+                "referral_bot_from_profit_func": bot_config.referral_bot_from_profit_func,
                 "created_at": datetime.now(UTC),
                 "updated_at": datetime.now(UTC),
             }

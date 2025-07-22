@@ -410,6 +410,9 @@ class TestOrder(BaseId):
     referral_bot_id: Mapped[int] = mapped_column(
         ForeignKey("test_bots.id"), nullable=True
     )
+    referral_bot_from_profit_func: Mapped[int] = mapped_column(
+        ForeignKey("test_bots.id"), nullable=True
+    )
 
 
 class TestBot(BaseId):
@@ -497,18 +500,16 @@ class MarketOrder(BaseId):
         types.String,
         nullable=True,
         index=True,
-        comment="Client-generated order ID"
+        comment="Client-generated order ID",
     )
     exchange_name: Mapped[Optional[str]] = mapped_column(
-        types.String,
-        nullable=True,
-        comment="Name of the exchange"
+        types.String, nullable=True, comment="Name of the exchange"
     )
     exchange_order_id: Mapped[Optional[str]] = mapped_column(
         types.String,
         nullable=True,
         index=True,
-        comment="Order ID from the exchange"
+        comment="Order ID from the exchange",
     )
     symbol: Mapped[str] = mapped_column(
         types.String, nullable=True, comment="Trading symbol, e.g., BTCUSDT"
@@ -607,5 +608,5 @@ class MarketOrder(BaseId):
         types.Numeric,
         nullable=True,
         index=True,
-        comment="Profit or loss from the order"
+        comment="Profit or loss from the order",
     )
