@@ -261,7 +261,7 @@ class BinanceBot(Command):
         if not exchange_orders['order_buy'] or not exchange_orders['order_sell']:
             if exchange_orders['order_buy']:
                 await self.delete_order(
-                    db_order=db_order_sell,
+                    db_order=db_order_buy,
                     status='CANCELED',
                     close_reason=f'Can\'t create sell order, cancel both'
                 )
