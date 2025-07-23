@@ -38,11 +38,15 @@ class BinanceBot(Command):
         self.stop_event = stop_event
 
         load_dotenv()
-        api_key = os.getenv("api_key_testnet")
-        api_secret = os.getenv("api_secret_testnet")
+        # api_key = os.getenv("BINANCE_API_KEY_TESTNET")
+        # api_secret = os.getenv("BINANCE_SECRET_KEY_TESTNET")
+        #
+        # self.binance_client = Client(api_key, api_secret, testnet=True)
+        # self.binance_client.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
+        api_key = os.getenv("BINANCE_API_KEY")
+        api_secret = os.getenv("BINANCE_SECRET_KEY")
 
-        self.binance_client = Client(api_key, api_secret, testnet=True)
-        self.binance_client.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
+        self.binance_client = Client(api_key, api_secret)
 
     async def command(
         self,
@@ -70,13 +74,13 @@ class BinanceBot(Command):
         print('tasks')
 
         async def _run_loop():
-            # while not self.stop_event.is_set():
-            # try:
-            print('before creating orders')
-            await self.creating_orders_bot()
-            # except Exception as e:
-            #     print(f"❌ Ошибка в боте: {e}")
-            #     await asyncio.sleep(1)
+            while not self.stop_event.is_set():
+                try:
+                    print('before creating orders')
+                    await self.creating_orders_bot()
+                except Exception as e:
+                    print(f"❌ Ошибка в боте: {e}")
+                    await asyncio.sleep(1)
 
         tasks.append(asyncio.create_task(_run_loop()))
         await asyncio.gather(*tasks)
@@ -190,8 +194,8 @@ class BinanceBot(Command):
         print(balanceUSDT)
         print('balanceUSDT')
 
-        if balanceUSDT > 100:
-            balanceUSDT = 100
+        # if balanceUSDT > 100:
+        #     balanceUSDT = 100
 
         balanceUSDT099 = Decimal(balanceUSDT) * Decimal(0.99)
 

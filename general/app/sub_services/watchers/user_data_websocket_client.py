@@ -10,10 +10,10 @@ class UserDataWebSocketClient:
     def __init__(self, binance_client, waiting_orders):
         self.client = binance_client
         self.listen_key = self.client.futures_stream_get_listen_key()
-        # market
-        # domain = "fstream.binance.com"
         # testnet
-        domain = "stream.binancefuture.com"
+        # domain = "stream.binancefuture.com"
+        # market
+        domain = "fstream.binance.com"
         self.url = f"wss://{domain}/ws/{self.listen_key}"
         self.first_order_started_event = asyncio.Event()
         self.first_order_filled_event = asyncio.Event()
