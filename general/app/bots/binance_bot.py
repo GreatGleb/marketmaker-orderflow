@@ -436,9 +436,9 @@ class BinanceBot(Command):
 
         db_order.quote_quantity = balanceUSDT
         if order_params:
-            db_order.asset_quantity = Decimal(order_params['quantityOrder_buy_str'])
+            db_order.asset_quantity = Decimal(order_quantity)
             db_order.start_price = order_params['initial_price']
-            db_order.activation_price = Decimal(order_params['entry_price_buy_str'])
+            db_order.activation_price = Decimal(order_stop_price)
 
         if order and 'orderId' in order and 'status' in order:
             db_order.exchange_order_id = str(order['orderId'])
@@ -510,7 +510,8 @@ class BinanceBot(Command):
                             side=order_side,
                             positionSide=order_position_side,
                             type=FUTURE_ORDER_TYPE_MARKET,
-                            quantity=executed_qty,
+                            # quantity=executed_qty,
+                            closePosition=True,
                             reduceOnly=True,
                             newClientOrderId=client_order_id
                         )
@@ -521,7 +522,8 @@ class BinanceBot(Command):
                             side=order_side,
                             positionSide=order_position_side,
                             type=FUTURE_ORDER_TYPE_MARKET,
-                            quantity=executed_qty,
+                            # quantity=executed_qty,
+                            closePosition=True,
                             reduceOnly=True
                         )
                 except:
@@ -533,7 +535,8 @@ class BinanceBot(Command):
                                 side=order_side,
                                 positionSide=order_position_side,
                                 type=FUTURE_ORDER_TYPE_MARKET,
-                                quantity=executed_qty,
+                                # quantity=executed_qty,
+                                closePosition=True,
                                 newClientOrderId=client_order_id
                             )
                         else:
@@ -543,7 +546,8 @@ class BinanceBot(Command):
                                 side=order_side,
                                 positionSide=order_position_side,
                                 type=FUTURE_ORDER_TYPE_MARKET,
-                                quantity=executed_qty
+                                # quantity=executed_qty,
+                                closePosition=True,
                             )
                     except:
                         print('Can\'nt delete binance order')
@@ -908,7 +912,8 @@ class BinanceBot(Command):
                 side=trailing_order.side,
                 positionSide=trailing_order.position_side,
                 type=FUTURE_ORDER_TYPE_STOP_MARKET,
-                quantity=db_order.asset_quantity,
+                # quantity=db_order.asset_quantity,
+                closePosition=True,
                 stopPrice=order_stop_price,
                 reduceOnly=True,
                 newClientOrderId=trailing_order.client_order_id,
@@ -923,7 +928,8 @@ class BinanceBot(Command):
                     side=trailing_order.side,
                     positionSide=trailing_order.position_side,
                     type=FUTURE_ORDER_TYPE_STOP_MARKET,
-                    quantity=db_order.asset_quantity,
+                    # quantity=db_order.asset_quantity,
+                    closePosition=True,
                     stopPrice=order_stop_price,
                     newClientOrderId=trailing_order.client_order_id,
                     workingType="MARK_PRICE",
