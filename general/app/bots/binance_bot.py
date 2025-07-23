@@ -634,34 +634,34 @@ class BinanceBot(Command):
 
             if db_order.side == 'BUY':
                 if updated_price > close_not_lose_price:
-                    if updated_price > max_price:
-                        max_price = updated_price
                     if updated_price > max_price or current_stop_type != 'stop_win':
                         current_stop_client_order_id_number += 1
                         current_stop_type = 'stop_win'
                         is_need_so_set_new_sl_sw = True
-                else:
                     if updated_price > max_price:
                         max_price = updated_price
+                else:
                     if updated_price > max_price or current_stop_type != 'stop_lose':
                         current_stop_client_order_id_number += 1
                         current_stop_type = 'stop_lose'
                         is_need_so_set_new_sl_sw = True
+                    if updated_price > max_price:
+                        max_price = updated_price
             else:
                 if updated_price < close_not_lose_price:
-                    if updated_price < min_price:
-                        min_price = updated_price
                     if updated_price < min_price or current_stop_type != 'stop_win':
                         current_stop_client_order_id_number += 1
                         current_stop_type = 'stop_win'
                         is_need_so_set_new_sl_sw = True
-                else:
                     if updated_price < min_price:
                         min_price = updated_price
+                else:
                     if updated_price < min_price or current_stop_type != 'stop_lose':
                         current_stop_client_order_id_number += 1
                         current_stop_type = 'stop_lose'
                         is_need_so_set_new_sl_sw = True
+                    if updated_price < min_price:
+                        min_price = updated_price
 
             if not base_order_name:
                 base_order_name = db_order.client_order_id + f'_{current_stop_type}'
