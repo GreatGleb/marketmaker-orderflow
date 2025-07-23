@@ -113,6 +113,7 @@ class UserDataWebSocketClient:
             if original_order:
                 original_order.close_price = Decimal(order['L'])
                 original_order.close_time = datetime.now(UTC).replace(tzinfo=None)
+                print(f'In user data stream order {order['c']} closed')
 
                 if 'win' in order['c']:
                     original_order.close_reason = 'Stop win'

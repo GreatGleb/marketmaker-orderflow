@@ -564,10 +564,13 @@ class BinanceBot(Command):
 
         if sl_custom_trailing == sw_custom_trailing:
             if sl_custom_trailing:
+                print('Creating custom trailing')
                 await self.creating_custom_trailing(db_order, bot_config, tick_size, sl_sw_params)
             else:
+                print('Creating binance trailing')
                 await self.creating_binance_trailing_order(db_order, bot_config, tick_size, sl_sw_params)
         else:
+            print('Creating binance and custom trailings')
             await self.creating_binance_n_custom_trailing(db_order, bot_config, tick_size, sl_sw_params)
 
         print('order closed')
@@ -625,6 +628,7 @@ class BinanceBot(Command):
         min_price = await self.price_provider.get_price(symbol=db_order.symbol)
 
         while db_order.close_time is None and not self.stop_custom_trailing:
+            print('loop set creating_custom_trailing')
             is_need_so_set_new_sl_sw = False
             updated_price = await self.price_provider.get_price(symbol=db_order.symbol)
 
@@ -729,6 +733,7 @@ class BinanceBot(Command):
         last_stop_order_name = None
 
         while db_order.close_time is None:
+            print('loop set binance_trailing_order')
             updated_price = await self.price_provider.get_price(symbol=db_order.symbol)
             is_need_so_set_new_sl_sw = False
 
@@ -799,6 +804,7 @@ class BinanceBot(Command):
         last_binance_stop_order_name = None
 
         while db_order.close_time is None:
+            print('loop set creating_binance_n_custom_trailing')
             updated_price = await self.price_provider.get_price(symbol=db_order.symbol)
             is_need_so_change_mode = False
 
