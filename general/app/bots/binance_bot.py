@@ -34,7 +34,6 @@ class BinanceBot(Command):
         self.session = None
         self.bot_crud = None
         self.symbols_characteristics = None
-        self.stop_custom_trailing = None
         self.stop_event = stop_event
 
         load_dotenv()
@@ -632,7 +631,7 @@ class BinanceBot(Command):
         max_price = await self.price_provider.get_price(symbol=db_order.symbol)
         min_price = await self.price_provider.get_price(symbol=db_order.symbol)
 
-        while db_order.close_time is None and not self.stop_custom_trailing:
+        while db_order.close_time is None:
             is_need_so_set_new_sl_sw = False
             updated_price = await self.price_provider.get_price(symbol=db_order.symbol)
 
@@ -724,11 +723,16 @@ class BinanceBot(Command):
                     break
             elif is_need_so_set_new_sl_sw and not callback['is_need_custom_callback']:
                 logging.info(f'custom trailing: is need to change trailing mode')
+                if last_custom_stop_order_name:
+                    logging.info(f'custom trailing: deleting old sl sw')
+                    await self.delete_old_sl_sw(
+                        db_order=db_order,
+                        old_stop_order_id=last_custom_stop_order_name,
+                        sl_sw_params=sl_sw_params
+                    )
                 break
 
         logging.info(f'custom trailing: stopped custom trailing')
-
-        self.stop_custom_trailing = False
 
         return
 
@@ -861,10 +865,6 @@ class BinanceBot(Command):
                         last_binance_stop_order_name = None
                 else:
                     logging.info(f'2 mods: to binance')
-                    logging.info(f'2 mods: wait_when_custom_trailing_will_stop')
-                    # delete custom trailing stop
-                    self.stop_custom_trailing = True
-                    await self.wait_when_custom_trailing_will_stop()
 
                 logging.info(f'2 mods: _check_if_price_less_then_stops')
                 is_need_to_stop_order = await self._check_if_price_less_then_stops(
@@ -899,13 +899,6 @@ class BinanceBot(Command):
                     last_binance_stop_order_name = current_stop_order_name
 
         return
-
-    async def wait_when_custom_trailing_will_stop(self):
-        while True:
-            if not self.stop_custom_trailing:
-                return
-            else:
-                await asyncio.sleep(0.02)
 
     async def _get_order_stop_price_for_custom_trailing(self, db_order, stop_type, prices, bot_config, tick_size):
         if stop_type == 'stop_win':
