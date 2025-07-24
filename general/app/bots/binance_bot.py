@@ -450,17 +450,17 @@ class BinanceBot(Command):
 
         return order
 
-    async def delete_order(self, db_order, status=None, close_reason=None, client_order_id=None):
+    async def delete_order(self, db_order, status=None, close_reason=None, deleting_order_id=None):
         db_order.status = status
         db_order.close_reason = close_reason
 
         await self.delete_binance_order(
             db_order=db_order,
-            client_order_id=client_order_id
+            deleting_order_id=deleting_order_id
         )
 
     async def delete_binance_order(
-            self, db_order, client_order_id=None
+            self, db_order, deleting_order_id=None
     ):
         if db_order.close_order_type is None:
             try:
@@ -508,7 +508,7 @@ class BinanceBot(Command):
 
             if Decimal(executed_qty) > 0:
                 try:
-                    if client_order_id:
+                    if deleting_order_id:
                         await self._safe_from_time_err_call_binance(
                             self.binance_client.futures_create_order,
                             symbol=db_order.symbol,
@@ -518,7 +518,7 @@ class BinanceBot(Command):
                             # quantity=executed_qty,
                             closePosition=True,
                             reduceOnly=True,
-                            newClientOrderId=client_order_id
+                            newClientOrderId=deleting_order_id
                         )
                     else:
                         await self._safe_from_time_err_call_binance(
@@ -533,7 +533,7 @@ class BinanceBot(Command):
                         )
                 except:
                     try:
-                        if client_order_id:
+                        if deleting_order_id:
                             await self._safe_from_time_err_call_binance(
                                 self.binance_client.futures_create_order,
                                 symbol=db_order.symbol,
@@ -542,7 +542,7 @@ class BinanceBot(Command):
                                 type=FUTURE_ORDER_TYPE_MARKET,
                                 # quantity=executed_qty,
                                 closePosition=True,
-                                newClientOrderId=client_order_id
+                                newClientOrderId=deleting_order_id
                             )
                         else:
                             await self._safe_from_time_err_call_binance(
@@ -633,7 +633,6 @@ class BinanceBot(Command):
         min_price = await self.price_provider.get_price(symbol=db_order.symbol)
 
         while db_order.close_time is None and not self.stop_custom_trailing:
-            logging.info('loop set creating_custom_trailing')
             is_need_so_set_new_sl_sw = False
             updated_price = await self.price_provider.get_price(symbol=db_order.symbol)
 
@@ -678,15 +677,16 @@ class BinanceBot(Command):
             else:
                 callback = sl_sw_params['sl']
 
-            logging.info(f'is_need_so_set_new_sl_sw: {is_need_so_set_new_sl_sw}, is_need_custom_callback: {callback['is_need_custom_callback']}')
-
             if is_need_so_set_new_sl_sw and callback['is_need_custom_callback']:
+                logging.info(f'custom trailing: is need to set new sl sw')
                 if last_custom_stop_order_name:
+                    logging.info(f'custom trailing: deleting old sl sw')
                     await self.delete_old_sl_sw(
                         db_order=db_order,
                         old_stop_order_id=last_custom_stop_order_name,
                         sl_sw_params=sl_sw_params
                     )
+                    last_custom_stop_order_name = None
 
                 is_need_to_stop_order = await self._check_if_price_less_then_stops(
                     close_not_lose_price=close_not_lose_price,
@@ -696,6 +696,7 @@ class BinanceBot(Command):
                 )
 
                 if not is_need_to_stop_order:
+                    logging.info(f'custom trailing: creating new sl sw')
                     order_stop_price = await self._get_order_stop_price_for_custom_trailing(
                         db_order=db_order,
                         stop_type=current_stop_type,
@@ -710,19 +711,22 @@ class BinanceBot(Command):
                         client_order_id=current_custom_stop_order_name,
                         order_stop_price=order_stop_price
                     )
+
+                    last_custom_stop_order_name = current_custom_stop_order_name
                 else:
+                    logging.info(f'custom trailing: When was process of changing stop lose/win - after deleting stop lose/win - price came to stop levels')
                     await self.delete_order(
                         db_order=db_order,
                         status='CLOSED',
                         close_reason=f'When was process of changing stop lose/win - after deleting stop lose/win - price came to stop levels',
-                        client_order_id=current_custom_stop_order_name
+                        deleting_order_id=current_custom_stop_order_name
                     )
-                    logging.info('When was process of changing stop lose/win - after deleting stop lose/win - price came to stop levels')
                     break
-
-                last_custom_stop_order_name = current_custom_stop_order_name
             elif is_need_so_set_new_sl_sw and not callback['is_need_custom_callback']:
+                logging.info(f'custom trailing: is need to change trailing mode')
                 break
+
+        logging.info(f'custom trailing: stopped custom trailing')
 
         self.stop_custom_trailing = False
 
@@ -740,7 +744,6 @@ class BinanceBot(Command):
         last_stop_order_name = None
 
         while db_order.close_time is None:
-            logging.info('loop set binance_trailing_order')
             updated_price = await self.price_provider.get_price(symbol=db_order.symbol)
             is_need_so_set_new_sl_sw = False
 
@@ -766,13 +769,16 @@ class BinanceBot(Command):
             current_stop_order_name = db_order.client_order_id + f'_{current_stop_type}_{current_stop_client_order_id_number}'
 
             if is_need_so_set_new_sl_sw:
+                logging.info(f'binance trailing: is_need_so_set_new_sl_sw')
                 if last_stop_order_name:
+                    logging.info(f'binance trailing: delete_old_sl_sw')
                     await self.delete_old_sl_sw(
                         db_order=db_order,
                         old_stop_order_id=last_stop_order_name,
                         sl_sw_params=sl_sw_params
                     )
 
+                logging.info(f'binance trailing: _check_if_price_less_then_stops')
                 is_need_to_stop_order = await self._check_if_price_less_then_stops(
                     close_not_lose_price=close_not_lose_price,
                     bot_config=bot_config,
@@ -781,22 +787,24 @@ class BinanceBot(Command):
                 )
 
                 if not is_need_to_stop_order:
+                    logging.info(f'binance trailing: create_new_sl_sw_order_binance_trailing')
                     await self.create_new_sl_sw_order_binance_trailing(
                         db_order=db_order,
                         sl_sw_params=sl_sw_params,
                         client_order_id=current_stop_order_name,
                         stop_type=current_stop_type
                     )
+                    last_stop_order_name = current_stop_order_name
                 else:
+                    logging.info(f'binance trailing: When was process of changing stop lose/win - after deleting stop lose/win - price came to stop levels')
                     await self.delete_order(
                         db_order=db_order,
                         status='CLOSED',
                         close_reason=f'When was process of changing stop lose/win - after deleting stop lose/win - price came to stop levels',
-                        client_order_id=current_stop_order_name,
+                        deleting_order_id=current_stop_order_name,
                     )
                     logging.info('When was process of changing stop lose/win - after deleting stop lose/win - price came to stop levels')
                     break
-                last_stop_order_name = current_stop_order_name
 
     async def creating_binance_n_custom_trailing(self, db_order, bot_config, tick_size, sl_sw_params):
         close_not_lose_price = (
@@ -806,12 +814,10 @@ class BinanceBot(Command):
         )
 
         current_param = None
-        current_stop_type = None
         current_stop_client_order_id_number = 0
         last_binance_stop_order_name = None
 
         while db_order.close_time is None:
-            logging.info('loop set creating_binance_n_custom_trailing')
             updated_price = await self.price_provider.get_price(symbol=db_order.symbol)
             is_need_so_change_mode = False
 
@@ -835,27 +841,32 @@ class BinanceBot(Command):
                     is_need_so_change_mode = True
 
             if current_param == 'sl':
-                if not sl_sw_params[current_param]['is_need_custom_callback']:
-                    current_stop_type = 'stop_lose'
+                current_stop_type = 'stop_lose'
             else:
-                if not sl_sw_params[current_param]['is_need_custom_callback']:
-                    current_stop_type = 'stop_win'
+                current_stop_type = 'stop_win'
 
             current_stop_order_name = db_order.client_order_id + f'_{current_stop_type}_{current_stop_client_order_id_number}'
 
             if is_need_so_change_mode:
+                logging.info(f'2 mods: is_need_so_change_mode')
                 if sl_sw_params[current_param]['is_need_custom_callback']:
+                    logging.info(f'2 mods: to custom')
                     if last_binance_stop_order_name:
+                        logging.info(f'2 mods: delete_old_sl_sw')
                         await self.delete_old_sl_sw(
                             db_order=db_order,
                             old_stop_order_id=last_binance_stop_order_name,
                             sl_sw_params=sl_sw_params
                         )
+                        last_binance_stop_order_name = None
                 else:
+                    logging.info(f'2 mods: to binance')
+                    logging.info(f'2 mods: wait_when_custom_trailing_will_stop')
                     # delete custom trailing stop
                     self.stop_custom_trailing = True
                     await self.wait_when_custom_trailing_will_stop()
 
+                logging.info(f'2 mods: _check_if_price_less_then_stops')
                 is_need_to_stop_order = await self._check_if_price_less_then_stops(
                     close_not_lose_price=close_not_lose_price,
                     bot_config=bot_config,
@@ -864,18 +875,21 @@ class BinanceBot(Command):
                 )
 
                 if is_need_to_stop_order:
+                    logging.info(f'2 mods: is_need_to_stop_order')
                     await self.delete_order(
                         db_order=db_order,
                         status='CLOSED',
                         close_reason=f'When was process of changing stop lose/win - after deleting stop lose/win - price came to stop levels',
-                        client_order_id=current_stop_order_name,
+                        deleting_order_id=current_stop_order_name,
                     )
                     logging.info('When was process of changing stop lose/win - after deleting stop lose/win - price came to stop levels')
                     break
 
                 if sl_sw_params[current_param]['is_need_custom_callback']:
+                    logging.info(f'2 mods: creating_custom_trailing')
                     await self.creating_custom_trailing(db_order, bot_config, tick_size, sl_sw_params, base_order_name=current_stop_order_name)
                 else:
+                    logging.info(f'2 mods: create_new_sl_sw_order_binance_trailing')
                     await self.create_new_sl_sw_order_binance_trailing(
                         db_order=db_order,
                         sl_sw_params=sl_sw_params,
@@ -954,7 +968,7 @@ class BinanceBot(Command):
                         db_order=db_order,
                         status='CLOSED',
                         close_reason=f'When was process of changing custom stop lose/win - price came to stop levels',
-                        client_order_id=trailing_order.client_order_id
+                        deleting_order_id=trailing_order.client_order_id
                     )
 
     async def create_new_sl_sw_order_binance_trailing(self, db_order, sl_sw_params, client_order_id, stop_type):
