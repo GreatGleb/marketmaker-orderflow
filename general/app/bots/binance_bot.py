@@ -1,10 +1,10 @@
 import asyncio
-import json
 import math
 import os
 import time
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+import logging
 
 from binance.client import Client
 from binance.enums import FUTURE_ORDER_TYPE_STOP_MARKET, FUTURE_ORDER_TYPE_MARKET, FUTURE_ORDER_TYPE_TRAILING_STOP_MARKET, SIDE_SELL, SIDE_BUY
@@ -48,6 +48,11 @@ class BinanceBot(Command):
 
         self.binance_client = Client(api_key, api_secret)
 
+        logging.basicConfig(
+            format='%(asctime)s - %(levelname)s - %(message)s',
+            level=logging.INFO
+        )
+
     async def command(
         self,
         session: AsyncSession = Depends(get_session),
@@ -59,27 +64,27 @@ class BinanceBot(Command):
         self.bot_crud = bot_crud
         self.price_provider = PriceProvider(redis=self.redis)
 
-        print('getting tick_size data')
+        logging.info('getting tick_size data')
         exchange_crud = AssetExchangeSpecCrud(self.session)
         self.symbols_characteristics = await exchange_crud.get_symbols_characteristics_from_active_pairs()
 
         is_set_dual_mode = await self.check_and_set_dual_mode()
         if not is_set_dual_mode:
-            print('Mod not dual side position, can\'t to create new orders!')
+            logging.info('Mod not dual side position, can\'t to create new orders!')
             return
 
-        print('finished creating binance client')
+        logging.info('finished creating binance client')
 
         tasks = []
-        print('tasks')
+        logging.info('tasks')
 
         async def _run_loop():
             while not self.stop_event.is_set():
                 try:
-                    print('before creating orders')
+                    logging.info('before creating orders')
                     await self.creating_orders_bot()
                 except Exception as e:
-                    print(f"❌ Ошибка в боте: {e}")
+                    logging.info(f"❌ Ошибка в боте: {e}")
                     await asyncio.sleep(1)
 
         tasks.append(asyncio.create_task(_run_loop()))
@@ -106,25 +111,25 @@ class BinanceBot(Command):
             return False
 
     async def creating_orders_bot(self):
-        print('start function creating_orders_bot')
+        logging.info('start function creating_orders_bot')
         copy_bot_min_time_profitability_min = await self._get_copy_bot_tf_params()
-        print('finished get_copy_bot_tf_params')
+        logging.info('finished get_copy_bot_tf_params')
 
         tf_bot_ids = await ProfitableBotUpdaterCommand.get_profitable_bots_id_by_tf(
             bot_crud=self.bot_crud,
             bot_profitability_timeframes=[copy_bot_min_time_profitability_min],
         )
 
-        print('finished get_profitable_bots_id_by_tf')
+        logging.info('finished get_profitable_bots_id_by_tf')
         refer_bot = await ProfitableBotUpdaterCommand.get_bot_config_by_params(
             bot_crud=self.bot_crud,
             tf_bot_ids=tf_bot_ids,
             copy_bot_min_time_profitability_min=copy_bot_min_time_profitability_min
         )
-        print('finished get_bot_config_by_params')
+        logging.info('finished get_bot_config_by_params')
 
         if not refer_bot:
-            print('not refer_bot')
+            logging.info('not refer_bot')
             return
 
         bot_config = TestBot(
@@ -160,11 +165,11 @@ class BinanceBot(Command):
             max_qty = symbol_characteristics['lot_size']['maxQty']
             min_qty = symbol_characteristics['lot_size']['minQty']
         except:
-            print(f"❌ Ошибка при получении symbol_characteristics по {symbol}")
+            logging.info(f"❌ Ошибка при получении symbol_characteristics по {symbol}")
             return
 
         if not tick_size or not max_price or not min_price or not lot_size or not min_qty or not max_qty:
-            print(f"❌ Нет symbol_characteristics по {symbol}")
+            logging.info(f"❌ Нет symbol_characteristics по {symbol}")
             return
 
         bot_config = await ProfitableBotUpdaterCommand.update_config_for_percentage(
@@ -174,14 +179,14 @@ class BinanceBot(Command):
             tick_size=tick_size
         )
 
-        print(f'current symbol: {symbol}')
+        logging.info(f'current symbol: {symbol}')
 
-        print('start get balance')
+        logging.info('start get balance')
 
         balance = await self._safe_from_time_err_call_binance(
                 self.binance_client.futures_account_balance
         )
-        print('finish get balance')
+        logging.info('finish get balance')
         balanceUSDT = 0
 
         for accountAlias in balance:
@@ -191,8 +196,8 @@ class BinanceBot(Command):
         if not balanceUSDT:
             return
 
-        print(balanceUSDT)
-        print('balanceUSDT')
+        logging.info(balanceUSDT)
+        logging.info('balanceUSDT')
 
         # if balanceUSDT > 100:
         #     balanceUSDT = 100
@@ -229,14 +234,14 @@ class BinanceBot(Command):
             await self.session.commit()
         except Exception as e:
             self.session.rollback()
-            print(f"❌ Error adding market order to DB: {e}")
+            logging.info(f"❌ Error adding market order to DB: {e}")
             return
 
         db_order_buy.client_order_id = f'buy_{db_order_buy.id}'
         db_order_sell.client_order_id = f'sell_{db_order_sell.id}'
 
-        print(db_order_buy.client_order_id)
-        print(db_order_sell.client_order_id)
+        logging.info(db_order_buy.client_order_id)
+        logging.info(db_order_sell.client_order_id)
 
         self.order_update_listener = UserDataWebSocketClient(
             self.binance_client,
@@ -272,12 +277,12 @@ class BinanceBot(Command):
                     close_reason=f'Can\'t create buy order, cancel both'
                 )
 
-            print(f"❌ Один из ордеров не может быть создан, второй ордер был отменён")
+            logging.info(f"❌ Один из ордеров не может быть создан, второй ордер был отменён")
             return
 
         wait_for_order = await self._wait_until_order_activated(bot_config, db_order_buy, db_order_sell)
         if not wait_for_order['timeout_missed']:
-            print(f"A minute has passed, entry conditions have not been met")
+            logging.info(f"A minute has passed, entry conditions have not been met")
             return
 
         if wait_for_order['first_order_updating_data']['c'] == exchange_orders['order_buy']['clientOrderId']:
@@ -301,11 +306,11 @@ class BinanceBot(Command):
 
         wait_filled = await wait_filled_task
         if not wait_filled['timeout_missed']:
-            print(f"A minute has passed, order did\'nt fill")
+            logging.info(f"A minute has passed, order did\'nt fill")
             await delete_task
             return
 
-        print("✅ Первый ордер получен:", wait_for_order['first_order_updating_data'])
+        logging.info("✅ Первый ордер получен:", wait_for_order['first_order_updating_data'])
         setting_sl_sw_to_order = asyncio.create_task(
             self.setting_sl_sw_to_order(db_order, bot_config, tick_size)
         )
@@ -317,7 +322,7 @@ class BinanceBot(Command):
             await self.session.commit()
         except Exception as e:
             self.session.rollback()
-            print(f"❌ Error DB: {e}")
+            logging.info(f"❌ Error DB: {e}")
             return
 
         await asyncio.sleep(60)
@@ -364,7 +369,7 @@ class BinanceBot(Command):
             db_order=db_order_sell,
         )
 
-        print(
+        logging.info(
             f"order_buy: {order_buy}\n\n"
             f"order_sell: {order_sell}\n"
         )
@@ -386,7 +391,7 @@ class BinanceBot(Command):
 
         while True:
             if try_create_order > 10:
-                print('Too much tries when stop price like last market price')
+                logging.info('Too much tries when stop price like last market price')
 
                 db_order.status = 'CANCELED'
                 db_order.close_reason = f'Quantity bigger or less then maximums for {symbol}'
@@ -465,7 +470,7 @@ class BinanceBot(Command):
                     origClientOrderId=db_order.client_order_id
                 )
             except Exception as e:
-                print("Не могу удалить ордер, он уже отменён или исполнен:", e)
+                logging.info("Не могу удалить ордер, он уже отменён или исполнен:", e)
 
         if not (
             (db_order.side == 'BUY' and db_order.position_side == 'SHORT') or (db_order.side == 'SELL' and db_order.position_side == 'LONG')
@@ -492,13 +497,13 @@ class BinanceBot(Command):
             #     self.binance_client.futures_position_information,
             #     symbol=db_order.symbol
             # )
-            # print(positions)
-            # print('positions')
+            # logging.info(positions)
+            # logging.info('positions')
             # position_amt = 0
             # for pos in positions:
             #     if pos['positionSide'] == order_position_side:
             #         position_amt = Decimal(pos['positionAmt'])
-            #         print(f"Symbol: {pos.get('symbol')}, Position amount: {pos.get('positionAmt')}, Leverage: {pos.get('leverage')}")
+            #         logging.info(f"Symbol: {pos.get('symbol')}, Position amount: {pos.get('positionAmt')}, Leverage: {pos.get('leverage')}")
             # if executed_qty > 0 and position_amt != 0:
 
             if Decimal(executed_qty) > 0:
@@ -550,7 +555,7 @@ class BinanceBot(Command):
                                 closePosition=True,
                             )
                     except:
-                        print('Can\'nt delete binance order')
+                        logging.info('Can\'nt delete binance order')
 
         return
 
@@ -564,16 +569,16 @@ class BinanceBot(Command):
 
         if sl_custom_trailing == sw_custom_trailing:
             if sl_custom_trailing:
-                print('Creating custom trailing')
+                logging.info('Creating custom trailing')
                 await self.creating_custom_trailing(db_order, bot_config, tick_size, sl_sw_params)
             else:
-                print('Creating binance trailing')
+                logging.info('Creating binance trailing')
                 await self.creating_binance_trailing_order(db_order, bot_config, tick_size, sl_sw_params)
         else:
-            print('Creating binance and custom trailings')
+            logging.info('Creating binance and custom trailings')
             await self.creating_binance_n_custom_trailing(db_order, bot_config, tick_size, sl_sw_params)
 
-        print('order closed')
+        logging.info('order closed')
 
     def _get_sl_sw_params(self, db_order, bot_config, tick_size):
         if db_order.side == 'BUY':
@@ -596,7 +601,7 @@ class BinanceBot(Command):
             callback_rate = (tick_value / db_order.activation_price) * 100
             binance_callback_rate = callback_rate
             if callback_rate < 0.1:
-                print(f"Минимальный callbackRate на Binance — 0.1%. У тебя {callback_rate}%, увеличь количество тиков.")
+                logging.info(f"Минимальный callbackRate на Binance — 0.1%. У тебя {callback_rate}%, увеличь количество тиков.")
                 binance_callback_rate = 0.1
                 is_need_custom_callback = True
             elif callback_rate > 10:
@@ -628,7 +633,7 @@ class BinanceBot(Command):
         min_price = await self.price_provider.get_price(symbol=db_order.symbol)
 
         while db_order.close_time is None and not self.stop_custom_trailing:
-            print('loop set creating_custom_trailing')
+            logging.info('loop set creating_custom_trailing')
             is_need_so_set_new_sl_sw = False
             updated_price = await self.price_provider.get_price(symbol=db_order.symbol)
 
@@ -673,6 +678,8 @@ class BinanceBot(Command):
             else:
                 callback = sl_sw_params['sl']
 
+            logging.info(f'is_need_so_set_new_sl_sw: {is_need_so_set_new_sl_sw}, is_need_custom_callback: {callback['is_need_custom_callback']}')
+
             if is_need_so_set_new_sl_sw and callback['is_need_custom_callback']:
                 if last_custom_stop_order_name:
                     await self.delete_old_sl_sw(
@@ -710,7 +717,7 @@ class BinanceBot(Command):
                         close_reason=f'When was process of changing stop lose/win - after deleting stop lose/win - price came to stop levels',
                         client_order_id=current_custom_stop_order_name
                     )
-                    print('When was process of changing stop lose/win - after deleting stop lose/win - price came to stop levels')
+                    logging.info('When was process of changing stop lose/win - after deleting stop lose/win - price came to stop levels')
                     break
 
                 last_custom_stop_order_name = current_custom_stop_order_name
@@ -733,7 +740,7 @@ class BinanceBot(Command):
         last_stop_order_name = None
 
         while db_order.close_time is None:
-            print('loop set binance_trailing_order')
+            logging.info('loop set binance_trailing_order')
             updated_price = await self.price_provider.get_price(symbol=db_order.symbol)
             is_need_so_set_new_sl_sw = False
 
@@ -787,7 +794,7 @@ class BinanceBot(Command):
                         close_reason=f'When was process of changing stop lose/win - after deleting stop lose/win - price came to stop levels',
                         client_order_id=current_stop_order_name,
                     )
-                    print('When was process of changing stop lose/win - after deleting stop lose/win - price came to stop levels')
+                    logging.info('When was process of changing stop lose/win - after deleting stop lose/win - price came to stop levels')
                     break
                 last_stop_order_name = current_stop_order_name
 
@@ -804,7 +811,7 @@ class BinanceBot(Command):
         last_binance_stop_order_name = None
 
         while db_order.close_time is None:
-            print('loop set creating_binance_n_custom_trailing')
+            logging.info('loop set creating_binance_n_custom_trailing')
             updated_price = await self.price_provider.get_price(symbol=db_order.symbol)
             is_need_so_change_mode = False
 
@@ -863,7 +870,7 @@ class BinanceBot(Command):
                         close_reason=f'When was process of changing stop lose/win - after deleting stop lose/win - price came to stop levels',
                         client_order_id=current_stop_order_name,
                     )
-                    print('When was process of changing stop lose/win - after deleting stop lose/win - price came to stop levels')
+                    logging.info('When was process of changing stop lose/win - after deleting stop lose/win - price came to stop levels')
                     break
 
                 if sl_sw_params[current_param]['is_need_custom_callback']:
@@ -1062,7 +1069,7 @@ class BinanceBot(Command):
             entry_price_sell > max_price,
             entry_price_sell < min_price
         ]):
-            print(f'Price bigger or less then maximums for {symbol}')
+            logging.info(f'Price bigger or less then maximums for {symbol}')
 
             db_order.status = 'CANCELED'
             db_order.close_reason = f'Price bigger or less then maximums for {symbol}'
@@ -1075,7 +1082,7 @@ class BinanceBot(Command):
             Decimal(quantityOrder_sell_str) > max_qty,
             Decimal(quantityOrder_sell_str) < min_qty
         ]):
-            print(f'Quantity bigger or less then maximums for {symbol}')
+            logging.info(f'Quantity bigger or less then maximums for {symbol}')
 
             db_order.status = 'CANCELED'
             db_order.close_reason = f'Quantity bigger or less then maximums for {symbol}'
@@ -1095,7 +1102,7 @@ class BinanceBot(Command):
                 return func(*args, **kwargs)
             except BinanceAPIException as e:
                 if e.code == -1021:
-                    print(f"Try {attempt}/{max_retries}: Error Binance API: {e}")
+                    logging.info(f"Try {attempt}/{max_retries}: Error Binance API: {e}")
                     if attempt == max_retries:
                         raise
                     time.sleep(retry_delay)

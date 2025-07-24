@@ -3,6 +3,7 @@ import websockets
 import json
 from decimal import Decimal
 from datetime import datetime, timedelta, timezone
+import logging
 
 UTC = timezone.utc
 
@@ -27,12 +28,17 @@ class UserDataWebSocketClient:
             self.waiting_orders_id.append(order.client_order_id)
             self.waiting_orders[order.client_order_id] = order
 
+        logging.basicConfig(
+            format='%(asctime)s - %(levelname)s - %(message)s',
+            level=logging.INFO
+        )
+
     async def connect(self):
         while self.keep_running:
             try:
                 async with websockets.connect(self.url) as websocket:
                     self.connected_event.set()
-                    print("🔌 Подключено к USER DATA STREAM")
+                    logging.info("🔌 Подключено к USER DATA STREAM")
                     while self.keep_running:
                         msg = await websocket.recv()
                         data = json.loads(msg)
@@ -40,7 +46,7 @@ class UserDataWebSocketClient:
                         if data.get("e") == "ORDER_TRADE_UPDATE":
                             await self.handle_order_update(data["o"])
             except Exception as e:
-                print("❌ Ошибка WebSocket:", e)
+                logging.info("❌ Ошибка WebSocket:", e)
                 await asyncio.sleep(5)
 
     async def keep_alive(self):
@@ -50,7 +56,7 @@ class UserDataWebSocketClient:
                 await asyncio.sleep(30 * 60)
                 self.client.futures_stream_keepalive(listenKey=self.listen_key)
         except Exception as e:
-            print("⚠️ Ошибка в keep-alive:", e)
+            logging.info("⚠️ Ошибка в keep-alive:", e)
 
     async def start(self):
         asyncio.create_task(self.keep_alive())
@@ -63,19 +69,19 @@ class UserDataWebSocketClient:
 
         try:
             self.client.futures_stream_close(listenKey=self.listen_key)
-            print("🛑 listenKey закрыт через REST.")
+            logging.info("🛑 listenKey закрыт через REST.")
         except Exception as e:
-            print(f"⚠️ Ошибка при закрытии listenKey: {e}")
+            logging.info(f"⚠️ Ошибка при закрытии listenKey: {e}")
 
     async def handle_order_update(self, order):
-        print("📦 Обновление ордера:")
-        print(f"  id: {order['c']}")
-        print(f"  Статус: {order['X']}")
-        print(f"  Тип: {order['o']}")
-        print(f"  Side: {order['S']}")
-        print(f"  Цена активации: {order.get('sp', '—')}")
-        print(f"  Цена последней сделки: {order.get('L', '—')}")
-        print(f"  Triggered: {order.get('ps', '—')}")
+        logging.info("📦 Обновление ордера:")
+        logging.info(f"  id: {order['c']}")
+        logging.info(f"  Статус: {order['X']}")
+        logging.info(f"  Тип: {order['o']}")
+        logging.info(f"  Side: {order['S']}")
+        logging.info(f"  Цена активации: {order.get('sp', '—')}")
+        logging.info(f"  Цена последней сделки: {order.get('L', '—')}")
+        logging.info(f"  Triggered: {order.get('ps', '—')}")
 
         if order['c'] not in self.waiting_orders_id:
             return
@@ -113,7 +119,7 @@ class UserDataWebSocketClient:
             if original_order:
                 original_order.close_price = Decimal(order['L'])
                 original_order.close_time = datetime.now(UTC).replace(tzinfo=None)
-                print(f'In user data stream order {order['c']} closed')
+                logging.info(f'In user data stream order {order['c']} closed')
 
                 if 'win' in order['c']:
                     original_order.close_reason = 'Stop win'
@@ -161,6 +167,6 @@ class UserDataWebSocketClient:
         if order.client_order_id not in self.waiting_orders:
             self.waiting_orders_id.append(order.client_order_id)
             self.waiting_orders[order.client_order_id] = order
-            print(f"✅ Ордер с client_order_id '{order.client_order_id}' добавлен в ожидающие.")
+            logging.info(f"✅ Ордер с client_order_id '{order.client_order_id}' добавлен в ожидающие.")
         else:
-            print(f"⚠️ Ордер с client_order_id '{order.client_order_id}' уже существует в ожидающих ордерах. Игнорируем добавление.")
+            logging.info(f"⚠️ Ордер с client_order_id '{order.client_order_id}' уже существует в ожидающих ордерах. Игнорируем добавление.")
