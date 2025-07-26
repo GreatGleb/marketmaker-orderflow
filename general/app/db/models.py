@@ -425,15 +425,14 @@ class TestBot(BaseId):
         comment="Balance for trading",
     )
 
-    stop_success_ticks: Mapped[int] = mapped_column(
+    stop_success_ticks: Mapped[Optional[int]] = mapped_column(
         types.Integer,
-        nullable=False,
-        default=10,
+        nullable=True,
         comment="Target Profit/Close in Ticks",
     )
 
-    stop_loss_ticks: Mapped[int] = mapped_column(
-        types.Integer, nullable=False, default=5, comment="Stop-loss in ticks"
+    stop_loss_ticks: Mapped[Optional[int]] = mapped_column(
+        types.Integer, nullable=True, comment="Stop-loss in ticks"
     )
 
     is_active: Mapped[bool] = mapped_column(
@@ -451,8 +450,7 @@ class TestBot(BaseId):
     start_updown_ticks: Mapped[int] = mapped_column(
         types.Integer,
         default=0,
-        server_default="0",
-        nullable=False,
+        nullable=True,
         comment="Start updown ticks",
     )
 
@@ -490,6 +488,16 @@ class TestBot(BaseId):
     )
     start_updown_percents: Mapped[Optional[float]] = mapped_column(
         types.Numeric, nullable=True, comment="Start up/down percentage"
+    )
+    consider_ma_for_open_order: Mapped[bool] = mapped_column(
+        types.Boolean,
+        default=False,
+        comment="Whether to consider the moving average (MA) when opening the order"
+    )
+    consider_ma_for_close_order: Mapped[bool] = mapped_column(
+        types.Boolean,
+        default=False,
+        comment="Whether to consider the moving average (MA) when closing the order"
     )
 
 
