@@ -1,3 +1,4 @@
+import time
 from decimal import Decimal
 
 from sqlalchemy import select, func, text
@@ -19,9 +20,6 @@ async def get_average_percentage_for_minimum_tick():
         asset_crud = AssetHistoryCrud(session)
         active_symbols = await asset_crud.get_all_active_pairs()
 
-        print(active_symbols)
-        print('active_symbols')
-
         if not active_symbols:
             return average_percent
 
@@ -32,9 +30,6 @@ async def get_average_percentage_for_minimum_tick():
         result_symbols = await session.execute(stmt_active_symbols)
 
         actual_active_symbols = {s[0] for s in result_symbols.all()}
-
-        print(actual_active_symbols)
-        print('actual_active_symbols')
 
         subquery_ranked_prices = (
             select(
@@ -67,9 +62,6 @@ async def get_average_percentage_for_minimum_tick():
         result_latest_prices = await session.execute(stmt_latest_prices)
         all_latest_prices_for_active_symbols = result_latest_prices.all()
 
-        print(all_latest_prices_for_active_symbols)
-        print('all_latest_prices_for_active_symbols')
-
         percents = []
         symbols_characteristics = {}
         for symbol, filters, last_price in all_latest_prices_for_active_symbols:
@@ -91,8 +83,18 @@ async def get_average_percentage_for_minimum_tick():
     return average_percent
 
 async def create_bots():
+    start_time = time.time()
+
     average_percent_for_1_tick = await get_average_percentage_for_minimum_tick()
-    return average_percent_for_1_tick
+
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+
+    minutes = int(elapsed_time // 60)
+    seconds = elapsed_time % 60
+
+    print(f"Время, чтобы узнать средний процент по 1 тику: {minutes} минут и {seconds:.2f} секунд")
+    return
 
     symbol = "BTCUSDT"
 
