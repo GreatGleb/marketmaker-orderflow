@@ -83,6 +83,7 @@ async def get_average_percentage_for_minimum_tick():
 
 async def create_bots(symbol="BTCUSDT"):
     average_percent_for_1_tick = await get_average_percentage_for_minimum_tick()
+    return
 
     dsm = DatabaseSessionManager.create(settings.DB_URL)
 
