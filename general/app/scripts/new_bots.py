@@ -13,6 +13,8 @@ from app.db.models import AssetExchangeSpec, AssetHistory
 
 
 async def get_average_percentage_for_minimum_tick():
+    start_time = time.time()
+
     average_percent = 0.01
 
     dsm = DatabaseSessionManager.create(settings.DB_URL)
@@ -78,23 +80,20 @@ async def get_average_percentage_for_minimum_tick():
         sum_of_percents = sum(percents)
         average_percent = sum_of_percents / len(percents)
 
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+
+        minutes = int(elapsed_time // 60)
+        seconds = elapsed_time % 60
+
+        print(f"Время, чтобы узнать средний процент по 1 тику: {minutes} минут и {seconds:.2f} секунд")
+
         print(f'average_percent: {average_percent}')
 
     return average_percent
 
 async def create_bots():
-    start_time = time.time()
-
     average_percent_for_1_tick = await get_average_percentage_for_minimum_tick()
-
-    end_time = time.time()
-    elapsed_time = end_time - start_time
-
-    minutes = int(elapsed_time // 60)
-    seconds = elapsed_time % 60
-
-    print(f"Время, чтобы узнать средний процент по 1 тику: {minutes} минут и {seconds:.2f} секунд")
-    return
 
     symbol = "BTCUSDT"
 
