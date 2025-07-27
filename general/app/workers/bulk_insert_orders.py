@@ -58,6 +58,7 @@ class OrderBulkInsertCommand(Command):
                 print(f"❌ Ошибка при обработке записи из Redis: {e}")
 
         RETRY_DELAY_SECONDS = 5 * 60
+        EMPTY_ORDERS_DELAY_SECONDS = 1 * 60
 
         for i in range(0, len(orders), BATCH_SIZE):
             batch = orders[i : i + BATCH_SIZE]
@@ -71,5 +72,9 @@ class OrderBulkInsertCommand(Command):
                     await crud.bulk_create(orders=batch)
                 except Exception as e_retry:
                     print(f"❌ Повторная попытка тоже не удалась: {e_retry}. Пропускаем батч.")
+
+        if not orders:
+            print(f"Список заказов пуст. Ждем {EMPTY_ORDERS_DELAY_SECONDS // 60} минуту...")
+            await asyncio.sleep(EMPTY_ORDERS_DELAY_SECONDS)
 
         return CommandResult(success=True)
