@@ -108,23 +108,24 @@ class StartTestBotsCommand(Command):
         )
         bot_config.referral_bot_id = refer_bot["id"]
 
-        tf_bot_ids = (
-            await ProfitableBotUpdaterCommand.get_profitable_bots_id_by_tf(
-                bot_crud=bot_crud,
-                bot_profitability_timeframes=[
-                    bot_config.copy_bot_min_time_profitability_min
-                ],
-            )
-        )
-
-        refer_bot = await ProfitableBotUpdaterCommand.get_bot_config_by_params(
-            bot_crud=bot_crud,
-            tf_bot_ids=tf_bot_ids,
-            copy_bot_min_time_profitability_min=bot_config.copy_bot_min_time_profitability_min,
-        )
-
-        if refer_bot:
-            bot_config.referral_bot_from_profit_func = refer_bot["id"]
+        # for test if copy_bot use right refer_bot
+        # tf_bot_ids = (
+        #     await ProfitableBotUpdaterCommand.get_profitable_bots_id_by_tf(
+        #         bot_crud=bot_crud,
+        #         bot_profitability_timeframes=[
+        #             bot_config.copy_bot_min_time_profitability_min
+        #         ],
+        #     )
+        # )
+        #
+        # refer_bot = await ProfitableBotUpdaterCommand.get_bot_config_by_params(
+        #     bot_crud=bot_crud,
+        #     tf_bot_ids=tf_bot_ids,
+        #     copy_bot_min_time_profitability_min=bot_config.copy_bot_min_time_profitability_min,
+        # )
+        #
+        # if refer_bot:
+        #     bot_config.referral_bot_from_profit_func = refer_bot["id"]
 
         return True
 
