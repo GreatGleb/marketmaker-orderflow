@@ -1,5 +1,6 @@
 import asyncio
 import json
+import traceback
 
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -30,6 +31,7 @@ from app.sub_services.watchers.price_provider import (
 from app.utils import Command
 from app.sub_services.logic.exit_strategy import ExitStrategy
 from app.workers.profitable_bot_updater import ProfitableBotUpdaterCommand
+from app.sub_services.notifications.factory import NotificationServiceFactory
 
 UTC = timezone.utc
 
@@ -70,10 +72,25 @@ class StartTestBotsCommand(Command):
                             stop_event=self.stop_event,
                             price_provider=price_provider,
                             bot_crud=bot_crud,
-                            binance_bot=binance_bot
+                            binance_bot=binance_bot,
                         )
                     except Exception as e:
-                        print(f"❌ Ошибка в боте {bot_config.id}: {e}")
+                        try:
+                            telegram_service = (
+                                NotificationServiceFactory.get_telegram_service()
+                            )
+                            if telegram_service:
+                                error_traceback = traceback.format_exc()
+                                await telegram_service.send_bot_error_notification(
+                                    bot_id=bot_config.id,
+                                    error_message=str(e),
+                                    additional_info=f"Полный стек ошибки:\n{error_traceback}",
+                                )
+                        except Exception as telegram_error:
+                            print(
+                                f"❌ Ошибка при отправке уведомления в Telegram: {telegram_error}"
+                            )
+
                         await asyncio.sleep(1)
 
             tasks.append(asyncio.create_task(_run_loop()))
@@ -98,8 +115,12 @@ class StartTestBotsCommand(Command):
         bot_config.stop_loss_ticks = refer_bot["stop_loss_ticks"]
         bot_config.start_updown_ticks = refer_bot["start_updown_ticks"]
         bot_config.stop_win_percents = Decimal(refer_bot["stop_win_percents"])
-        bot_config.stop_loss_percents = Decimal(refer_bot["stop_loss_percents"])
-        bot_config.start_updown_percents = Decimal(refer_bot["start_updown_percents"])
+        bot_config.stop_loss_percents = Decimal(
+            refer_bot["stop_loss_percents"]
+        )
+        bot_config.start_updown_percents = Decimal(
+            refer_bot["start_updown_percents"]
+        )
         bot_config.min_timeframe_asset_volatility = refer_bot[
             "min_timeframe_asset_volatility"
         ]
@@ -143,7 +164,7 @@ class StartTestBotsCommand(Command):
         stop_event,
         price_provider,
         bot_crud,
-        binance_bot
+        binance_bot,
     ):
         setattr(bot_config, "referral_bot_id", None)
         setattr(bot_config, "referral_bot_from_profit_func", None)
@@ -214,7 +235,7 @@ class StartTestBotsCommand(Command):
                         entry_price_buy=entry_price_buy,
                         entry_price_sell=entry_price_sell,
                         binance_bot=binance_bot,
-                        consider_ma_for_open_order=bot_config.consider_ma_for_open_order
+                        consider_ma_for_open_order=bot_config.consider_ma_for_open_order,
                     ),
                     timeout=timeout,
                 )
@@ -286,7 +307,7 @@ class StartTestBotsCommand(Command):
                         order=order,
                         binance_bot=binance_bot,
                         symbol=symbol,
-                        consider_ma_for_close_order=bot_config.consider_ma_for_close_order
+                        consider_ma_for_close_order=bot_config.consider_ma_for_close_order,
                     )
                 )
 

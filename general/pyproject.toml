@@ -19,6 +19,7 @@ websocket = "^0.2.1"
 celery = "^5.5.3"
 python-binance = "^1.0.29"
 pandas = "^2.3.1"
+aiohttp = "^3.12.14"
 
 
 [tool.poetry.group.dev.dependencies]

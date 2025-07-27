@@ -8,6 +8,15 @@ class Settings(BaseSettings):
 
     CELERY_BROKER: str = "redis://redis:6379/0"
 
+    ENVIRONMENT: str = "local"
+
+    TELEGRAM_BOT_TOKEN: str = ""
+    TELEGRAM_TEST_BOT_CHAT_ID: str = ""
+    TELEGRAM_CELERY_CHAT_ID: str = ""
+
+    TELEGRAM_TEST_BOT_TOPIC_ID: str = ""
+    TELEGRAM_CELERY_TOPIC_ID: str = ""
+
     model_config = SettingsConfigDict(env_file="../.env")
 
 
