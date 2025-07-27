@@ -137,7 +137,7 @@ async def create_bots():
 
                     await bot_crud.bulk_create(new_bots)
                     await session.commit()
-            print("✅ Успешно создано ботов.")
+            print(f"✅ Успешно создано ботов. {len(new_bots)}")
         except Exception as e:
             print(e)
 
@@ -152,11 +152,36 @@ async def create_bots():
                     "copy_bot_min_time_profitability_min": min_time,
                     "is_active": True,
                 }
+                bot_data2 = {
+                    "symbol": symbol,
+                    "balance": Decimal("1000.0"),
+                    "copy_bot_min_time_profitability_min": min_time,
+                    "consider_ma_for_open_order": True,
+                    "is_active": True,
+                }
+                bot_data3 = {
+                    "symbol": symbol,
+                    "balance": Decimal("1000.0"),
+                    "copy_bot_min_time_profitability_min": min_time,
+                    "consider_ma_for_close_order": True,
+                    "is_active": True,
+                }
+                bot_data4 = {
+                    "symbol": symbol,
+                    "balance": Decimal("1000.0"),
+                    "copy_bot_min_time_profitability_min": min_time,
+                    "consider_ma_for_open_order": True,
+                    "consider_ma_for_close_order": True,
+                    "is_active": True,
+                }
                 new_bots.append(bot_data)
+                new_bots.append(bot_data2)
+                new_bots.append(bot_data3)
+                new_bots.append(bot_data4)
 
             await bot_crud.bulk_create(new_bots)
             await session.commit()
-            print("✅ Успешно создано ботов.")
+            print(f"✅ Успешно создано ботов. {len(new_bots)}")
         except Exception as e:
             print(e)
 
