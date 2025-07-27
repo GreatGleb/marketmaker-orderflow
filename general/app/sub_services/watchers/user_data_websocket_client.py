@@ -19,7 +19,7 @@ class UserDataWebSocketClient:
         self.first_order_started_event = asyncio.Event()
         self.first_order_filled_event = asyncio.Event()
         self.connected_event = asyncio.Event()
-        self.keep_running = True
+        self.keep_running = False
         self.first_order = None
         self.waiting_orders = {}
         self.waiting_orders_id = []
@@ -59,6 +59,7 @@ class UserDataWebSocketClient:
             logging.info("⚠️ Ошибка в keep-alive:", e)
 
     async def start(self):
+        self.keep_running = True
         asyncio.create_task(self.keep_alive())
         asyncio.create_task(self.connect())
 
