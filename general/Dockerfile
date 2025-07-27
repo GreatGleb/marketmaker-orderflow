@@ -15,7 +15,10 @@ ENV PYTHONFAULTHANDLER=1 \
 EXPOSE 8000
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends supervisor && \
+    apt-get install -y --no-install-recommends \
+    supervisor \
+    postgresql-client-15 \
+    postgresql-15-repack && \
     mkdir -p /var/log/supervisor && \
     rm -rf /var/lib/apt/lists/*
 

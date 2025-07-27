@@ -1,5 +1,5 @@
 .idea
-*.env*
+*.env
 node_modules
 postgres
 .DS_Store
