@@ -17,7 +17,7 @@ class ClearOldAssetsHistoryCommand(Command):
         asset_crud: AssetHistoryCrud = resolve_crud(AssetHistoryCrud),
     ) -> CommandResult:
 
-        cutoff = datetime.now(UTC) - timedelta(days=1)
+        cutoff = datetime.now(UTC) - timedelta(hours=1)
         await asset_crud.delete_older_than(cutoff)
         return CommandResult(success=True)
 
