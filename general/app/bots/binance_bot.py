@@ -5,7 +5,6 @@ import time
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 import logging
-import pandas as pd
 
 from binance.client import Client
 from binance.enums import FUTURE_ORDER_TYPE_STOP_MARKET, FUTURE_ORDER_TYPE_MARKET, FUTURE_ORDER_TYPE_TRAILING_STOP_MARKET, SIDE_SELL, SIDE_BUY
@@ -1223,9 +1222,15 @@ class BinanceBot(Command):
         return rounded_price
 
     async def get_ma(self, symbol, ma_number, current_price = None):
-        # start_time1 = time.time()
-
-        klines = self.binance_client.get_klines(symbol=symbol, interval=Client.KLINE_INTERVAL_1MINUTE, limit=ma_number)
+        try:
+            klines = await self._safe_from_time_err_call_binance(
+                self.binance_client.futures_klines,
+                symbol=symbol, interval=Client.KLINE_INTERVAL_1MINUTE, limit=ma_number
+            )
+        except Exception as e:
+            logging.info(f'Symbol: {symbol}, error when get klines: {e}')
+            logging.error(f'Symbol: {symbol}, error when get klines: {e}')
+            return None
 
         if not current_price:
             if not hasattr(self, 'price_provider'):
@@ -1234,40 +1239,9 @@ class BinanceBot(Command):
 
             current_price = await self.price_provider.get_price(symbol=symbol)
 
-        # end_time1 = time.time()
-        # elapsed_time1 = end_time1 - start_time1
-        # seconds1 = elapsed_time1 % 60
-        #
-        # start_time2 = time.time()
-
-        df = pd.DataFrame(klines, columns=[
-            'timestamp', 'open', 'high', 'low', 'close', 'volume',
-            'close_time', 'quote_asset_volume', 'number_of_trades',
-            'taker_buy_base_volume', 'taker_buy_quote_volume', 'ignore'
-        ])
-        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-        df['close'] = df['close'].astype(float)
-
-        new_timestamp = df['timestamp'].iloc[-1] + pd.Timedelta(minutes=1)
-        new_candle = pd.DataFrame({
-            'timestamp': [new_timestamp],
-            'close': [current_price]
-        })
-        df = pd.concat([df, new_candle], ignore_index=True)
-
-        ma_title = 'MA' + str(ma_number)
-
-        df[ma_title] = df['close'].rolling(window=(ma_number + 1)).mean()
-        ma = Decimal(df[ma_title].iloc[-1])
-
-        # end_time2 = time.time()
-        # elapsed_time2 = end_time2 - start_time2
-        # seconds2 = elapsed_time2 % 60
-        #
-        # # print(df[['timestamp', 'close', ma_title]].tail(10))
-        # print(f'{ma_title}: {type(ma)} - {ma}')
-        # print(f'current price: {current_price}')
-        #
-        # print(f'Time klines: {seconds1}, time calculated: {seconds2}')
+        closes = [Decimal(kline[4]) for kline in klines]
+        closes.append(current_price)
+        ma_window = ma_number + 1
+        ma = sum(closes) / Decimal(ma_window)
 
         return ma
