@@ -93,7 +93,7 @@ async def get_average_percentage_for_minimum_tick():
     return average_percent
 
 async def create_bots():
-    average_percent_for_1_tick = await get_average_percentage_for_minimum_tick()
+    # average_percent_for_1_tick = await get_average_percentage_for_minimum_tick()
 
     symbol = "BTCUSDT"
 
@@ -102,44 +102,44 @@ async def create_bots():
     async with dsm.get_session() as session:
         bot_crud = TestBotCrud(session)
 
-        start_ticks_values = [10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 70, 80, 100]
-        stop_lose_ticks_values = [40, 45, 50, 55, 60, 70, 80, 90, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]
-        stop_win_ticks_values = [5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
-
-        start_percents_values = [x * average_percent_for_1_tick for x in start_ticks_values]
-        stop_lose_percents_values = [x * average_percent_for_1_tick for x in stop_lose_ticks_values]
-        stop_win_percents_values = [x * average_percent_for_1_tick for x in stop_win_ticks_values]
-
-        min_tf_volatility_values = [0.5, 1, 2, 3]
-        wait_open_order_values = [0.5]
-
-        try:
-            sql_command = "TRUNCATE TABLE test_bots RESTART IDENTITY CASCADE;"
-            await session.execute(text(sql_command))
-
-            for start in start_percents_values:
-                for stop_lose in stop_lose_percents_values:
-                    new_bots = []
-                    for stop_win in stop_win_percents_values:
-                        for min_tf in min_tf_volatility_values:
-                            for wait_min in wait_open_order_values:
-                                bot_data = {
-                                    "symbol": symbol,
-                                    "balance": Decimal("1000.0"),
-                                    "stop_win_percents": stop_win,
-                                    "stop_loss_percents": stop_lose,
-                                    "start_updown_percents": start,
-                                    "min_timeframe_asset_volatility": min_tf,
-                                    "time_to_wait_for_entry_price_to_open_order_in_minutes": wait_min,
-                                    "is_active": True,
-                                }
-                                new_bots.append(bot_data)
-
-                    await bot_crud.bulk_create(new_bots)
-                    await session.commit()
-            print(f"✅ Успешно создано ботов. {len(new_bots)}")
-        except Exception as e:
-            print(e)
+        # start_ticks_values = [10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 70, 80, 100]
+        # stop_lose_ticks_values = [40, 45, 50, 55, 60, 70, 80, 90, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]
+        # stop_win_ticks_values = [5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+        #
+        # start_percents_values = [x * average_percent_for_1_tick for x in start_ticks_values]
+        # stop_lose_percents_values = [x * average_percent_for_1_tick for x in stop_lose_ticks_values]
+        # stop_win_percents_values = [x * average_percent_for_1_tick for x in stop_win_ticks_values]
+        #
+        # min_tf_volatility_values = [0.5, 1, 2, 3]
+        # wait_open_order_values = [0.5]
+        #
+        # try:
+        #     sql_command = "TRUNCATE TABLE test_bots RESTART IDENTITY CASCADE;"
+        #     await session.execute(text(sql_command))
+        #
+        #     for start in start_percents_values:
+        #         for stop_lose in stop_lose_percents_values:
+        #             new_bots = []
+        #             for stop_win in stop_win_percents_values:
+        #                 for min_tf in min_tf_volatility_values:
+        #                     for wait_min in wait_open_order_values:
+        #                         bot_data = {
+        #                             "symbol": symbol,
+        #                             "balance": Decimal("1000.0"),
+        #                             "stop_win_percents": stop_win,
+        #                             "stop_loss_percents": stop_lose,
+        #                             "start_updown_percents": start,
+        #                             "min_timeframe_asset_volatility": min_tf,
+        #                             "time_to_wait_for_entry_price_to_open_order_in_minutes": wait_min,
+        #                             "is_active": True,
+        #                         }
+        #                         new_bots.append(bot_data)
+        #
+        #             await bot_crud.bulk_create(new_bots)
+        #             await session.commit()
+        #     print(f"✅ Успешно создано ботов. {len(new_bots)}")
+        # except Exception as e:
+        #     print(e)
 
         copy_bot_min_time_profitability_min_values = [10, 20, 30, 40, 50, 60, 120, 180, 240, 360, 420, 480, 540, 600, 660, 720, 1440]
 
@@ -174,7 +174,7 @@ async def create_bots():
                     "consider_ma_for_close_order": True,
                     "is_active": True,
                 }
-                new_bots.append(bot_data)
+                # new_bots.append(bot_data)
                 new_bots.append(bot_data2)
                 new_bots.append(bot_data3)
                 new_bots.append(bot_data4)
