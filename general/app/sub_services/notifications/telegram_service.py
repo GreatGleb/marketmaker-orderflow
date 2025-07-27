@@ -1,7 +1,6 @@
 import aiohttp
-import asyncio
 import logging
-from typing import Optional, Dict
+from typing import Optional
 from datetime import datetime
 from enum import Enum
 
@@ -27,24 +26,6 @@ class TelegramNotificationService:
         self.base_url = f"https://api.telegram.org/bot{bot_token}"
 
     @staticmethod
-    def _get_chat_id(notification_type: NotificationType) -> Optional[str]:
-        """
-        Получает chat_id для указанного типа уведомления
-
-        Args:
-            notification_type: Тип уведомления
-
-        Returns:
-            chat_id или None если не настроен
-        """
-        if notification_type == NotificationType.TEST_BOT:
-            return settings.TELEGRAM_TEST_BOT_CHAT_ID
-        elif notification_type == NotificationType.CELERY_ERROR:
-            return settings.TELEGRAM_CELERY_CHAT_ID
-
-        return None
-
-    @staticmethod
     def _get_topic_id(notification_type: NotificationType) -> Optional[str]:
         """
         Получает topic для указанного типа уведомления
@@ -65,7 +46,6 @@ class TelegramNotificationService:
     async def send_message(
         self,
         message: str,
-        chat_id: str,
         message_thread_id: str,
         parse_mode: str = "HTML",
     ) -> bool:
@@ -74,13 +54,16 @@ class TelegramNotificationService:
 
         Args:
             message: Текст сообщения
-            chat_id: ID чата для отправки
             message_thread_id: ID topic для отправки
             parse_mode: Режим парсинга (HTML или Markdown)
 
         Returns:
-            bool: True если сообщение отправлено успешно, False в противном случае
+            bool: True если сообщение отправлено успешно,
+            False в противном случае
         """
+
+        chat_id = settings.TELEGRAM_CHAT_ID
+
         if not chat_id:
             logger.warning("Chat ID не настроен, сообщение не отправлено")
             return False
@@ -100,7 +83,8 @@ class TelegramNotificationService:
                     else:
                         error_text = await response.text()
                         logger.error(
-                            f"Ошибка отправки в Telegram чат {chat_id}: {response.status} - {error_text}"
+                            f"Ошибка отправки в Telegram чат {chat_id}: "
+                            f"{response.status} - {error_text}"
                         )
                         return False
 
@@ -141,10 +125,9 @@ class TelegramNotificationService:
         if additional_info:
             message += f"\n📝 <b>Дополнительно:</b> {additional_info}"
 
-        chat_id = self._get_chat_id(NotificationType.TEST_BOT)
         topic_id = self._get_topic_id(NotificationType.TEST_BOT)
         return await self.send_message(
-            message=message, chat_id=chat_id, message_thread_id=topic_id
+            message=message, message_thread_id=topic_id
         )
 
     async def send_celery_error_notification(
@@ -178,8 +161,7 @@ class TelegramNotificationService:
         if additional_info:
             message += f"\n📝 <b>Дополнительно:</b> {additional_info}"
 
-        chat_id = self._get_chat_id(NotificationType.CELERY_ERROR)
         topic_id = self._get_topic_id(NotificationType.CELERY_ERROR)
         return await self.send_message(
-            message=message, chat_id=chat_id, message_thread_id=topic_id
+            message=message, message_thread_id=topic_id
         )

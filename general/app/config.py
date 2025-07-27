@@ -11,8 +11,7 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "local"
 
     TELEGRAM_BOT_TOKEN: str = ""
-    TELEGRAM_TEST_BOT_CHAT_ID: str = ""
-    TELEGRAM_CELERY_CHAT_ID: str = ""
+    TELEGRAM_CHAT_ID: str = None
 
     TELEGRAM_TEST_BOT_TOPIC_ID: str = ""
     TELEGRAM_CELERY_TOPIC_ID: str = ""
