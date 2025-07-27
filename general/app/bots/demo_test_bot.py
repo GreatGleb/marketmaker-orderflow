@@ -274,7 +274,7 @@ class StartTestBotsCommand(Command):
                 )
 
                 should_exit, take_profit_price = (
-                    ExitStrategy.check_exit_conditions(
+                    await ExitStrategy.check_exit_conditions(
                         trade_type=trade_type,
                         price_from_previous_step=price_from_previous_step,
                         updated_price=updated_price,
