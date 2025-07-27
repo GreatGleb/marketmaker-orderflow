@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timedelta, UTC
 
 from fastapi.params import Depends
@@ -19,3 +20,13 @@ class ClearOldAssetsHistoryCommand(Command):
         cutoff = datetime.now(UTC) - timedelta(days=1)
         await asset_crud.delete_older_than(cutoff)
         return CommandResult(success=True)
+
+
+async def main() -> None:
+    await ClearOldAssetsHistoryCommand().run_async()
+
+
+if __name__ == "__main__":
+    print("🧹 Starting ClearOldAssetsHistoryCommand...")
+    asyncio.run(main())
+    print("✅ ClearOldAssetsHistoryCommand finished.")
