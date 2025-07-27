@@ -13,6 +13,17 @@ from app.dependencies import redis_context
 WS_URL = "wss://fstream.binance.com/ws/!ticker@arr"
 
 
+async def _wait_when_db_table_will_free(redis):
+    while True:
+        is_stopped = await redis.get(f"asset_history:stop")
+
+        if not is_stopped:
+            break
+        await asyncio.sleep(1)
+
+    return True
+
+
 async def save_filtered_assets(session: AsyncSession, redis, data: list[dict]):
     history_crud = AssetHistoryCrud(session)
     watched_crud = WatchedPairCrud(session)
@@ -54,6 +65,11 @@ async def save_filtered_assets(session: AsyncSession, redis, data: list[dict]):
 
         records.append(record_data)
         await redis.set(f"price:{symbol}", last_price)
+
+    is_stopped = await redis.get(f"asset_history:stop")
+    if is_stopped:
+        print(f'It is stopped')
+        await _wait_when_db_table_will_free(redis)
 
     await history_crud.bulk_create(records)
     await session.commit()
