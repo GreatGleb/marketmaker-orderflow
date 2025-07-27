@@ -1,7 +1,6 @@
 import asyncio
 from decimal import Decimal
 
-from app.bots.binance_bot import BinanceBot
 from app.enums.trade_type import TradeType
 
 
@@ -30,7 +29,7 @@ class PriceWatcher:
         symbol: str,
         entry_price_buy: Decimal,
         entry_price_sell: Decimal,
-        binance_bot: BinanceBot,
+        binance_bot,
         consider_ma_for_open_order: bool
     ) -> tuple[TradeType, Decimal]:
         while True:
