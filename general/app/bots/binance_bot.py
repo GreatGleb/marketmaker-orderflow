@@ -435,7 +435,7 @@ class BinanceBot(Command):
             )
 
             if not order_params:
-                return None
+                return order
 
             if creating_orders_type == 'buy':
                 order_quantity = order_params['quantityOrder_buy_str']
@@ -469,6 +469,7 @@ class BinanceBot(Command):
                 else:
                     db_order.status = 'CANCELED'
                     db_order.close_reason = f'Binance error while creating order: {e}'
+                    logging.info(f'Binance error while creating order: {e}')
                     break
 
         db_order.quote_quantity = balanceUSDT
