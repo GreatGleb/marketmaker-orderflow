@@ -1,5 +1,6 @@
 import asyncio
 import json
+import time
 
 from datetime import datetime
 
@@ -43,38 +44,46 @@ class OrderBulkInsertCommand(Command):
         ]
         BATCH_SIZE = 1000
 
-        orders = []
-        for _ in range(4000):
-            raw = await redis.lpop(ORDER_QUEUE_KEY)
+        while True:
+            start_time = time.time()
 
-            if raw is None:
-                break
+            orders = []
+            for _ in range(4000):
+                raw = await redis.lpop(ORDER_QUEUE_KEY)
 
-            try:
-                order = json.loads(raw)
-                order = self.parse_datetime_fields(order, DATETIME_FIELDS)
-                orders.append(order)
-            except Exception as e:
-                print(f"❌ Ошибка при обработке записи из Redis: {e}")
+                if raw is None:
+                    break
 
-        RETRY_DELAY_SECONDS = 5 * 60
-        EMPTY_ORDERS_DELAY_SECONDS = 1 * 60
+                try:
+                    order = json.loads(raw)
+                    order = self.parse_datetime_fields(order, DATETIME_FIELDS)
+                    orders.append(order)
+                except Exception as e:
+                    print(f"❌ Ошибка при обработке записи из Redis: {e}")
 
-        for i in range(0, len(orders), BATCH_SIZE):
-            batch = orders[i : i + BATCH_SIZE]
-            try:
-                await crud.bulk_create(orders=batch)
-            except Exception as e:
-                print(f"❌ Ошибка при вставке батча в БД: {e}")
-                print("Ждем {RETRY_DELAY_SECONDS // 60} мин. и пробуем снова.")
-                await asyncio.sleep(RETRY_DELAY_SECONDS)
+            RETRY_DELAY_SECONDS = 5 * 60
+            EMPTY_ORDERS_DELAY_SECONDS = 1 * 60
+
+            for i in range(0, len(orders), BATCH_SIZE):
+                batch = orders[i : i + BATCH_SIZE]
                 try:
                     await crud.bulk_create(orders=batch)
-                except Exception as e_retry:
-                    print(f"❌ Повторная попытка тоже не удалась: {e_retry}. Пропускаем батч.")
+                except Exception as e:
+                    print(f"❌ Ошибка при вставке батча в БД: {e}")
+                    print("Ждем {RETRY_DELAY_SECONDS // 60} мин. и пробуем снова.")
+                    await asyncio.sleep(RETRY_DELAY_SECONDS)
+                    try:
+                        await crud.bulk_create(orders=batch)
+                    except Exception as e_retry:
+                        print(f"❌ Повторная попытка тоже не удалась: {e_retry}. Пропускаем батч.")
 
-        if not orders:
-            print(f"Список заказов пуст. Ждем {EMPTY_ORDERS_DELAY_SECONDS // 60} минуту...")
-            await asyncio.sleep(EMPTY_ORDERS_DELAY_SECONDS)
+            if not orders:
+                print(f"Список заказов пуст. Ждем {EMPTY_ORDERS_DELAY_SECONDS // 60} минуту...")
+                await asyncio.sleep(EMPTY_ORDERS_DELAY_SECONDS)
+
+            end_time = time.time()
+            elapsed_time = end_time - start_time
+            wait_time = 60 - elapsed_time
+            await asyncio.sleep(wait_time)
 
         return CommandResult(success=True)
