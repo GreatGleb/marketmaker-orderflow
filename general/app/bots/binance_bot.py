@@ -1222,22 +1222,23 @@ class BinanceBot(Command):
         rounded_price = f"{price:.{precision}f}"
         return rounded_price
 
-    async def _get_ma(self, symbol, ma_number):
-        start_time1 = time.time()
+    async def get_ma(self, symbol, ma_number, current_price = None):
+        # start_time1 = time.time()
 
         klines = self.binance_client.get_klines(symbol=symbol, interval=Client.KLINE_INTERVAL_1MINUTE, limit=ma_number)
 
-        if not hasattr(self, 'price_provider'):
-            async with redis_context() as redis:
-                self.price_provider = PriceProvider(redis)
+        if not current_price:
+            if not hasattr(self, 'price_provider'):
+                async with redis_context() as redis:
+                    self.price_provider = PriceProvider(redis)
 
-        current_price = await self.price_provider.get_price(symbol=symbol)
+            current_price = await self.price_provider.get_price(symbol=symbol)
 
-        end_time1 = time.time()
-        elapsed_time1 = end_time1 - start_time1
-        seconds1 = elapsed_time1 % 60
-
-        start_time2 = time.time()
+        # end_time1 = time.time()
+        # elapsed_time1 = end_time1 - start_time1
+        # seconds1 = elapsed_time1 % 60
+        #
+        # start_time2 = time.time()
 
         df = pd.DataFrame(klines, columns=[
             'timestamp', 'open', 'high', 'low', 'close', 'volume',
@@ -1257,15 +1258,16 @@ class BinanceBot(Command):
         ma_title = 'MA' + str(ma_number)
 
         df[ma_title] = df['close'].rolling(window=(ma_number + 1)).mean()
+        ma = Decimal(df[ma_title].iloc[-1])
 
-        end_time2 = time.time()
-        elapsed_time2 = end_time2 - start_time2
-        seconds2 = elapsed_time2 % 60
+        # end_time2 = time.time()
+        # elapsed_time2 = end_time2 - start_time2
+        # seconds2 = elapsed_time2 % 60
+        #
+        # # print(df[['timestamp', 'close', ma_title]].tail(10))
+        # print(f'{ma_title}: {type(ma)} - {ma}')
+        # print(f'current price: {current_price}')
+        #
+        # print(f'Time klines: {seconds1}, time calculated: {seconds2}')
 
-        # print(df[['timestamp', 'close', ma_title]].tail(10))
-        print(f'{ma_title}: {df[ma_title].iloc[-1]}')
-        print(f'current price: {current_price}')
-
-        print(f'Time klines: {seconds1}, time calculated: {seconds2}')
-
-        return df[ma_title].iloc[-1]
+        return ma

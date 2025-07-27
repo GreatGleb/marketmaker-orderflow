@@ -1,6 +1,7 @@
 import asyncio
 from decimal import Decimal
 
+from app.bots.binance_bot import BinanceBot
 from app.enums.trade_type import TradeType
 
 
@@ -29,13 +30,19 @@ class PriceWatcher:
         symbol: str,
         entry_price_buy: Decimal,
         entry_price_sell: Decimal,
+        binance_bot: BinanceBot,
+        consider_ma_for_open_order: bool
     ) -> tuple[TradeType, Decimal]:
         while True:
             current_price = await self.price_provider.get_price(symbol)
 
-            if current_price >= entry_price_buy:
+            ma25 = None
+            if consider_ma_for_open_order:
+                ma25 = await binance_bot.get_ma(symbol=symbol, ma_number=25, current_price=current_price)
+
+            if current_price >= entry_price_buy and (not ma25 or (ma25 and current_price > ma25)):
                 return TradeType.BUY.value, current_price
-            elif current_price <= entry_price_sell:
+            elif current_price <= entry_price_sell and (not ma25 or (ma25 and current_price < ma25)):
                 return TradeType.SELL.value, current_price
 
             await asyncio.sleep(0.1)

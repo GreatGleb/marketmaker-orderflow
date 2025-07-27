@@ -66,7 +66,7 @@ class ProfitableBotUpdaterCommand(Command):
     @staticmethod
     async def update_config_for_percentage(
         bot_config, price_provider, symbol, tick_size
-    ) -> bool:
+    ):
         if not bot_config.stop_win_percents or not bot_config.stop_loss_percents or not bot_config.start_updown_percents:
             return bot_config
 

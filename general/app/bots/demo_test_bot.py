@@ -10,6 +10,7 @@ from fastapi import Depends
 
 from redis.asyncio import Redis
 
+from app.bots.binance_bot import BinanceBot
 from app.constants.order import ORDER_QUEUE_KEY
 from app.crud.test_bot import TestBotCrud
 from app.db.models import TestBot, TestOrder
@@ -50,6 +51,7 @@ class StartTestBotsCommand(Command):
         active_bots = await bot_crud.get_active_bots()
 
         price_provider = PriceProvider(redis=redis)
+        binance_bot = BinanceBot()
 
         builder = MarketDataBuilder(session)
         shared_data = await builder.build()
@@ -68,6 +70,7 @@ class StartTestBotsCommand(Command):
                             stop_event=self.stop_event,
                             price_provider=price_provider,
                             bot_crud=bot_crud,
+                            binance_bot=binance_bot
                         )
                     except Exception as e:
                         print(f"❌ Ошибка в боте {bot_config.id}: {e}")
@@ -139,6 +142,7 @@ class StartTestBotsCommand(Command):
         stop_event,
         price_provider,
         bot_crud,
+        binance_bot
     ):
         setattr(bot_config, "referral_bot_id", None)
         setattr(bot_config, "referral_bot_from_profit_func", None)
@@ -208,6 +212,8 @@ class StartTestBotsCommand(Command):
                         symbol=symbol,
                         entry_price_buy=entry_price_buy,
                         entry_price_sell=entry_price_sell,
+                        binance_bot=binance_bot,
+                        consider_ma_for_open_order=bot_config.consider_ma_for_open_order
                     ),
                     timeout=timeout,
                 )
@@ -277,6 +283,9 @@ class StartTestBotsCommand(Command):
                         close_not_lose_price=close_not_lose_price,
                         take_profit_price=take_profit_price,
                         order=order,
+                        binance_bot=binance_bot,
+                        symbol=symbol,
+                        consider_ma_for_close_order=bot_config.consider_ma_for_close_order
                     )
                 )
 
