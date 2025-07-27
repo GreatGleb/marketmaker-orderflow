@@ -23,7 +23,7 @@ async def ma():
     binance_bot = BinanceBot()
 
     symbol = 'BTCUSDT'
-    m = await binance_bot.get_ma(symbol, 7)
+    m = await binance_bot.get_ma(symbol, 25)
 
     print(f'm: {m}')
 
