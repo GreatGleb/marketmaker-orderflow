@@ -37,15 +37,19 @@ class BinanceBot(Command):
         self.stop_event = stop_event
 
         load_dotenv()
-        # api_key = os.getenv("BINANCE_API_KEY_TESTNET")
-        # api_secret = os.getenv("BINANCE_SECRET_KEY_TESTNET")
-        #
-        # self.binance_client = Client(api_key, api_secret, testnet=True)
-        # self.binance_client.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
-        api_key = os.getenv("BINANCE_API_KEY")
-        api_secret = os.getenv("BINANCE_SECRET_KEY")
+        is_prod = os.getenv("ENVIRONMENT") == "prod"
+        # is_prod = False
+        print(f'is_prod = {is_prod}, {os.getenv("ENVIRONMENT")}')
 
-        self.binance_client = Client(api_key, api_secret)
+        if is_prod:
+            api_key = os.getenv("BINANCE_API_KEY")
+            api_secret = os.getenv("BINANCE_SECRET_KEY")
+            self.binance_client = Client(api_key, api_secret)
+        else:
+            api_key = os.getenv("BINANCE_API_KEY_TESTNET")
+            api_secret = os.getenv("BINANCE_SECRET_KEY_TESTNET")
+            self.binance_client = Client(api_key, api_secret, testnet=True)
+            self.binance_client.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
 
         logging.basicConfig(
             format='%(asctime)s - %(levelname)s - %(message)s',
@@ -111,19 +115,19 @@ class BinanceBot(Command):
 
     async def creating_orders_bot(self):
         logging.info('start function creating_orders_bot')
-        copy_bot_min_time_profitability_min = await self._get_copy_bot_tf_params()
+        copy_bot = await self._get_copy_bot_tf_params()
         logging.info('finished get_copy_bot_tf_params')
 
         tf_bot_ids = await ProfitableBotUpdaterCommand.get_profitable_bots_id_by_tf(
             bot_crud=self.bot_crud,
-            bot_profitability_timeframes=[copy_bot_min_time_profitability_min],
+            bot_profitability_timeframes=[copy_bot.copy_bot_min_time_profitability_min],
         )
 
         logging.info('finished get_profitable_bots_id_by_tf')
         refer_bot = await ProfitableBotUpdaterCommand.get_bot_config_by_params(
             bot_crud=self.bot_crud,
             tf_bot_ids=tf_bot_ids,
-            copy_bot_min_time_profitability_min=copy_bot_min_time_profitability_min
+            copy_bot_min_time_profitability_min=copy_bot.copy_bot_min_time_profitability_min
         )
         logging.info('finished get_bot_config_by_params')
 
@@ -140,7 +144,9 @@ class BinanceBot(Command):
             stop_loss_percents = Decimal(refer_bot['stop_loss_percents']),
             start_updown_percents = Decimal(refer_bot['start_updown_percents']),
             min_timeframe_asset_volatility = refer_bot['min_timeframe_asset_volatility'],
-            time_to_wait_for_entry_price_to_open_order_in_minutes = refer_bot['time_to_wait_for_entry_price_to_open_order_in_minutes']
+            time_to_wait_for_entry_price_to_open_order_in_minutes = refer_bot['time_to_wait_for_entry_price_to_open_order_in_minutes'],
+            consider_ma_for_open_order=copy_bot.consider_ma_for_open_order,
+            consider_ma_for_close_order=copy_bot.consider_ma_for_close_order,
         )
 
         symbol = await self.redis.get(f"most_volatile_symbol_{bot_config.min_timeframe_asset_volatility}")
@@ -263,13 +269,13 @@ class BinanceBot(Command):
         )
 
         if not exchange_orders['order_buy'] or not exchange_orders['order_sell']:
-            if exchange_orders['order_buy']:
+            if exchange_orders['order_buy'] and 'orderId' in exchange_orders['order_buy']:
                 await self.delete_order(
                     db_order=db_order_buy,
                     status='CANCELED',
                     close_reason=f'Can\'t create sell order, cancel both'
                 )
-            if exchange_orders['order_sell']:
+            if exchange_orders['order_sell'] and 'orderId' in exchange_orders['order_sell']:
                 await self.delete_order(
                     db_order=db_order_sell,
                     status='CANCELED',
@@ -277,6 +283,9 @@ class BinanceBot(Command):
                 )
 
             logging.info(f"❌ Один из ордеров не может быть создан, второй ордер был отменён")
+            return
+        elif not 'orderId' in exchange_orders['order_buy'] and not 'orderId' in exchange_orders['order_sell']:
+            logging.info(f"❌ Ордера не прошли фильтр по MA25")
             return
 
         wait_for_order = await self._wait_until_order_activated(bot_config, db_order_buy, db_order_sell)
@@ -292,11 +301,7 @@ class BinanceBot(Command):
             second_order = db_order_buy
 
         delete_task = asyncio.create_task(
-            self.delete_order(
-                db_order=second_order,
-                status='CANCELED',
-                close_reason=f'Another order activated first'
-            )
+            self.delete_second_order(second_order)
         )
 
         wait_filled_task = asyncio.create_task(
@@ -324,9 +329,8 @@ class BinanceBot(Command):
             logging.info(f"❌ Error DB: {e}")
             return
 
-        await asyncio.sleep(60)
-
-        # self.order_update_listener.stop()
+        # await asyncio.sleep(60)
+        self.order_update_listener.stop()
         return
 
     async def create_orders(
@@ -388,6 +392,34 @@ class BinanceBot(Command):
         order_params = None
         try_create_order = 0
 
+        if bot_config.consider_ma_for_open_order:
+            current_price = await self.price_provider.get_price(symbol=db_order.symbol)
+            ma25 = await self.get_ma(symbol, 25, current_price)
+
+            if not ma25:
+                print(f'ma25: {ma25} for symbol {symbol}')
+
+                order = {'status': "CANCELED"}
+                db_order.status = 'CANCELED'
+                db_order.close_reason = f'MA25 can\'t find klines for {symbol}'
+
+                return order
+            else:
+                if creating_orders_type == 'buy':
+                    if current_price < ma25:
+                        order = {'status': "CANCELED"}
+                        db_order.status = 'CANCELED'
+                        db_order.close_reason = f'MA25 bigger then current price for {symbol}'
+
+                        return order
+                elif creating_orders_type == 'sell':
+                    if current_price > ma25:
+                        order = {'status': "CANCELED"}
+                        db_order.status = 'CANCELED'
+                        db_order.close_reason = f'MA25 less then current price for {symbol}'
+
+                        return order
+
         while True:
             if try_create_order > 10:
                 logging.info('Too much tries when stop price like last market price')
@@ -431,6 +463,7 @@ class BinanceBot(Command):
                 break
             except BinanceAPIException as e:
                 if e.code == -2021:
+                    logging.info(f'try_create_order: {e}')
                     try_create_order = try_create_order + 1
                     continue
                 else:
@@ -448,6 +481,14 @@ class BinanceBot(Command):
             db_order.exchange_order_id = str(order['orderId'])
 
         return order
+
+    async def delete_second_order(self, second_order):
+        if second_order.close_reason is None:
+            await self.delete_order(
+                db_order=second_order,
+                status='CANCELED',
+                close_reason=f'Another order activated first'
+            )
 
     async def delete_order(self, db_order, status=None, close_reason=None, deleting_order_id=None):
         db_order.status = status
@@ -1133,11 +1174,12 @@ class BinanceBot(Command):
 
         if not timeout_missed:
             for db_order in [db_order_buy, db_order_sell]:
-                await self.delete_order(
-                    db_order=db_order,
-                    status='CANCELED',
-                    close_reason=f'A minute has passed, entry conditions have not been met'
-                )
+                if db_order.close_reason is None:
+                    await self.delete_order(
+                        db_order=db_order,
+                        status='CANCELED',
+                        close_reason=f'A minute has passed, entry conditions have not been met'
+                    )
 
         return {
             'timeout_missed': timeout_missed,
@@ -1182,31 +1224,33 @@ class BinanceBot(Command):
         return first_order_updating_data
 
     async def _get_copy_bot_tf_params(self):
-        copy_bot_min_time_profitability_min = 180
+        copy_bot = TestBot(
+            symbol='symbol',
+            copy_bot_min_time_profitability_min=180
+        )
 
-        profits_data = await self.bot_crud.get_sorted_by_profit(since=timedelta(hours=1),just_copy_bots=True)
+        profits_data = await self.bot_crud.get_sorted_by_profit(since=timedelta(hours=1), just_copy_bots=True)
         profits_data_filtered_sorted = sorted([item for item in profits_data if item[1] > 0], key=lambda x: x[1], reverse=True)
 
-        refer_bot_id = None
+        copy_bot_id = None
 
         try:
-            refer_bot_id = profits_data_filtered_sorted[0][0]
+            copy_bot_id = profits_data_filtered_sorted[0][0]
         except (IndexError, TypeError):
             pass
 
-        if refer_bot_id:
-            refer_bot = await self.session.execute(
+        if copy_bot_id:
+            copy_bots = await self.session.execute(
                 select(TestBot)
                 .where(
-                    TestBot.id == refer_bot_id,
+                    TestBot.id == copy_bot_id,
                 )
             )
-            refer_bot = refer_bot.scalars().all()
-            if refer_bot:
-                refer_bot = refer_bot[0]
-                copy_bot_min_time_profitability_min = refer_bot.copy_bot_min_time_profitability_min
+            copy_bots = copy_bots.scalars().all()
+            if copy_bots:
+                copy_bot = copy_bots[0]
 
-        return copy_bot_min_time_profitability_min
+        return copy_bot
 
     def _get_precision_by_tick_size(self, tick_size):
         precision = int(round(-math.log10(tick_size), 0))
