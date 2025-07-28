@@ -699,6 +699,8 @@ class BinanceBot(Command):
         logging.info('order closed')
 
     async def close_order_by_ma25(self, db_order):
+        deleting_order_id = db_order.client_order_id + f'_stop_ma25'
+
         while db_order.close_time is None:
             current_price = await self.price_provider.get_price(symbol=db_order.symbol)
             ma25 = await self.get_ma(db_order.symbol, 25, current_price)
@@ -720,7 +722,8 @@ class BinanceBot(Command):
 
             if is_need_to_close_order:
                 await self.delete_order(
-                    db_order=db_order
+                    db_order=db_order,
+                    deleting_order_id=deleting_order_id
                 )
                 break
         return
