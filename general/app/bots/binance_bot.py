@@ -343,14 +343,12 @@ class BinanceBot(Command):
             self.setting_sl_sw_to_order(db_order, bot_config, tick_size)
         )
 
-        if bot_config.consider_ma_for_close_order:
-            close_order_by_ma25_task = asyncio.create_task(
-                self.close_order_by_ma25(db_order)
-            )
+        close_order_by_ma25_task = asyncio.create_task(
+            self.close_order_by_ma25(db_order)
+        )
 
         await setting_sl_sw_to_order_task
-        if bot_config.consider_ma_for_close_order:
-            await close_order_by_ma25_task
+        await close_order_by_ma25_task
         await delete_task
 
         try:
@@ -431,31 +429,30 @@ class BinanceBot(Command):
         order_stop_price = None
         try_create_order = 0
 
-        if bot_config.consider_ma_for_open_order:
-            current_price = await self.price_provider.get_price(symbol=db_order.symbol)
-            ma25 = await self.get_ma(db_order.symbol, 25, current_price)
+        current_price = await self.price_provider.get_price(symbol=db_order.symbol)
+        ma25 = await self.get_ma(db_order.symbol, 25, current_price)
 
-            if not ma25:
-                db_order.status = 'CANCELED'
-                db_order.close_reason = f'MA25 can\'t find klines for {symbol}'
-                logging.info(f'MA25 can\'t find klines for {symbol}')
+        if not ma25:
+            db_order.status = 'CANCELED'
+            db_order.close_reason = f'MA25 can\'t find klines for {symbol}'
+            logging.info(f'MA25 can\'t find klines for {symbol}')
 
-                return order
-            else:
-                if creating_orders_type == 'buy':
-                    if current_price < ma25:
-                        db_order.status = 'CANCELED'
-                        db_order.close_reason = f'MA25 bigger then current price for {symbol}'
-                        logging.info(f'MA25 bigger then current price for {symbol}')
+            return order
+        else:
+            if creating_orders_type == 'buy':
+                if current_price < ma25:
+                    db_order.status = 'CANCELED'
+                    db_order.close_reason = f'MA25 bigger then current price for {symbol}'
+                    logging.info(f'MA25 bigger then current price for {symbol}')
 
-                        return order
-                elif creating_orders_type == 'sell':
-                    if current_price > ma25:
-                        db_order.status = 'CANCELED'
-                        db_order.close_reason = f'MA25 less then current price for {symbol}'
-                        logging.info(f'MA25 less then current price for {symbol}')
+                    return order
+            elif creating_orders_type == 'sell':
+                if current_price > ma25:
+                    db_order.status = 'CANCELED'
+                    db_order.close_reason = f'MA25 less then current price for {symbol}'
+                    logging.info(f'MA25 less then current price for {symbol}')
 
-                        return order
+                    return order
 
         while True:
             if try_create_order > 10:
