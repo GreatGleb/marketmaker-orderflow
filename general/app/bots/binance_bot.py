@@ -30,6 +30,12 @@ UTC = timezone.utc
 class BinanceBot(Command):
     def __init__(self, stop_event = None):
         super().__init__()
+
+        logging.basicConfig(
+            format='%(asctime)s - %(levelname)s - %(message)s',
+            level=logging.INFO
+        )
+
         self.redis = None
         self.session = None
         self.bot_crud = None
@@ -37,10 +43,10 @@ class BinanceBot(Command):
         self.stop_event = stop_event
 
         load_dotenv()
-        is_prod = os.getenv("ENVIRONMENT") == "prod"
-        print(f'is_prod = {is_prod}, {os.getenv("ENVIRONMENT")}')
+        self.is_prod = os.getenv("ENVIRONMENT") == "prod"
+        logging.info(f'is_prod = {self.is_prod}, {os.getenv("ENVIRONMENT")}')
 
-        if is_prod:
+        if self.is_prod:
             api_key = os.getenv("BINANCE_API_KEY")
             api_secret = os.getenv("BINANCE_SECRET_KEY")
             self.binance_client = Client(api_key, api_secret)
@@ -49,11 +55,6 @@ class BinanceBot(Command):
             api_secret = os.getenv("BINANCE_SECRET_KEY_TESTNET")
             self.binance_client = Client(api_key, api_secret, testnet=True)
             self.binance_client.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
-
-        logging.basicConfig(
-            format='%(asctime)s - %(levelname)s - %(message)s',
-            level=logging.INFO
-        )
 
     async def command(
         self,
@@ -114,80 +115,87 @@ class BinanceBot(Command):
 
     async def creating_orders_bot(self):
         logging.info('start function creating_orders_bot')
-        # copy_bot = await self._get_copy_bot_tf_params()
-        # logging.info('finished get_copy_bot_tf_params')
-        #
-        # tf_bot_ids = await ProfitableBotUpdaterCommand.get_profitable_bots_id_by_tf(
-        #     bot_crud=self.bot_crud,
-        #     bot_profitability_timeframes=[copy_bot.copy_bot_min_time_profitability_min],
-        # )
-        #
-        # logging.info('finished get_profitable_bots_id_by_tf')
-        # refer_bot = await ProfitableBotUpdaterCommand.get_bot_config_by_params(
-        #     bot_crud=self.bot_crud,
-        #     tf_bot_ids=tf_bot_ids,
-        #     copy_bot_min_time_profitability_min=copy_bot.copy_bot_min_time_profitability_min
-        # )
-        # logging.info('finished get_bot_config_by_params')
-        #
-        # if not refer_bot:
-        #     logging.info('not refer_bot')
-        #     await asyncio.sleep(60)
-        #     return
-        #
-        # bot_config = TestBot(
-        #     symbol=refer_bot['symbol'],
-        #     stop_success_ticks=refer_bot['stop_success_ticks'],
-        #     stop_loss_ticks = refer_bot['stop_loss_ticks'],
-        #     start_updown_ticks = refer_bot['start_updown_ticks'],
-        #     stop_win_percents = Decimal(refer_bot['stop_win_percents']),
-        #     stop_loss_percents = Decimal(refer_bot['stop_loss_percents']),
-        #     start_updown_percents = Decimal(refer_bot['start_updown_percents']),
-        #     min_timeframe_asset_volatility = refer_bot['min_timeframe_asset_volatility'],
-        #     time_to_wait_for_entry_price_to_open_order_in_minutes = refer_bot['time_to_wait_for_entry_price_to_open_order_in_minutes'],
-        #     consider_ma_for_open_order=copy_bot.consider_ma_for_open_order,
-        #     consider_ma_for_close_order=copy_bot.consider_ma_for_close_order,
-        # )
-        #
-        # symbol = await self.redis.get(f"most_volatile_symbol_{bot_config.min_timeframe_asset_volatility}")
-        #
-        # # bot_config = TestBot(
-        # #     symbol='BTCUSDT',
-        # #     stop_success_ticks = 40,
-        # #     stop_loss_ticks = 70,
-        # #     start_updown_ticks = 10,
-        # #     min_timeframe_asset_volatility = 3,
-        # #     time_to_wait_for_entry_price_to_open_order_in_minutes = 0.5
-        # # )
-        # # symbol = 'BTCUSDT'
-        #
-        # try:
-        #     symbol_characteristics = self.symbols_characteristics.get(symbol)
-        #     tick_size = symbol_characteristics['price']['tickSize']
-        #     max_price = symbol_characteristics['price']['maxPrice']
-        #     min_price = symbol_characteristics['price']['minPrice']
-        #     lot_size = symbol_characteristics['lot_size']['stepSize']
-        #     max_qty = symbol_characteristics['lot_size']['maxQty']
-        #     min_qty = symbol_characteristics['lot_size']['minQty']
-        # except:
-        #     logging.info(f"❌ Ошибка при получении symbol_characteristics по {symbol}")
-        #     # BAKEUSDT
-        #     await asyncio.sleep(60)
-        #     return
-        #
-        # if not tick_size or not max_price or not min_price or not lot_size or not min_qty or not max_qty:
-        #     logging.info(f"❌ Нет symbol_characteristics по {symbol}")
-        #     await asyncio.sleep(60)
-        #     return
-        #
-        # bot_config = await ProfitableBotUpdaterCommand.update_config_for_percentage(
-        #     bot_config=bot_config,
-        #     price_provider=self.price_provider,
-        #     symbol=symbol,
-        #     tick_size=tick_size
-        # )
-        #
-        # logging.info(f'current symbol: {symbol}')
+        copy_bot = await self._get_copy_bot_tf_params()
+        logging.info('finished get_copy_bot_tf_params')
+
+        tf_bot_ids = await ProfitableBotUpdaterCommand.get_profitable_bots_id_by_tf(
+            bot_crud=self.bot_crud,
+            bot_profitability_timeframes=[copy_bot.copy_bot_min_time_profitability_min],
+        )
+
+        logging.info('finished get_profitable_bots_id_by_tf')
+        refer_bot = await ProfitableBotUpdaterCommand.get_bot_config_by_params(
+            bot_crud=self.bot_crud,
+            tf_bot_ids=tf_bot_ids,
+            copy_bot_min_time_profitability_min=copy_bot.copy_bot_min_time_profitability_min
+        )
+        logging.info('finished get_bot_config_by_params')
+
+        if not refer_bot:
+            logging.info('not refer_bot')
+            await asyncio.sleep(60)
+            return
+
+        if self.is_prod:
+            symbol = await self.redis.get(f"most_volatile_symbol_{bot_config.min_timeframe_asset_volatility}")
+            bot_config = TestBot(
+                symbol=refer_bot['symbol'],
+                stop_success_ticks=refer_bot['stop_success_ticks'],
+                stop_loss_ticks = refer_bot['stop_loss_ticks'],
+                start_updown_ticks = refer_bot['start_updown_ticks'],
+                stop_win_percents = Decimal(refer_bot['stop_win_percents']),
+                stop_loss_percents = Decimal(refer_bot['stop_loss_percents']),
+                start_updown_percents = Decimal(refer_bot['start_updown_percents']),
+                min_timeframe_asset_volatility = refer_bot['min_timeframe_asset_volatility'],
+                time_to_wait_for_entry_price_to_open_order_in_minutes = refer_bot['time_to_wait_for_entry_price_to_open_order_in_minutes'],
+                consider_ma_for_open_order=copy_bot.consider_ma_for_open_order,
+                consider_ma_for_close_order=copy_bot.consider_ma_for_close_order,
+            )
+        else:
+            symbol = 'BTCUSDT'
+            bot_config = TestBot(
+                symbol='BTCUSDT',
+                stop_success_ticks = 40,
+                stop_loss_ticks = 70,
+                start_updown_ticks = 10,
+                min_timeframe_asset_volatility = 3,
+                time_to_wait_for_entry_price_to_open_order_in_minutes = 0.5
+            )
+
+        try:
+            symbol_characteristics = self.symbols_characteristics.get(symbol)
+            tick_size = symbol_characteristics['price']['tickSize']
+            max_price = symbol_characteristics['price']['maxPrice']
+            min_price = symbol_characteristics['price']['minPrice']
+            lot_size = symbol_characteristics['lot_size']['stepSize']
+            max_qty = symbol_characteristics['lot_size']['maxQty']
+            min_qty = symbol_characteristics['lot_size']['minQty']
+        except:
+            logging.info(f"❌ Ошибка при получении symbol_characteristics по {symbol}")
+            # BAKEUSDT
+            await asyncio.sleep(60)
+            return
+
+        if not tick_size or not max_price or not min_price or not lot_size or not min_qty or not max_qty:
+            logging.info(f"❌ Нет symbol_characteristics по {symbol}")
+            await asyncio.sleep(60)
+            return
+
+        bot_config = await ProfitableBotUpdaterCommand.update_config_for_percentage(
+            bot_config=bot_config,
+            price_provider=self.price_provider,
+            symbol=symbol,
+            tick_size=tick_size
+        )
+
+        logging.info(f'current symbol: {symbol}')
+
+        logging.info('close_all_open_positions')
+        is_closed_all_positions = await self.close_all_open_positions()
+        if not is_closed_all_positions:
+            logging.info(f"❌ Can\'t close all open positions")
+            await asyncio.sleep(60)
+            return
 
         logging.info('start get balance')
 
@@ -208,12 +216,6 @@ class BinanceBot(Command):
 
         logging.info(balanceUSDT)
         logging.info('balanceUSDT')
-
-        if balanceUSDT < 5:
-            await self.close_all_open_positions()
-        await self.close_all_open_positions()
-        await asyncio.sleep(600)
-        return
 
         balanceUSDT099 = Decimal(balanceUSDT) * Decimal(0.99)
 
@@ -551,7 +553,7 @@ class BinanceBot(Command):
                 )
 
                 executed_qty = binance_deleting_order["executedQty"]
-            print('executed_qty: ', executed_qty)
+            logging.info('Deleting open position executed_qty: ', executed_qty, 'at symbol: ', db_order.symbol)
 
             if db_order.side == 'BUY':
                 order_side = SIDE_SELL
@@ -610,8 +612,6 @@ class BinanceBot(Command):
                             )
                     except:
                         logging.info('Can\'t delete binance order')
-        else:
-            print('it is close order')
 
         return
 
@@ -627,11 +627,10 @@ class BinanceBot(Command):
             if Decimal(p['positionAmt']) != 0
         ]
 
-        print(f'open_positions {open_positions}')
+        logging.info(f'open_positions {open_positions}')
 
         i = 0
         for pos in open_positions:
-            print(f'i {i}')
             position_amt = Decimal(pos['positionAmt'])
             position_side = pos['positionSide']
             symbol = pos['symbol']
@@ -650,12 +649,14 @@ class BinanceBot(Command):
                 close_order_type=1
             )
 
-            print('deleting open position')
+            logging.info(f'i {i} deleting open position')
 
             await self.delete_binance_order(db_order)
 
             i = i + 1
         logging.info('Closed all open position')
+
+        return True
 
     async def setting_sl_sw_to_order(self, db_order, bot_config, tick_size):
         sl_sw_params = self._get_sl_sw_params(db_order, bot_config, tick_size)
