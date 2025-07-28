@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from sqlalchemy import delete
+from sqlalchemy import delete, text
 from sqlalchemy.dialects.postgresql import insert
 
 from datetime import datetime, timedelta, timezone
@@ -31,39 +31,21 @@ class AssetHistoryCrud(BaseCrud[AssetHistory]):
         await self.session.commit()
 
     async def get_most_volatile_since(self, since: datetime):
-        volatility_cte = (
+        query = (
             select(
                 AssetHistory.symbol,
-                func.first_value(AssetHistory.last_price).over(
-                    partition_by=AssetHistory.symbol,
-                    order_by=AssetHistory.event_time.asc()
-                ).label("old_price"),
-                func.first_value(AssetHistory.last_price).over(
-                    partition_by=AssetHistory.symbol,
-                    order_by=AssetHistory.event_time.desc()
-                ).label("new_price"),
-            )
-            .where(AssetHistory.event_time >= since)
-        ).cte("volatility_calculations")
-
-        final_query = (
-            select(
-                volatility_cte.c.symbol,
-                volatility_cte.c.old_price,
-                volatility_cte.c.new_price,
                 func.abs(
-                    (volatility_cte.c.new_price - volatility_cte.c.old_price) / volatility_cte.c.old_price
+                    (func.max(AssetHistory.last_price) - func.min(AssetHistory.last_price))
+                    / func.min(AssetHistory.last_price)
                 ).label("volatility")
             )
-            .order_by(
-                func.abs(
-                    (volatility_cte.c.new_price - volatility_cte.c.old_price) / volatility_cte.c.old_price
-                ).desc()
-            )
+            .where(AssetHistory.event_time >= since)
+            .group_by(AssetHistory.symbol)
+            .order_by(text("volatility DESC"))
             .limit(1)
         )
 
-        result = await self.session.execute(final_query)
+        result = await self.session.execute(query)
         return result.first()
 
     async def get_latest_price(self, symbol: str) -> Decimal | None:
