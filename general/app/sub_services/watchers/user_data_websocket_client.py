@@ -57,6 +57,7 @@ class UserDataWebSocketClient:
                 self.client.futures_stream_keepalive(listenKey=self.listen_key)
         except Exception as e:
             logging.info("⚠️ Ошибка в keep-alive:", e)
+            self.listen_key = self.client.futures_stream_get_listen_key()
 
     async def start(self):
         self.keep_running = True
