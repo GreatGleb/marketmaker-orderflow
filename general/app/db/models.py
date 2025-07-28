@@ -235,6 +235,7 @@ class AssetHistory(BaseId):
     event_time: Mapped[datetime] = mapped_column(
         types.DateTime(timezone=True),
         nullable=False,
+        index=True,
         comment="Event time (E)",
     )
 
@@ -244,6 +245,16 @@ class AssetHistory(BaseId):
 
     statistics_close_time: Mapped[Optional[int]] = mapped_column(
         types.BigInteger, nullable=True, comment="Statistics close time (C)"
+    )
+
+    # Composite index for symbol, event_time, and last_price
+    __table_args__ = (
+        Index(
+            "idx_assethistory_symbol_event_price",
+            "symbol",
+            "event_time",
+            "last_price",
+        ),
     )
 
 
@@ -492,12 +503,12 @@ class TestBot(BaseId):
     consider_ma_for_open_order: Mapped[bool] = mapped_column(
         types.Boolean,
         default=False,
-        comment="Whether to consider the moving average (MA) when opening the order"
+        comment="Whether to consider the moving average (MA) when opening the order",
     )
     consider_ma_for_close_order: Mapped[bool] = mapped_column(
         types.Boolean,
         default=False,
-        comment="Whether to consider the moving average (MA) when closing the order"
+        comment="Whether to consider the moving average (MA) when closing the order",
     )
 
 
