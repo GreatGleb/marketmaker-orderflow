@@ -171,60 +171,8 @@ class BinanceBot(Command):
                 time_to_wait_for_entry_price_to_open_order_in_minutes = 0.5
             )
 
-        symbol = 'BTCUSDT'
-
-        start_time = time.time()
-
-        current_price = await self.price_provider.get_price(symbol=symbol)
-
-        end_time = time.time()
-        elapsed_time = end_time - start_time
-
-        print(f'redis time: {elapsed_time}')
-
-        start_time = time.time()
-
-        futures_mark_price = await self._safe_from_time_err_call_binance(
-            self.binance_client.futures_mark_price,
-            symbol=symbol
-        )
-        initial_price = Decimal(futures_mark_price['markPrice'])
-
-        end_time = time.time()
-        elapsed_time = end_time - start_time
-        print(f'binance_client_futures_mark_price time: {elapsed_time}')
-        print(f'BTCUSDT\nredis price: {current_price}\nbinance_client_futures_mark_price: {initial_price}')
-
-        symbol = 'BAKEUSDT'
-
-        start_time = time.time()
-
-        current_price = await self.price_provider.get_price(symbol=symbol)
-
-        end_time = time.time()
-        elapsed_time = end_time - start_time
-
-        print(f'redis time: {elapsed_time}')
-
-        start_time = time.time()
-
-        futures_mark_price = await self._safe_from_time_err_call_binance(
-            self.binance_client.futures_mark_price,
-            symbol=symbol
-        )
-        initial_price = Decimal(futures_mark_price['markPrice'])
-
-        end_time = time.time()
-        elapsed_time = end_time - start_time
-        print(f'binance_client_futures_mark_price time: {elapsed_time}')
-        print(f'BAKEUSDT\nredis price: {current_price}\nbinance_client_futures_mark_price: {initial_price}')
-
-        ma25 = await self.get_ma(symbol, 25, current_price)
-        print(f'ma25 {symbol}: {ma25}')
-
         try:
             symbol_characteristics = self.symbols_characteristics.get(symbol)
-            print(symbol_characteristics)
             tick_size = symbol_characteristics['price']['tickSize']
             max_price = symbol_characteristics['price']['maxPrice']
             min_price = symbol_characteristics['price']['minPrice']
@@ -235,8 +183,6 @@ class BinanceBot(Command):
             logging.info(f"❌ Ошибка при получении symbol_characteristics по {symbol}")
             await asyncio.sleep(60)
             return
-
-        return
 
         if not tick_size or not max_price or not min_price or not lot_size or not min_qty or not max_qty:
             logging.info(f"❌ Нет symbol_characteristics по {symbol}")
@@ -1218,11 +1164,7 @@ class BinanceBot(Command):
             symbol, tick_size, lot_size, max_price, min_price, max_qty, min_qty,
             db_order
     ):
-        futures_mark_price = await self._safe_from_time_err_call_binance(
-            self.binance_client.futures_mark_price,
-            symbol=symbol
-        )
-        initial_price = Decimal(futures_mark_price['markPrice'])
+        initial_price = await self.price_provider.get_price(symbol=symbol)
 
         entry_price_buy = initial_price + bot_config.start_updown_ticks * tick_size
         entry_price_buy_str = self._round_price_for_order(price=entry_price_buy, tick_size=tick_size)
