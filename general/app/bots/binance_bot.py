@@ -338,11 +338,19 @@ class BinanceBot(Command):
             return
 
         logging.info("✅ Первый ордер получен:", wait_for_order['first_order_updating_data'])
-        setting_sl_sw_to_order = asyncio.create_task(
+
+        setting_sl_sw_to_order_task = asyncio.create_task(
             self.setting_sl_sw_to_order(db_order, bot_config, tick_size)
         )
 
-        await setting_sl_sw_to_order
+        if bot_config.consider_ma_for_close_order:
+            close_order_by_ma25_task = asyncio.create_task(
+                self.close_order_by_ma25(db_order)
+            )
+
+        await setting_sl_sw_to_order_task
+        if bot_config.consider_ma_for_close_order:
+            await close_order_by_ma25_task
         await delete_task
 
         try:
@@ -425,7 +433,7 @@ class BinanceBot(Command):
 
         if bot_config.consider_ma_for_open_order:
             current_price = await self.price_provider.get_price(symbol=db_order.symbol)
-            ma25 = await self.get_ma(symbol, 25, current_price)
+            ma25 = await self.get_ma(db_order.symbol, 25, current_price)
 
             if not ma25:
                 db_order.status = 'CANCELED'
@@ -528,8 +536,10 @@ class BinanceBot(Command):
             )
 
     async def delete_order(self, db_order, status=None, close_reason=None, deleting_order_id=None):
-        db_order.status = status
-        db_order.close_reason = close_reason
+        if status:
+            db_order.status = status
+        if close_reason:
+            db_order.close_reason = close_reason
 
         await self.delete_binance_order(
             db_order=db_order,
@@ -687,6 +697,33 @@ class BinanceBot(Command):
             await self.creating_binance_n_custom_trailing(db_order, bot_config, tick_size, sl_sw_params)
 
         logging.info('order closed')
+
+    async def close_order_by_ma25(self, db_order):
+        while db_order.close_time is None:
+            current_price = await self.price_provider.get_price(symbol=db_order.symbol)
+            ma25 = await self.get_ma(db_order.symbol, 25, current_price)
+
+            is_need_to_close_order = False
+
+            if db_order.side == 'BUY':
+                if current_price < ma25:
+                    db_order.status = 'CLOSED BY MA25'
+                    db_order.close_reason = f'closed MA25 bigger then current price for {db_order.symbol}'
+                    logging.info(f'closed MA25 bigger then current price for {db_order.symbol}')
+
+                    is_need_to_close_order = True
+            elif db_order.side == 'SELL':
+                if current_price > ma25:
+                    db_order.status = 'CLOSED BY MA25'
+                    db_order.close_reason = f'closed MA25 less then current price for {db_order.symbol}'
+                    logging.info(f'closed MA25 less then current price for {db_order.symbol}')
+
+            if is_need_to_close_order:
+                await self.delete_order(
+                    db_order=db_order
+                )
+                break
+        return
 
     def _get_sl_sw_params(self, db_order, bot_config, tick_size):
         if db_order.side == 'BUY':
