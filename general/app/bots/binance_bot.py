@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud.exchange_pair_spec import AssetExchangeSpecCrud
 from app.crud.test_bot import TestBotCrud
+from app.crud.test_orders import TestOrderCrud
 from app.db.models import MarketOrder, TestBot, TestOrder
 from app.dependencies import get_redis, get_session, resolve_crud, redis_context
 from app.sub_services.logic.price_calculator import PriceCalculator
@@ -131,7 +132,10 @@ class BinanceBot(Command):
         )
         logging.info('finished get_bot_config_by_params')
 
-        if not refer_bot:
+        test_order_crud = TestOrderCrud(self.session)
+        are_bots_currently_active = await test_order_crud.are_bots_currently_active()
+
+        if not refer_bot and are_bots_currently_active:
             logging.info('not refer_bot')
             await asyncio.sleep(60)
             return

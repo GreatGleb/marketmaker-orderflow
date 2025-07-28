@@ -1,3 +1,4 @@
+from datetime import timedelta, datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy.dialects.postgresql import insert
@@ -28,6 +29,20 @@ class TestOrderCrud(BaseCrud[TestOrder]):
             select(TestOrder)
             .where(TestOrder.asset_symbol == symbol)
             .where(TestOrder.is_active == True)  # noqa
+            .limit(1)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def are_bots_currently_active(self):
+        since_timedelta = timedelta(minutes=5)
+
+        now = datetime.now(timezone.utc)
+        time_ago = now - since_timedelta
+
+        stmt = (
+            select(TestOrder)
+            .where(TestOrder.created_at >= time_ago)
             .limit(1)
         )
         result = await self.session.execute(stmt)
