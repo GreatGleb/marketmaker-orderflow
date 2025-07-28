@@ -1,4 +1,6 @@
 import asyncio
+import logging
+import time
 
 from datetime import datetime, timedelta, timezone
 
@@ -34,36 +36,51 @@ class VolatilePairCommand(Command):
         redis: Redis = Depends(get_redis),
         bot_crud: TestBotCrud = resolve_crud(TestBotCrud),
     ):
+
+        logging.basicConfig(
+            format='%(asctime)s - %(levelname)s - %(message)s',
+            level=logging.INFO
+        )
+
         first_run_completed = False
         asset_volatility_timeframes = []
 
         while not self.stop_event.is_set():
-            if not first_run_completed:
-                unique_values = (
-                    await bot_crud.get_unique_min_timeframe_volatility_values()
-                )
-                asset_volatility_timeframes = list(unique_values)
-                first_run_completed = True
+            start_time = time.time()
 
-            most_volatile = None
-            tf_str = None
-            symbol = None
+            try:
+                if not first_run_completed:
+                    unique_values = (
+                        await bot_crud.get_unique_min_timeframe_volatility_values()
+                    )
+                    asset_volatility_timeframes = list(unique_values)
+                    first_run_completed = True
 
-            for tf_str in asset_volatility_timeframes:
-                tf = float(tf_str)
-                now = datetime.now(UTC)
-                time_ago = now - timedelta(minutes=tf)
+                most_volatile = None
+                tf_str = None
+                symbol = None
 
-                most_volatile = await asset_crud.get_most_volatile_since(
-                    since=time_ago
-                )
+                for tf_str in asset_volatility_timeframes:
+                    tf = float(tf_str)
+                    now = datetime.now(UTC)
+                    time_ago = now - timedelta(minutes=tf)
 
-                if most_volatile:
-                    symbol = most_volatile.symbol
-                    await redis.set(f"most_volatile_symbol_{tf_str}", symbol)
-                    # print(f"most_volatile_symbol_{tf_str} updated: {symbol}")
+                    most_volatile = await asset_crud.get_most_volatile_since(
+                        since=time_ago
+                    )
 
-            # if most_volatile and tf_str and symbol:
-            #     print(f"most_volatile_symbol_{tf_str} updated: {symbol}")
+                    if most_volatile:
+                        symbol = most_volatile.symbol
+                        await redis.set(f"most_volatile_symbol_{tf_str}", symbol)
+                        # print(f"most_volatile_symbol_{tf_str} updated: {symbol}")
 
-            await asyncio.sleep(30)
+                # if most_volatile and tf_str and symbol:
+                #     print(f"most_volatile_symbol_{tf_str} updated: {symbol}")
+            except Exception as e:
+                logging.info(f'Error while set volatile pairs: {e}')
+                await asyncio.sleep(60)
+
+            end_time = time.time()
+            elapsed_time = end_time - start_time
+            wait_time = 30 - elapsed_time
+            await asyncio.sleep(wait_time)

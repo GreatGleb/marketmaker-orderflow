@@ -6,8 +6,8 @@ from datetime import timezone
 from app.bots.demo_test_bot import StartTestBotsCommand
 
 # from app.workers.bulk_insert_orders import OrderBulkInsertCommand
-from app.workers.profitable_bot_updater import ProfitableBotUpdaterCommand
-from app.workers.volatile_pair import VolatilePairCommand
+# from app.workers.profitable_bot_updater import ProfitableBotUpdaterCommand
+# from app.workers.volatile_pair import VolatilePairCommand
 
 UTC = timezone.utc
 
@@ -33,9 +33,9 @@ async def main():
     input_thread.start()
 
     await asyncio.gather(
-        VolatilePairCommand(stop_event=stop_event).run_async(),
-        # ProfitableBotUpdaterCommand(stop_event=stop_event).run_async(),
+        # VolatilePairCommand(stop_event=stop_event).run_async(),
         StartTestBotsCommand(stop_event=stop_event).run_async(),
+        # ProfitableBotUpdaterCommand(stop_event=stop_event).run_async(),
         # OrderBulkInsertCommand(stop_event=stop_event).run_async(),
     )
 
