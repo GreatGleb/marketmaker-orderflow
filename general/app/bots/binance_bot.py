@@ -38,7 +38,6 @@ class BinanceBot(Command):
 
         load_dotenv()
         is_prod = os.getenv("ENVIRONMENT") == "prod"
-        # is_prod = False
         print(f'is_prod = {is_prod}, {os.getenv("ENVIRONMENT")}')
 
         if is_prod:
@@ -570,8 +569,8 @@ class BinanceBot(Command):
                             side=order_side,
                             positionSide=order_position_side,
                             type=FUTURE_ORDER_TYPE_MARKET,
-                            # quantity=executed_qty,
-                            closePosition=True,
+                            quantity=executed_qty,
+                            # closePosition=True,
                             reduceOnly=True,
                             newClientOrderId=deleting_order_id
                         )
@@ -582,8 +581,8 @@ class BinanceBot(Command):
                             side=order_side,
                             positionSide=order_position_side,
                             type=FUTURE_ORDER_TYPE_MARKET,
-                            # quantity=executed_qty,
-                            closePosition=True,
+                            quantity=executed_qty,
+                            # closePosition=True,
                             reduceOnly=True
                         )
                 except:
@@ -595,8 +594,8 @@ class BinanceBot(Command):
                                 side=order_side,
                                 positionSide=order_position_side,
                                 type=FUTURE_ORDER_TYPE_MARKET,
-                                # quantity=executed_qty,
-                                closePosition=True,
+                                quantity=executed_qty,
+                                # closePosition=True,
                                 newClientOrderId=deleting_order_id
                             )
                         else:
@@ -606,12 +605,11 @@ class BinanceBot(Command):
                                 side=order_side,
                                 positionSide=order_position_side,
                                 type=FUTURE_ORDER_TYPE_MARKET,
-                                # quantity=executed_qty,
-                                closePosition=True,
+                                quantity=executed_qty,
+                                # closePosition=True,
                             )
                     except:
-                        raise
-                    #     logging.info('Can\'t delete binance order')
+                        logging.info('Can\'t delete binance order')
         else:
             print('it is close order')
 
