@@ -71,7 +71,7 @@ class VolatilePairCommand(Command):
 
                     if most_volatile:
                         symbol = most_volatile.symbol
-                        await redis.set(f"most_volatile_symbol_{tf_str}", symbol)
+                        await redis.set(f"most_volatile_symbol_{tf_str}", symbol, ex=60)
                         # print(f"most_volatile_symbol_{tf_str} updated: {symbol}")
 
                 # if most_volatile and tf_str and symbol:

@@ -174,11 +174,16 @@ class StartTestBotsCommand(Command):
                 bot_config=bot_config, redis=redis, bot_crud=bot_crud
             )
             if not bot_config_updated:
+                await asyncio.sleep(60)
                 return
 
         symbol = await redis.get(
             f"most_volatile_symbol_{bot_config.min_timeframe_asset_volatility}"
         )
+        if not symbol:
+            await asyncio.sleep(60)
+            return
+
         data = shared_data.get(symbol)
 
         if not data:
@@ -194,6 +199,7 @@ class StartTestBotsCommand(Command):
                     )
                 )
                 if not bot_config_updated:
+                    await asyncio.sleep(60)
                     return
 
             bot_config = (

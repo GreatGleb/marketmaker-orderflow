@@ -137,7 +137,12 @@ class BinanceBot(Command):
             return
 
         if self.is_prod:
-            symbol = await self.redis.get(f"most_volatile_symbol_{bot_config.min_timeframe_asset_volatility}")
+            symbol = await self.redis.get(f"most_volatile_symbol_{refer_bot['min_timeframe_asset_volatility']}")
+            if not symbol:
+                logging.info(f"❌ Не найдено самую волатильную пару")
+                await asyncio.sleep(60)
+                return
+
             bot_config = TestBot(
                 symbol=refer_bot['symbol'],
                 stop_success_ticks=refer_bot['stop_success_ticks'],
