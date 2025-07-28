@@ -150,34 +150,11 @@ async def create_bots():
                     "symbol": symbol,
                     "balance": Decimal("1000.0"),
                     "copy_bot_min_time_profitability_min": min_time,
-                    "is_active": True,
-                }
-                bot_data2 = {
-                    "symbol": symbol,
-                    "balance": Decimal("1000.0"),
-                    "copy_bot_min_time_profitability_min": min_time,
-                    "consider_ma_for_open_order": True,
-                    "is_active": True,
-                }
-                bot_data3 = {
-                    "symbol": symbol,
-                    "balance": Decimal("1000.0"),
-                    "copy_bot_min_time_profitability_min": min_time,
-                    "consider_ma_for_close_order": True,
-                    "is_active": True,
-                }
-                bot_data4 = {
-                    "symbol": symbol,
-                    "balance": Decimal("1000.0"),
-                    "copy_bot_min_time_profitability_min": min_time,
                     "consider_ma_for_open_order": True,
                     "consider_ma_for_close_order": True,
                     "is_active": True,
                 }
-                # new_bots.append(bot_data)
-                new_bots.append(bot_data2)
-                new_bots.append(bot_data3)
-                new_bots.append(bot_data4)
+                new_bots.append(bot_data)
 
             await bot_crud.bulk_create(new_bots)
             await session.commit()
