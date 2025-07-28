@@ -89,7 +89,7 @@ class BinanceBot(Command):
                     await self.creating_orders_bot()
                 except Exception as e:
                     logging.info(f"❌ Ошибка в боте: {e}")
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(60)
 
         tasks.append(asyncio.create_task(_run_loop()))
         await asyncio.gather(*tasks)
@@ -222,6 +222,9 @@ class BinanceBot(Command):
             logging.info('not balanceUSDT')
             await asyncio.sleep(60)
             return
+
+        if not self.is_prod:
+            balanceUSDT = 100
 
         logging.info(balanceUSDT)
         logging.info('balanceUSDT')
@@ -426,8 +429,6 @@ class BinanceBot(Command):
             ma25 = await self.get_ma(symbol, 25, current_price)
 
             if not ma25:
-                print(f'ma25: {ma25} for symbol {symbol}')
-
                 db_order.status = 'CANCELED'
                 db_order.close_reason = f'MA25 can\'t find klines for {symbol}'
                 logging.info(f'MA25 can\'t find klines for {symbol}')
@@ -465,7 +466,7 @@ class BinanceBot(Command):
             if not order_params:
                 db_order.status = 'CANCELED'
                 db_order.close_reason = f'Can\'t get order params for {symbol}'
-                logging.info(f'Can\'t get order params for {symbol}')
+                logging.info(f'Can\'t get order params for {creating_orders_type} {symbol}')
                 return order
 
             if creating_orders_type == 'buy':
@@ -494,18 +495,18 @@ class BinanceBot(Command):
                 break
             except BinanceAPIException as e:
                 if e.code == -2021:
-                    logging.info(f'try_create_order: {e}')
+                    logging.info(f'try_create_order {creating_orders_type}: {e}')
                     try_create_order = try_create_order + 1
                     continue
                 else:
                     db_order.status = 'CANCELED'
                     db_order.close_reason = f'Binance error while creating order: {e}'
-                    logging.info(f'Binance error while creating order: {e}')
+                    logging.info(f'Binance error while creating order {creating_orders_type}: {e}')
                     break
             except Exception as e:
                 db_order.status = 'CANCELED'
                 db_order.close_reason = f'Error while creating Binance order: {e}'
-                logging.info(f"Error while creating binance order: {e}")
+                logging.info(f"Error while creating binance order {creating_orders_type}: {e}")
                 break
 
         db_order.quote_quantity = balanceUSDT
@@ -547,7 +548,7 @@ class BinanceBot(Command):
                     origClientOrderId=db_order.client_order_id
                 )
             except Exception as e:
-                logging.info("Не могу удалить ордер, он уже отменён или исполнен:", e)
+                logging.info(f"Не могу удалить ордер, он уже отменён или исполнен: {e}")
 
         if not (
             (db_order.side == 'BUY' and db_order.position_side == 'SHORT') or (db_order.side == 'SELL' and db_order.position_side == 'LONG')
@@ -562,7 +563,7 @@ class BinanceBot(Command):
                 )
 
                 executed_qty = binance_deleting_order["executedQty"]
-            logging.info('Deleting open position executed_qty: ', executed_qty, 'at symbol: ', db_order.symbol)
+            logging.info(f'Deleting open position executed_qty: {executed_qty} at symbol: {db_order.symbol}')
 
             if db_order.side == 'BUY':
                 order_side = SIDE_SELL
