@@ -135,7 +135,10 @@ class BinanceBot(Command):
         test_order_crud = TestOrderCrud(self.session)
         are_bots_currently_active = await test_order_crud.are_bots_currently_active()
 
-        if not refer_bot and are_bots_currently_active:
+        print(refer_bot)
+        print('refer_bot')
+
+        if not refer_bot or not are_bots_currently_active:
             logging.info('not refer_bot')
             await asyncio.sleep(60)
             return
