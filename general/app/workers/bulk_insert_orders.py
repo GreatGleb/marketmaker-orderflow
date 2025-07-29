@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import time
 
 from datetime import datetime
@@ -36,6 +37,11 @@ class OrderBulkInsertCommand(Command):
         crud: TestOrderCrud = resolve_crud(TestOrderCrud),
         redis: Redis = Depends(get_redis),
     ):
+        logging.basicConfig(
+            format='%(asctime)s - %(levelname)s - %(message)s',
+            level=logging.INFO
+        )
+
         DATETIME_FIELDS = [
             "open_time",
             "close_time",
@@ -59,7 +65,7 @@ class OrderBulkInsertCommand(Command):
                     order = self.parse_datetime_fields(order, DATETIME_FIELDS)
                     orders.append(order)
                 except Exception as e:
-                    print(f"❌ Ошибка при обработке записи из Redis: {e}")
+                    logging.info(f"❌ Ошибка при обработке записи из Redis: {e}")
 
             RETRY_DELAY_SECONDS = 5 * 60
             EMPTY_ORDERS_DELAY_SECONDS = 1 * 60
@@ -69,16 +75,16 @@ class OrderBulkInsertCommand(Command):
                 try:
                     await crud.bulk_create(orders=batch)
                 except Exception as e:
-                    print(f"❌ Ошибка при вставке батча в БД: {e}")
-                    print("Ждем {RETRY_DELAY_SECONDS // 60} мин. и пробуем снова.")
+                    logging.info(f"❌ Ошибка при вставке батча в БД: {e}")
+                    logging.info("Ждем {RETRY_DELAY_SECONDS // 60} мин. и пробуем снова.")
                     await asyncio.sleep(RETRY_DELAY_SECONDS)
                     try:
                         await crud.bulk_create(orders=batch)
                     except Exception as e_retry:
-                        print(f"❌ Повторная попытка тоже не удалась: {e_retry}. Пропускаем батч.")
+                        logging.info(f"❌ Повторная попытка тоже не удалась: {e_retry}. Пропускаем батч.")
 
             if not orders:
-                print(f"Список заказов пуст. Ждем {EMPTY_ORDERS_DELAY_SECONDS // 60} минуту...")
+                logging.info(f"Список заказов пуст. Ждем {EMPTY_ORDERS_DELAY_SECONDS // 60} минуту...")
                 await asyncio.sleep(EMPTY_ORDERS_DELAY_SECONDS)
 
             end_time = time.time()
