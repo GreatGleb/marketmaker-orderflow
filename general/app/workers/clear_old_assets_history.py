@@ -41,7 +41,7 @@ class ClearOldAssetsHistoryCommand(Command):
         table_name = "asset_history"
         start_time = time.time()
 
-        await self.redis.set(f"{table_name}:stop", 1)
+        # await self.redis.set(f"{table_name}:stop", 1)
 
         load_dotenv()
 
@@ -92,7 +92,7 @@ class ClearOldAssetsHistoryCommand(Command):
             print(err_msg)
             success = False
 
-        await self.redis.delete(f"{table_name}:stop")
+        # await self.redis.delete(f"{table_name}:stop")
 
         end_time = time.time()
         elapsed_time = end_time - start_time
