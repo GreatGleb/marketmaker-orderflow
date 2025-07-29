@@ -76,14 +76,14 @@ class UserDataWebSocketClient:
             logging.info(f"⚠️ Ошибка при закрытии listenKey: {e}")
 
     async def handle_order_update(self, order):
-        logging.info("📦 Обновление ордера:")
-        logging.info(f"  id: {order['c']}")
-        logging.info(f"  Статус: {order['X']}")
-        logging.info(f"  Тип: {order['o']}")
-        logging.info(f"  Side: {order['S']}")
-        logging.info(f"  Цена активации: {order.get('sp', '—')}")
-        logging.info(f"  Цена последней сделки: {order.get('L', '—')}")
-        logging.info(f"  Triggered: {order.get('ps', '—')}")
+        # logging.info("📦 Обновление ордера:")
+        # logging.info(f"  id: {order['c']}")
+        # logging.info(f"  Статус: {order['X']}")
+        # logging.info(f"  Тип: {order['o']}")
+        # logging.info(f"  Side: {order['S']}")
+        # logging.info(f"  Цена активации: {order.get('sp', '—')}")
+        # logging.info(f"  Цена последней сделки: {order.get('L', '—')}")
+        # logging.info(f"  Triggered: {order.get('ps', '—')}")
 
         if order['c'] not in self.waiting_orders_id:
             return
@@ -109,8 +109,18 @@ class UserDataWebSocketClient:
             second_underscore_index = order['c'].find('_', first_underscore_index + 1)
             if second_underscore_index != -1:
                 original_order_id = order['c'][:second_underscore_index]
+                order['c'] = f'{original_order_id}_stop_ma25'
+                logging.info(f'order[\'c\'] {order['c']}')
+
+        if 'stop' in order['c']:
+            first_underscore_index = order['c'].find('_')
+            second_underscore_index = order['c'].find('_', first_underscore_index + 1)
+            if second_underscore_index != -1:
+                original_order_id = order['c'][:second_underscore_index]
             else:
                 original_order_id = order['c']
+
+            logging.info(f'original_order_id {original_order_id}')
 
             original_order = self.waiting_orders.get(original_order_id)
 

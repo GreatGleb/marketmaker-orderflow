@@ -347,7 +347,6 @@ class BinanceBot(Command):
             self.close_order_by_ma25(db_order)
         )
 
-        await setting_sl_sw_to_order_task
         await close_order_by_ma25_task
         await delete_task
 
