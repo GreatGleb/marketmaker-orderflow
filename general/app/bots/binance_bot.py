@@ -79,9 +79,6 @@ class BinanceBot(Command):
 
         logging.info('finished creating binance client')
 
-        sleep_time = 60*60*2
-        await asyncio.sleep(sleep_time)
-
         tasks = []
         logging.info('tasks')
 
