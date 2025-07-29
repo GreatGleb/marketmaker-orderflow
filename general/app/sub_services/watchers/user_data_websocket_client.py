@@ -104,13 +104,12 @@ class UserDataWebSocketClient:
 
         original_order = None
 
-        if 'stop' in order['c']:
-            first_underscore_index = order['c'].find('_')
-            second_underscore_index = order['c'].find('_', first_underscore_index + 1)
-            if second_underscore_index != -1:
-                original_order_id = order['c'][:second_underscore_index]
-                order['c'] = f'{original_order_id}_stop_ma25'
-                logging.info(f'order[\'c\'] {order['c']}')
+        # if 'stop' in order['c']:
+        #     first_underscore_index = order['c'].find('_')
+        #     second_underscore_index = order['c'].find('_', first_underscore_index + 1)
+        #     if second_underscore_index != -1:
+        #         original_order_id = order['c'][:second_underscore_index]
+        #         order['c'] = f'{original_order_id}_stop_ma25'
 
         if 'stop' in order['c']:
             first_underscore_index = order['c'].find('_')
@@ -120,6 +119,7 @@ class UserDataWebSocketClient:
             else:
                 original_order_id = order['c']
 
+            logging.info(f'order[\'c\'] {order['c']}')
             logging.info(f'original_order_id {original_order_id}')
 
             original_order = self.waiting_orders.get(original_order_id)
