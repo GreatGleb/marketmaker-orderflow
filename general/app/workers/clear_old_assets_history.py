@@ -39,6 +39,7 @@ class ClearOldAssetsHistoryCommand(Command):
 
     async def clear_disk(self) -> CommandResult:
         table_name = "asset_history"
+        start_time = time.time()
 
         await self.redis.set(f"{table_name}:stop", 1)
 
@@ -60,7 +61,6 @@ class ClearOldAssetsHistoryCommand(Command):
         pg_env["PGPASSWORD"] = os.getenv("DB_SUPER_PASSWORD")
 
         print(f"⏳ Запуск pg_repack для таблицы: {table_name}")
-        start_time = time.time()
         success = True
         try:
             process = await asyncio.create_subprocess_exec(

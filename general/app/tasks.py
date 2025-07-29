@@ -20,7 +20,8 @@ app.conf.beat_schedule = {
     },
     "clear-old-assets-history-every-day": {
         "task": "app.tasks.clear_old_assets_history",
-        "schedule": crontab(minute=0, hour=1),  # 01:00 UTC
+        # "schedule": crontab(minute=0, hour=1),  # 01:00 UTC
+        "schedule": crontab(minute=30, hour=19),  # 19:00 UTC
     },
 }
 
