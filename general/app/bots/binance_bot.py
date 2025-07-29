@@ -119,18 +119,20 @@ class BinanceBot(Command):
         copy_bot = await self._get_copy_bot_tf_params()
         logging.info('finished get_copy_bot_tf_params')
 
-        tf_bot_ids = await ProfitableBotUpdaterCommand.get_profitable_bots_id_by_tf(
-            bot_crud=self.bot_crud,
-            bot_profitability_timeframes=[copy_bot.copy_bot_min_time_profitability_min],
-        )
+        refer_bot = None
+        if copy_bot:
+            tf_bot_ids = await ProfitableBotUpdaterCommand.get_profitable_bots_id_by_tf(
+                bot_crud=self.bot_crud,
+                bot_profitability_timeframes=[copy_bot.copy_bot_min_time_profitability_min],
+            )
 
-        logging.info('finished get_profitable_bots_id_by_tf')
-        refer_bot = await ProfitableBotUpdaterCommand.get_bot_config_by_params(
-            bot_crud=self.bot_crud,
-            tf_bot_ids=tf_bot_ids,
-            copy_bot_min_time_profitability_min=copy_bot.copy_bot_min_time_profitability_min
-        )
-        logging.info('finished get_bot_config_by_params')
+            logging.info('finished get_profitable_bots_id_by_tf')
+            refer_bot = await ProfitableBotUpdaterCommand.get_bot_config_by_params(
+                bot_crud=self.bot_crud,
+                tf_bot_ids=tf_bot_ids,
+                copy_bot_min_time_profitability_min=copy_bot.copy_bot_min_time_profitability_min
+            )
+            logging.info('finished get_bot_config_by_params')
 
         test_order_crud = TestOrderCrud(self.session)
         are_bots_currently_active = await test_order_crud.are_bots_currently_active()
@@ -1329,15 +1331,11 @@ class BinanceBot(Command):
         return first_order_updating_data
 
     async def _get_copy_bot_tf_params(self):
-        copy_bot = TestBot(
-            symbol='symbol',
-            copy_bot_min_time_profitability_min=180
-        )
+        copy_bot = None
+        copy_bot_id = None
 
         profits_data = await self.bot_crud.get_sorted_by_profit(since=timedelta(hours=1), just_copy_bots=True)
         profits_data_filtered_sorted = sorted([item for item in profits_data if item[1] > 0], key=lambda x: x[1], reverse=True)
-
-        copy_bot_id = None
 
         try:
             copy_bot_id = profits_data_filtered_sorted[0][0]
