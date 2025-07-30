@@ -6,7 +6,7 @@ async def main():
     stop_event = asyncio.Event()
 
     await asyncio.gather(
-        VolatilePairCommand(stop_event=stop_event).run_async(),
+        VolatilePairCommand(stop_event=stop_event, is_need_list_of_symbols=True).run_async(),
     )
 
 
