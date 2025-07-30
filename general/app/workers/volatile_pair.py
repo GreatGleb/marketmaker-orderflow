@@ -76,14 +76,14 @@ class VolatilePairCommand(Command):
                     #     await redis.set(f"most_volatile_symbol_{tf_str}", symbol, ex=60)
                     #     logging.info(f"most_volatile_symbol_{tf_str} updated: {symbol}")
 
-                    most_volatiles = await asset_crud.get_most_volatiles_since(
-                        since=time_ago
-                    )
-                    if most_volatiles:
-                        i = 1
-                        for most_volatile in most_volatiles:
-                            logging.info(f"{i} most_volatile_symbol: {most_volatile}")
-                            i = i + 1
+                most_volatiles = await asset_crud.get_most_volatiles_since(
+                    since=time_ago
+                )
+                if most_volatiles:
+                    i = 1
+                    for most_volatile in most_volatiles:
+                        logging.info(f"{i} most_volatile_symbol: {most_volatile}")
+                        i = i + 1
                 logging.info('\n')
                 # if most_volatile and tf_str and symbol:
                 #     print(f"most_volatile_symbol_{tf_str} updated: {symbol}")
