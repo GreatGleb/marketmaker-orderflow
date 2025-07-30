@@ -18,10 +18,6 @@ class ExitStrategy:
         symbol,
         consider_ma_for_close_order,
     ):
-        ma25 = None
-        if consider_ma_for_close_order:
-            ma25 = await binance_bot.get_ma(symbol=symbol, ma_number=25, current_price=updated_price)
-
         if trade_type == TradeType.BUY:
             if (
                 price_from_previous_step < updated_price
@@ -30,9 +26,6 @@ class ExitStrategy:
                 take_profit_price = new_tk_p
             elif new_sl_p > order.stop_loss_price:
                 order.stop_loss_price = new_sl_p
-
-            if ma25 and updated_price < ma25:
-                return True, take_profit_price
 
             if updated_price <= order.stop_loss_price:
                 order.stop_reason_event = StopReasonEvent.STOP_LOOSED.value

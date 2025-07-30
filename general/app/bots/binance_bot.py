@@ -353,11 +353,12 @@ class BinanceBot(Command):
             self.setting_sl_sw_to_order(db_order, bot_config, tick_size)
         )
 
-        close_order_by_ma25_task = asyncio.create_task(
-            self.close_order_by_ma25(db_order)
-        )
+        # close_order_by_ma25_task = asyncio.create_task(
+        #     self.close_order_by_ma25(db_order)
+        # )
+        # await close_order_by_ma25_task
 
-        await close_order_by_ma25_task
+        await setting_sl_sw_to_order_task
         await delete_task
 
         try:
