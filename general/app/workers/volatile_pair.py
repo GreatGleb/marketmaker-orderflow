@@ -54,9 +54,9 @@ class VolatilePairCommand(Command):
                         await bot_crud.get_unique_min_timeframe_volatility_values()
                     )
                     asset_volatility_timeframes = list(unique_values)
+                    asset_volatility_timeframes.append('4.00')
+                    asset_volatility_timeframes.append('5.00')
                     first_run_completed = True
-                asset_volatility_timeframes.append('4.00')
-                asset_volatility_timeframes.append('5.00')
 
                 most_volatile = None
                 tf_str = None
