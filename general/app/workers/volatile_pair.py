@@ -54,8 +54,8 @@ class VolatilePairCommand(Command):
                         await bot_crud.get_unique_min_timeframe_volatility_values()
                     )
                     asset_volatility_timeframes = list(unique_values)
-                    asset_volatility_timeframes.append('4.00')
-                    asset_volatility_timeframes.append('5.00')
+                    # asset_volatility_timeframes.append('4.00')
+                    # asset_volatility_timeframes.append('5.00')
                     first_run_completed = True
 
                 most_volatile = None
@@ -67,15 +67,26 @@ class VolatilePairCommand(Command):
                     now = datetime.now(UTC)
                     time_ago = now - timedelta(minutes=tf)
 
-                    most_volatile = await asset_crud.get_most_volatile_since(
+                    # most_volatile = await asset_crud.get_most_volatile_since(
+                    #     since=time_ago
+                    # )
+
+                    # if most_volatile:
+                    #     symbol = most_volatile.symbol
+                    #     await redis.set(f"most_volatile_symbol_{tf_str}", symbol, ex=60)
+                    #     logging.info(f"most_volatile_symbol_{tf_str} updated: {symbol}")
+
+                    most_volatiles = await asset_crud.get_most_volatiles_since(
                         since=time_ago
                     )
 
-                    if most_volatile:
-                        symbol = most_volatile.symbol
-                        await redis.set(f"most_volatile_symbol_{tf_str}", symbol, ex=60)
-                        logging.info(f"most_volatile_symbol_{tf_str} updated: {symbol}")
-
+                    if most_volatiles:
+                        i = 1
+                        for most_volatile in most_volatiles:
+                            symbol = most_volatile.symbol
+                            logging.info(f"{i} most_volatile_symbol_{tf_str} updated: {symbol}")
+                            i = i + 1
+                logging.info('\n')
                 # if most_volatile and tf_str and symbol:
                 #     print(f"most_volatile_symbol_{tf_str} updated: {symbol}")
             except Exception as e:

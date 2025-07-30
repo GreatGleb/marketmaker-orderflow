@@ -48,6 +48,24 @@ class AssetHistoryCrud(BaseCrud[AssetHistory]):
         result = await self.session.execute(query)
         return result.first()
 
+    async def get_most_volatiles_since(self, since: datetime):
+        query = (
+            select(
+                AssetHistory.symbol,
+                func.abs(
+                    (func.max(AssetHistory.last_price) - func.min(AssetHistory.last_price))
+                    / func.min(AssetHistory.last_price)
+                ).label("volatility")
+            )
+            .where(AssetHistory.event_time >= since)
+            .group_by(AssetHistory.symbol)
+            .order_by(text("volatility DESC"))
+            .limit(5)
+        )
+
+        result = await self.session.execute(query)
+        return result.scalars().all()
+
     async def get_latest_price(self, symbol: str) -> Decimal | None:
         stmt = (
             select(AssetHistory.last_price)
