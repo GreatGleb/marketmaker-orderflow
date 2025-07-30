@@ -61,6 +61,8 @@ class VolatilePairCommand(Command):
                 tf_str = None
                 symbol = None
 
+                logging.info(f'self.is_need_list_of_symbols {self.is_need_list_of_symbols}')
+
                 if not self.is_need_list_of_symbols:
                     for tf_str in asset_volatility_timeframes:
                         tf = float(tf_str)
