@@ -87,12 +87,13 @@ class BinanceBot(Command):
 
         async def _run_loop():
             while not self.stop_event.is_set():
-                # try:
-                logging.info('before creating orders')
-                await self.creating_orders_bot()
-                # except Exception as e:
-                #     logging.info(f"❌ Ошибка в боте: {e}")
-                #     await asyncio.sleep(60)
+                try:
+                    logging.info('before creating orders')
+                    await self.creating_orders_bot()
+                except Exception as e:
+                    logging.info(f"❌ Ошибка в боте: {e}")
+                    await asyncio.sleep(60)
+                    break
 
         tasks.append(asyncio.create_task(_run_loop()))
         await asyncio.gather(*tasks)
