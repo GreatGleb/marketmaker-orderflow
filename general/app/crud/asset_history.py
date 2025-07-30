@@ -60,7 +60,7 @@ class AssetHistoryCrud(BaseCrud[AssetHistory]):
             .where(AssetHistory.event_time >= since)
             .group_by(AssetHistory.symbol)
             .order_by(text("volatility DESC"))
-            .limit(5)
+            .limit(10)
         )
 
         result = await self.session.execute(query)
