@@ -79,13 +79,10 @@ class VolatilePairCommand(Command):
                     most_volatiles = await asset_crud.get_most_volatiles_since(
                         since=time_ago
                     )
-                    logging.info(f'most_volatiles {most_volatiles}')
-
                     if most_volatiles:
                         i = 1
                         for most_volatile in most_volatiles:
-                            symbol = most_volatile.symbol
-                            logging.info(f"{i} most_volatile_symbol: {symbol}")
+                            logging.info(f"{i} most_volatile_symbol: {most_volatile}")
                             i = i + 1
                 logging.info('\n')
                 # if most_volatile and tf_str and symbol:
