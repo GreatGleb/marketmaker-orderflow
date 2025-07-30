@@ -44,9 +44,6 @@ class ExitStrategy:
             elif new_sl_p < order.stop_loss_price:
                 order.stop_loss_price = new_sl_p
 
-            if ma25 and updated_price > ma25:
-                return True, take_profit_price
-
             if updated_price >= order.stop_loss_price:
                 order.stop_reason_event = StopReasonEvent.STOP_LOOSED.value
                 return True, take_profit_price
