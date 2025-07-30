@@ -266,7 +266,7 @@ class BinanceBot(Command):
             self.session.add(db_order_sell)
             await self.session.commit()
         except Exception as e:
-            self.session.rollback()
+            await self.session.rollback()
             logging.info(f"❌ Error adding market order to DB: {e}")
             await asyncio.sleep(60)
             return
@@ -360,7 +360,7 @@ class BinanceBot(Command):
         try:
             await self.session.commit()
         except Exception as e:
-            self.session.rollback()
+            await self.session.rollback()
             logging.info(f"❌ Error DB: {e}")
             return
 

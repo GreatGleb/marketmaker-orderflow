@@ -25,11 +25,16 @@ async def _wait_when_db_table_will_free(redis):
 
 
 async def save_filtered_assets(session: AsyncSession, redis, data: list[dict]):
-    history_crud = AssetHistoryCrud(session)
-    watched_crud = WatchedPairCrud(session)
+    try:
+        history_crud = AssetHistoryCrud(session)
+        watched_crud = WatchedPairCrud(session)
 
-    symbol_to_id = await watched_crud.get_symbol_to_id_map()
-    symbols_set = set(symbol_to_id.keys())
+        symbol_to_id = await watched_crud.get_symbol_to_id_map()
+        symbols_set = set(symbol_to_id.keys())
+    except Exception as e:
+        await session.rollback()
+        print(f"❌ Error DB: {e}")
+        return
 
     records = []
 
@@ -71,9 +76,14 @@ async def save_filtered_assets(session: AsyncSession, redis, data: list[dict]):
         print(f'It is stopped')
         await _wait_when_db_table_will_free(redis)
 
-    await history_crud.bulk_create(records)
-    await session.commit()
-    print(f"✅ Saved {len(records)} asset history records.")
+    try:
+        await history_crud.bulk_create(records)
+        await session.commit()
+        print(f"✅ Saved {len(records)} asset history records.")
+    except Exception as e:
+        await session.rollback()
+        print(f"❌ Error DB: {e}")
+        return
 
 
 async def run_websocket_listener():
