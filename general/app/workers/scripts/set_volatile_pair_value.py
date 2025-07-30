@@ -1,3 +1,4 @@
+import argparse
 import asyncio
 from app.workers.volatile_pair import VolatilePairCommand
 
@@ -11,4 +12,11 @@ async def main(is_need_list_of_symbols=False):
 
 
 if __name__ == "__main__":
-    asyncio.run(main(is_need_list_of_symbols=True))
+    parser = argparse.ArgumentParser(description="Обновляет статистику")
+    parser.add_argument('-l', '--list', type=int, help="List")
+    args = parser.parse_args()
+
+    if args.list:
+        asyncio.run(main(is_need_list_of_symbols=args.list))
+    else:
+        asyncio.run(main())
