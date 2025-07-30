@@ -46,7 +46,7 @@ class UserDataWebSocketClient:
                         if data.get("e") == "ORDER_TRADE_UPDATE":
                             await self.handle_order_update(data["o"])
             except Exception as e:
-                logging.info("❌ Ошибка WebSocket:", e)
+                logging.info(f"❌ Ошибка WebSocket: {e}")
                 await asyncio.sleep(5)
 
     async def keep_alive(self):
@@ -56,7 +56,7 @@ class UserDataWebSocketClient:
                 await asyncio.sleep(30 * 60)
                 self.client.futures_stream_keepalive(listenKey=self.listen_key)
         except Exception as e:
-            logging.info("⚠️ Ошибка в keep-alive:", e)
+            logging.info(f"⚠️ Ошибка в keep-alive: {e}")
             self.listen_key = self.client.futures_stream_get_listen_key()
 
     async def start(self):
