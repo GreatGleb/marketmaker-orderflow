@@ -79,7 +79,7 @@ class VolatilePairCommand(Command):
                             logging.info(f"most_volatile_symbol_{tf_str} updated: {symbol}")
                 else:
                     now = datetime.now(UTC)
-                    time_ago = now - timedelta(hours=2)
+                    time_ago = now - timedelta(hours=1)
 
                     most_volatiles = await asset_crud.get_most_volatiles_since(
                         since=time_ago
