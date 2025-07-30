@@ -79,7 +79,7 @@ class VolatilePairCommand(Command):
                     most_volatiles = await asset_crud.get_most_volatiles_since(
                         since=time_ago
                     )
-                    logging.info('most_volatiles')
+                    logging.info(f'most_volatiles {most_volatiles}')
 
                     if most_volatiles:
                         i = 1
