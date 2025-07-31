@@ -352,7 +352,7 @@ class BinanceBot(Command):
 
         start = time.time()
         try:
-            self.session.commit()
+            await self.session.commit()
         except Exception as e:
             await self.session.rollback()
             logging.info(f"❌ Error DB: {e}")
