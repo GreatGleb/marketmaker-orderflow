@@ -92,7 +92,6 @@ class BinanceBot(Command):
                 await self.creating_orders_bot()
                 # except Exception as e:
                 # logging.info(f"❌ Ошибка в боте: {e}")
-                logging.info(self.session)
                 await asyncio.sleep(60)
                 break
 
@@ -190,9 +189,9 @@ class BinanceBot(Command):
             symbol = 'BTCUSDT'
             bot_config = TestBot(
                 symbol='BTCUSDT',
-                stop_success_ticks = 40,
-                stop_loss_ticks = 70,
-                start_updown_ticks = 10,
+                stop_success_ticks = 20,
+                stop_loss_ticks = 20,
+                start_updown_ticks = 50,
                 min_timeframe_asset_volatility = 3,
                 time_to_wait_for_entry_price_to_open_order_in_minutes = 0.5,
             )
@@ -301,7 +300,18 @@ class BinanceBot(Command):
             logging.info(f"Both orders was canceled")
             return
 
-        wait_for_order = await self._wait_until_order_activated(bot_config, db_order_buy, db_order_sell)
+        waiting_orders = [
+            {
+                'db_order': db_order_buy,
+                'exchange_order': exchange_orders['order_buy'],
+            },
+            {
+                'db_order': db_order_sell,
+                'exchange_order': exchange_orders['order_sell'],
+            },
+        ]
+
+        wait_for_order = await self._wait_until_order_activated(bot_config, waiting_orders)
         if not wait_for_order['timeout_missed']:
             logging.info(f"A minute has passed, entry conditions have not been met")
             return
@@ -355,7 +365,6 @@ class BinanceBot(Command):
         try:
             await session.commit()
         except Exception as e:
-            await session.rollback()
             logging.info(f"❌ Error DB: {e}")
             logging.error(f"❌ Error DB: {e}")
         return
@@ -670,7 +679,6 @@ class BinanceBot(Command):
                 )
 
                 executed_qty = binance_deleting_order["executedQty"]
-            logging.info(f'Deleting open position executed_qty: {executed_qty} at symbol: {db_order.symbol}')
 
             if db_order.side == 'BUY':
                 order_side = SIDE_SELL
@@ -680,6 +688,8 @@ class BinanceBot(Command):
                 order_position_side = 'SHORT'
 
             if Decimal(executed_qty) > 0:
+                logging.info(f'Deleting open position executed_qty: {executed_qty} at symbol: {db_order.symbol}')
+
                 try:
                     if deleting_order_id:
                         await self._safe_from_time_err_call_binance(
@@ -840,7 +850,7 @@ class BinanceBot(Command):
             'order_position_side': order_position_side,
         }
 
-        for key, tick_count in {'sl': db_order.stop_loss_ticks, 'sw': db_order.stop_success_ticks}.items():
+        for key, tick_count in {'sl': db_order.trailing_stop_lose_ticks, 'sw': db_order.trailing_stop_win_ticks}.items():
             tick_value = tick_size * tick_count
 
             is_need_custom_callback = False
@@ -1146,9 +1156,9 @@ class BinanceBot(Command):
 
     async def _get_order_stop_price_for_custom_trailing(self, db_order, stop_type, prices, tick_size):
         if stop_type == 'stop_win':
-            tick_count = db_order.stop_success_ticks * tick_size
+            tick_count = db_order.trailing_stop_win_ticks * tick_size
         else:
-            tick_count = db_order.stop_loss_ticks * tick_size
+            tick_count = db_order.trailing_stop_lose_ticks * tick_size
 
         if db_order.side == 'BUY':
             stop_price = prices['max'] - tick_count
@@ -1265,8 +1275,8 @@ class BinanceBot(Command):
     async def _check_if_price_less_then_stops(self, close_not_lose_price, tick_size, db_order):
         current_price = await self.price_provider.get_price(symbol=db_order.symbol)
 
-        sw_tick_value = db_order.stop_success_ticks * tick_size
-        sl_tick_value = db_order.stop_loss_ticks * tick_size
+        sw_tick_value = db_order.trailing_stop_win_ticks * tick_size
+        sl_tick_value = db_order.trailing_stop_lose_ticks * tick_size
 
         if db_order.side == 'BUY':
             sw_price = current_price - sw_tick_value
@@ -1366,7 +1376,7 @@ class BinanceBot(Command):
                 else:
                     raise
 
-    async def _wait_until_order_activated(self, bot_config, db_order_buy, db_order_sell):
+    async def _wait_until_order_activated(self, bot_config, waiting_orders):
         timeout_missed = True
         first_order_updating_data = None
 
@@ -1387,8 +1397,10 @@ class BinanceBot(Command):
             timeout_missed = False
 
         if not timeout_missed:
-            for db_order in [db_order_buy, db_order_sell]:
-                if db_order.close_reason is None and db_order.exchange_order_id and db_order:
+            for waiting_order in waiting_orders:
+                db_order = waiting_order['db_order']
+                exchange_order = waiting_order['exchange_order']
+                if db_order.close_reason is None and db_order.exchange_order_id and exchange_order:
                     await self.delete_order(
                         db_order=db_order,
                         status='CANCELED',

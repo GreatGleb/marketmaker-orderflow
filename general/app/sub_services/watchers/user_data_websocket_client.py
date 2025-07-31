@@ -1,9 +1,13 @@
 import asyncio
+import os
+
 import websockets
 import json
 from decimal import Decimal
 from datetime import datetime, timedelta, timezone
 import logging
+
+from dotenv import load_dotenv
 
 UTC = timezone.utc
 
@@ -11,11 +15,17 @@ class UserDataWebSocketClient:
     def __init__(self, binance_client, waiting_orders):
         self.client = binance_client
         self.listen_key = self.client.futures_stream_get_listen_key()
-        # testnet
-        # domain = "stream.binancefuture.com"
-        # market
-        domain = "fstream.binance.com"
+
+        load_dotenv()
+        self.is_prod = os.getenv("ENVIRONMENT") == "prod"
+        if self.is_prod:
+            # market
+            domain = "fstream.binance.com"
+        else:
+            # testnet
+            domain = "stream.binancefuture.com"
         self.url = f"wss://{domain}/ws/{self.listen_key}"
+
         self.first_order_started_event = asyncio.Event()
         self.first_order_filled_event = asyncio.Event()
         self.connected_event = asyncio.Event()
