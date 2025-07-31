@@ -356,7 +356,7 @@ class BinanceBot(Command):
         except Exception as e:
             await self.session.rollback()
             logging.info(f"❌ Error DB: {e}")
-            logging.info(f"❌❌❌")
+            logging.info(f"❌❌x❌")
 
         end = time.time()
         logging.info(f'time: {(end - start)} s')
