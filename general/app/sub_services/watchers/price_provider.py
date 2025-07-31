@@ -35,13 +35,16 @@ class PriceWatcher:
         while True:
             current_price = await self.price_provider.get_price(symbol)
 
-            ma25 = None
             if consider_ma_for_open_order:
                 ma25 = await binance_bot.get_ma(symbol=symbol, ma_number=25, current_price=current_price)
-
-            if current_price >= entry_price_buy and (not ma25 or (ma25 and current_price > ma25)):
-                return TradeType.BUY.value, current_price
-            elif current_price <= entry_price_sell and (not ma25 or (ma25 and current_price < ma25)):
-                return TradeType.SELL.value, current_price
+                if not ma25 or (ma25 and current_price > ma25):
+                    return TradeType.BUY.value, current_price
+                elif not ma25 or (ma25 and current_price < ma25):
+                    return TradeType.SELL.value, current_price
+            else:
+                if current_price >= entry_price_buy:
+                    return TradeType.BUY.value, current_price
+                elif current_price <= entry_price_sell:
+                    return TradeType.SELL.value, current_price
 
             await asyncio.sleep(0.1)

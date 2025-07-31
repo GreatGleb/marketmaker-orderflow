@@ -794,6 +794,7 @@ class BinanceBot(Command):
                     deleting_order_id=deleting_order_id
                 )
                 break
+            await asyncio.sleep(0.1)
         return
 
     def _get_sl_sw_params(self, db_order, bot_config, tick_size):

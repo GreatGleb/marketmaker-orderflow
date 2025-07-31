@@ -5,20 +5,30 @@ from app.enums.event_type import StopReasonEvent
 class ExitStrategy:
 
     @staticmethod
-    async def check_exit_conditions(
-        trade_type,
-        price_from_previous_step,
-        updated_price,
-        new_tk_p,
-        new_sl_p,
+    async def check_exit_ticks_conditions(
+        bot_config,
+        price_calculator,
+        tick_size,
+        order,
         close_not_lose_price,
         take_profit_price,
-        order,
-        binance_bot,
-        symbol,
-        consider_ma_for_close_order,
+        updated_price,
+        price_from_previous_step,
     ):
-        if trade_type == TradeType.BUY:
+        new_tk_p = price_calculator.calculate_take_profit_price(
+            stop_success_ticks=bot_config.stop_success_ticks,
+            tick_size=tick_size,
+            open_price=updated_price,
+            trade_type=order.order_type,
+        )
+        new_sl_p = price_calculator.calculate_stop_lose_price(
+            stop_loss_ticks=bot_config.stop_loss_ticks,
+            tick_size=tick_size,
+            trade_type=order.order_type,
+            open_price=updated_price,
+        )
+
+        if order.order_type == TradeType.BUY:
             if (
                 price_from_previous_step < updated_price
                 and new_tk_p > take_profit_price
@@ -34,7 +44,6 @@ class ExitStrategy:
             if close_not_lose_price < updated_price <= take_profit_price:
                 order.stop_reason_event = StopReasonEvent.STOP_WON.value
                 return True, take_profit_price
-
         else:
             if (
                 price_from_previous_step > updated_price
@@ -53,3 +62,21 @@ class ExitStrategy:
                 return True, take_profit_price
 
         return False, take_profit_price
+
+    @staticmethod
+    async def check_exit_ma_conditions(
+        binance_bot,
+        symbol,
+        order,
+        updated_price,
+    ):
+        ma25 = await binance_bot.get_ma(symbol=symbol, ma_number=25, current_price=updated_price)
+
+        if order.order_type == TradeType.BUY:
+            if ma25 and updated_price < ma25:
+                return True
+        else:
+            if ma25 and updated_price > ma25:
+                return True
+
+        return False

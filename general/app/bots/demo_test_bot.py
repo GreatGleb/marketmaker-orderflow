@@ -283,39 +283,34 @@ class StartTestBotsCommand(Command):
                 open_fee=(
                     Decimal(bot_config.balance) * Decimal(COMMISSION_OPEN)
                 ),
+                order_type=trade_type
             )
 
             while not stop_event.is_set():
                 updated_price = await price_provider.get_price(symbol=symbol)
 
-                new_tk_p = PriceCalculator.calculate_take_profit_price(
-                    stop_success_ticks=bot_config.stop_success_ticks,
-                    tick_size=tick_size,
-                    open_price=updated_price,
-                    trade_type=trade_type,
-                )
-                new_sl_p = PriceCalculator.calculate_stop_lose_price(
-                    stop_loss_ticks=bot_config.stop_loss_ticks,
-                    tick_size=tick_size,
-                    trade_type=trade_type,
-                    open_price=updated_price,
-                )
-
-                should_exit, take_profit_price = (
-                    await ExitStrategy.check_exit_conditions(
-                        trade_type=trade_type,
-                        price_from_previous_step=price_from_previous_step,
-                        updated_price=updated_price,
-                        new_tk_p=new_tk_p,
-                        new_sl_p=new_sl_p,
-                        close_not_lose_price=close_not_lose_price,
-                        take_profit_price=take_profit_price,
-                        order=order,
-                        binance_bot=binance_bot,
-                        symbol=symbol,
-                        consider_ma_for_close_order=bot_config.consider_ma_for_close_order,
+                if bot_config.consider_ma_for_close_order:
+                    should_exit = (
+                        await ExitStrategy.check_exit_ma_conditions(
+                            binance_bot=binance_bot,
+                            symbol=symbol,
+                            order=order,
+                            updated_price=updated_price,
+                        )
                     )
-                )
+                else:
+                    should_exit, take_profit_price = (
+                        await ExitStrategy.check_exit_ticks_conditions(
+                            bot_config=bot_config,
+                            price_calculator=PriceCalculator,
+                            tick_size=tick_size,
+                            order=order,
+                            close_not_lose_price=close_not_lose_price,
+                            take_profit_price=take_profit_price,
+                            updated_price=updated_price,
+                            price_from_previous_step=price_from_previous_step,
+                        )
+                    )
 
                 if should_exit:
                     break
