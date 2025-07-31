@@ -1,10 +1,11 @@
 import asyncio
 import threading
+import time
 
 from app.bots.binance_bot import BinanceBot
 
 def input_listener(loop, stop_event):
-    while True:
+    while not stop_event.is_set():
         cmd = (
             input("👉 Введите 'stop' чтобы остановить бота:\n").strip().lower()
         )
@@ -12,6 +13,8 @@ def input_listener(loop, stop_event):
             print("🛑 Останавливаем бота...")
             loop.call_soon_threadsafe(stop_event.set)
             break
+
+        time.sleep(1)
 
 
 async def main():
@@ -28,6 +31,8 @@ async def main():
     )
 
     print("✅ Бот завершён.")
+    stop_event.set()
+    input_thread.join()
 
 
 if __name__ == "__main__":
