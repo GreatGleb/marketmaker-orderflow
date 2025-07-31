@@ -350,6 +350,17 @@ class BinanceBot(Command):
             self._wait_until_order_filled(bot_config, db_order)
         )
 
+        start = time.time()
+        try:
+            self.session.commit()
+        except Exception as e:
+            await self.session.rollback()
+            logging.info(f"❌ Error DB: {e}")
+            logging.info(f"❌❌❌")
+
+        end = time.time()
+        logging.info(f'time: {(end - start)} s')
+
         wait_db_commit_task = asyncio.create_task(
             self._db_commit()
         )
