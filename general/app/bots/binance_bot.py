@@ -1402,8 +1402,13 @@ class BinanceBot(Command):
         timeout_missed = True
         first_order_updating_data = None
 
+        wait_minutes = 1
+
+        if bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes:
+            wait_minutes = bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes
+
         try:
-            timeout = Decimal(bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes)
+            timeout = Decimal(wait_minutes)
             timeout = int(timeout * 60)
 
             first_order_updating_data = await asyncio.wait_for(
