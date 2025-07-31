@@ -1346,26 +1346,25 @@ class BinanceBot(Command):
         timeout_missed = True
         first_order_updating_data = None
 
-        if not bot_config.consider_ma_for_open_order:
-            try:
-                timeout = Decimal(bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes)
-                timeout = int(timeout * 60)
+        try:
+            timeout = Decimal(bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes)
+            timeout = int(timeout * 60)
 
-                first_order_updating_data = await asyncio.wait_for(
-                    self._wait_activating_of_order(),
-                    timeout=timeout
-                )
-            except asyncio.TimeoutError:
-                timeout_missed = False
+            first_order_updating_data = await asyncio.wait_for(
+                self._wait_activating_of_order(),
+                timeout=timeout
+            )
+        except asyncio.TimeoutError:
+            timeout_missed = False
 
-            if not timeout_missed:
-                for db_order in [db_order_buy, db_order_sell]:
-                    if db_order.close_reason is None and db_order.exchange_order_id:
-                        await self.delete_order(
-                            db_order=db_order,
-                            status='CANCELED',
-                            close_reason=f'A minute has passed, entry conditions have not been met'
-                        )
+        if not timeout_missed:
+            for db_order in [db_order_buy, db_order_sell]:
+                if db_order.close_reason is None and db_order.exchange_order_id:
+                    await self.delete_order(
+                        db_order=db_order,
+                        status='CANCELED',
+                        close_reason=f'A minute has passed, entry conditions have not been met'
+                    )
 
         return {
             'timeout_missed': timeout_missed,
