@@ -92,8 +92,8 @@ class BinanceBot(Command):
                 await self.creating_orders_bot()
                 # except Exception as e:
                 # logging.info(f"❌ Ошибка в боте: {e}")
-                await asyncio.sleep(60)
                 logging.info(self.session)
+                await asyncio.sleep(60)
                 break
 
         tasks.append(asyncio.create_task(_run_loop()))
@@ -120,75 +120,82 @@ class BinanceBot(Command):
             return False
 
     async def creating_orders_bot(self):
-        # logging.info('start function creating_orders_bot')
-        # copy_bot = await self._get_copy_bot_tf_params()
-        # logging.info('finished get_copy_bot_tf_params')
-        #
-        # refer_bot = None
-        # if copy_bot:
-        #     tf_bot_ids = await ProfitableBotUpdaterCommand.get_profitable_bots_id_by_tf(
-        #         bot_crud=self.bot_crud,
-        #         bot_profitability_timeframes=[copy_bot.copy_bot_min_time_profitability_min],
-        #     )
-        #
-        #     logging.info('finished get_profitable_bots_id_by_tf')
-        #     refer_bot = await ProfitableBotUpdaterCommand.get_bot_config_by_params(
-        #         bot_crud=self.bot_crud,
-        #         tf_bot_ids=tf_bot_ids,
-        #         copy_bot_min_time_profitability_min=copy_bot.copy_bot_min_time_profitability_min
-        #     )
-        #     logging.info('finished get_bot_config_by_params')
-        #
-        # test_order_crud = TestOrderCrud(self.session)
-        # are_bots_currently_active = await test_order_crud.are_bots_currently_active()
-        #
-        # if not are_bots_currently_active:
-        #     logging.info('not are_bots_currently_active')
-        #     await asyncio.sleep(60)
-        #     return
-        #
-        # if not refer_bot:
-        #     logging.info('not refer_bot')
-        #     await asyncio.sleep(60)
-        #     return
-        #
-        # if self.is_prod:
-        #     symbol = await self.redis.get(f"most_volatile_symbol_{refer_bot['min_timeframe_asset_volatility']}")
-        #     if not symbol:
-        #         logging.info(f"❌ Не найдено самую волатильную пару")
-        #         await asyncio.sleep(60)
-        #         return
-        #
-        #     bot_config = TestBot(
-        #         symbol=refer_bot['symbol'],
-        #         stop_success_ticks=refer_bot['stop_success_ticks'],
-        #         stop_loss_ticks = refer_bot['stop_loss_ticks'],
-        #         start_updown_ticks = refer_bot['start_updown_ticks'],
-        #         stop_win_percents = Decimal(refer_bot['stop_win_percents']),
-        #         stop_loss_percents = Decimal(refer_bot['stop_loss_percents']),
-        #         start_updown_percents = Decimal(refer_bot['start_updown_percents']),
-        #         min_timeframe_asset_volatility = refer_bot['min_timeframe_asset_volatility'],
-        #         time_to_wait_for_entry_price_to_open_order_in_minutes = refer_bot['time_to_wait_for_entry_price_to_open_order_in_minutes'],
-        #         consider_ma_for_open_order=copy_bot.consider_ma_for_open_order,
-        #         consider_ma_for_close_order=copy_bot.consider_ma_for_close_order,
-        #     )
-        # else:
-        #     symbol = 'BTCUSDT'
-        #     bot_config = TestBot(
-        #         symbol='BTCUSDT',
-        #         stop_success_ticks = 40,
-        #         stop_loss_ticks = 70,
-        #         start_updown_ticks = 10,
-        #         min_timeframe_asset_volatility = 3,
-        #         time_to_wait_for_entry_price_to_open_order_in_minutes = 0.5
-        #     )
+        logging.info('start function creating_orders_bot')
+        copy_bot = await self._get_copy_bot_tf_params()
+        logging.info('finished get_copy_bot_tf_params')
 
-        symbol = 'XRPUSDT'
-        bot_config = TestBot(
-            symbol='XRPUSDT',
-            consider_ma_for_open_order=True,
-            consider_ma_for_close_order=True,
-        )
+        refer_bot = None
+        if copy_bot:
+            tf_bot_ids = await ProfitableBotUpdaterCommand.get_profitable_bots_id_by_tf(
+                bot_crud=self.bot_crud,
+                bot_profitability_timeframes=[copy_bot.copy_bot_min_time_profitability_min],
+            )
+
+            logging.info('finished get_profitable_bots_id_by_tf')
+            refer_bot = await ProfitableBotUpdaterCommand.get_bot_config_by_params(
+                bot_crud=self.bot_crud,
+                tf_bot_ids=tf_bot_ids,
+                copy_bot_min_time_profitability_min=copy_bot.copy_bot_min_time_profitability_min
+            )
+            logging.info('finished get_bot_config_by_params')
+
+        test_order_crud = TestOrderCrud(self.session)
+        are_bots_currently_active = await test_order_crud.are_bots_currently_active()
+
+        if not are_bots_currently_active:
+            logging.info('not are_bots_currently_active')
+            await asyncio.sleep(60)
+            return
+
+        if not refer_bot:
+            logging.info('not refer_bot, continue to work with XRP and ma strategy')
+            refer_bot = {
+                'symbol': 'XRPUSDT',
+                'consider_ma_for_open_order': True,
+                'consider_ma_for_close_order': True,
+            }
+
+        if self.is_prod:
+            if refer_bot['start_updown_ticks']:
+                symbol = await self.redis.get(f"most_volatile_symbol_{refer_bot['min_timeframe_asset_volatility']}")
+                if not symbol:
+                    logging.info(f"❌ Не найдено самую волатильную пару")
+                    await asyncio.sleep(60)
+                    return
+
+                bot_config = TestBot(
+                    symbol=refer_bot['symbol'],
+                    stop_success_ticks=refer_bot['stop_success_ticks'],
+                    stop_loss_ticks = refer_bot['stop_loss_ticks'],
+                    start_updown_ticks = refer_bot['start_updown_ticks'],
+                    stop_win_percents = Decimal(refer_bot['stop_win_percents']),
+                    stop_loss_percents = Decimal(refer_bot['stop_loss_percents']),
+                    start_updown_percents = Decimal(refer_bot['start_updown_percents']),
+                    min_timeframe_asset_volatility = refer_bot['min_timeframe_asset_volatility'],
+                    time_to_wait_for_entry_price_to_open_order_in_minutes = refer_bot['time_to_wait_for_entry_price_to_open_order_in_minutes'],
+                    consider_ma_for_open_order=copy_bot.consider_ma_for_open_order,
+                    consider_ma_for_close_order=copy_bot.consider_ma_for_close_order,
+                )
+            elif refer_bot['consider_ma_for_open_order'] and refer_bot['consider_ma_for_close_order']:
+                symbol = refer_bot['symbol']
+                bot_config = TestBot(
+                    symbol=refer_bot['symbol'],
+                    consider_ma_for_open_order=copy_bot.consider_ma_for_open_order,
+                    consider_ma_for_close_order=copy_bot.consider_ma_for_close_order,
+                )
+            else:
+                logging.info('not no one refer_bot')
+                return
+        else:
+            symbol = 'BTCUSDT'
+            bot_config = TestBot(
+                symbol='BTCUSDT',
+                stop_success_ticks = 40,
+                stop_loss_ticks = 70,
+                start_updown_ticks = 10,
+                min_timeframe_asset_volatility = 3,
+                time_to_wait_for_entry_price_to_open_order_in_minutes = 0.5,
+            )
 
         try:
             symbol_characteristics = self.symbols_characteristics.get(symbol)
@@ -249,51 +256,11 @@ class BinanceBot(Command):
 
         balanceUSDT099 = Decimal(balanceUSDT) * Decimal(0.99)
 
-        db_order_buy = MarketOrder(
+        db_order_buy, db_order_sell = await self._create_db_orders(
+            bot_config=bot_config,
             symbol=symbol,
-            exchange_name='BINANCE',
-            side='BUY',
-            position_side='LONG',
-            open_order_type=FUTURE_ORDER_TYPE_STOP_MARKET,
-            start_updown_ticks=bot_config.start_updown_ticks,
-            trailing_stop_lose_ticks=bot_config.stop_loss_ticks,
-            trailing_stop_win_ticks=bot_config.stop_success_ticks,
-            status='NEW'
+            session=self.session,
         )
-
-        db_order_sell = MarketOrder(
-            symbol=symbol,
-            exchange_name='BINANCE',
-            side='SELL',
-            position_side='SHORT',
-            open_order_type=FUTURE_ORDER_TYPE_STOP_MARKET,
-            start_updown_ticks=bot_config.start_updown_ticks,
-            trailing_stop_lose_ticks=bot_config.stop_loss_ticks,
-            trailing_stop_win_ticks=bot_config.stop_success_ticks,
-            status='NEW'
-        )
-
-        try:
-            self.session.add(db_order_buy)
-            self.session.add(db_order_sell)
-            await self.session.commit()
-        except Exception as e:
-            await self.session.rollback()
-            logging.info(f"❌ Error adding market order to DB: {e}")
-            await asyncio.sleep(60)
-            return
-
-        db_order_buy.client_order_id = f'buy_{db_order_buy.id}'
-        db_order_sell.client_order_id = f'sell_{db_order_sell.id}'
-
-        logging.info(db_order_buy.client_order_id)
-        logging.info(db_order_sell.client_order_id)
-
-        self.order_update_listener = UserDataWebSocketClient(
-            self.binance_client,
-            waiting_orders=[db_order_buy, db_order_sell]
-        )
-        await self.order_update_listener.start()
 
         exchange_orders = await self.create_orders(
             balanceUSDT=balanceUSDT099,
@@ -309,22 +276,26 @@ class BinanceBot(Command):
             db_order_sell=db_order_sell,
         )
 
-        # if not exchange_orders['order_buy'] or not exchange_orders['order_sell']:
-        #     if exchange_orders['order_buy'] and 'orderId' in exchange_orders['order_buy']:
-        #         await self.delete_order(
-        #             db_order=db_order_buy,
-        #             status='CANCELED',
-        #             close_reason=f'Can\'t create sell order, cancel both'
-        #         )
-        #     if exchange_orders['order_sell'] and 'orderId' in exchange_orders['order_sell']:
-        #         await self.delete_order(
-        #             db_order=db_order_sell,
-        #             status='CANCELED',
-        #             close_reason=f'Can\'t create buy order, cancel both'
-        #         )
-        #
-        #     logging.info(f"❌ Один из ордеров не может быть создан, второй ордер был отменён")
-        #     return
+        if (
+                bot_config.start_updown_ticks and (
+                not exchange_orders['order_buy'] or not exchange_orders['order_sell']
+            )
+        ):
+            if exchange_orders['order_buy'] and 'orderId' in exchange_orders['order_buy']:
+                await self.delete_order(
+                    db_order=db_order_buy,
+                    status='CANCELED',
+                    close_reason=f'Can\'t create sell order, cancel both'
+                )
+            if exchange_orders['order_sell'] and 'orderId' in exchange_orders['order_sell']:
+                await self.delete_order(
+                    db_order=db_order_sell,
+                    status='CANCELED',
+                    close_reason=f'Can\'t create buy order, cancel both'
+                )
+
+            logging.info(f"❌ Один из ордеров не может быть создан, второй ордер был отменён")
+            return
         if exchange_orders['order_buy'] is None and exchange_orders['order_sell'] is None:
             await asyncio.sleep(60)
             logging.info(f"Both orders was canceled")
@@ -365,7 +336,7 @@ class BinanceBot(Command):
 
         if not bot_config.consider_ma_for_close_order:
             setting_sl_sw_to_order_task = asyncio.create_task(
-                self.setting_sl_sw_to_order(db_order, bot_config, tick_size)
+                self.setting_sl_sw_to_order(db_order, tick_size)
             )
             await setting_sl_sw_to_order_task
         else:
@@ -389,51 +360,108 @@ class BinanceBot(Command):
             logging.error(f"❌ Error DB: {e}")
         return
 
+    async def _create_db_orders(self, symbol, bot_config, session):
+        db_order_buy = MarketOrder(
+            symbol=symbol,
+            exchange_name='BINANCE',
+            side='BUY',
+            position_side='LONG',
+            open_order_type=FUTURE_ORDER_TYPE_STOP_MARKET,
+            status='NEW'
+        )
+
+        db_order_sell = MarketOrder(
+            symbol=symbol,
+            exchange_name='BINANCE',
+            side='SELL',
+            position_side='SHORT',
+            open_order_type=FUTURE_ORDER_TYPE_STOP_MARKET,
+            status='NEW'
+        )
+
+        if bot_config.start_updown_ticks:
+            db_order_buy.start_updown_ticks = bot_config.start_updown_ticks
+            db_order_sell.start_updown_ticks = bot_config.start_updown_ticks
+        if bot_config.stop_loss_ticks:
+            db_order_buy.trailing_stop_lose_ticks = bot_config.stop_loss_ticks
+            db_order_sell.trailing_stop_lose_ticks = bot_config.stop_loss_ticks
+        if bot_config.stop_success_ticks:
+            db_order_buy.trailing_stop_win_ticks = bot_config.stop_success_ticks
+            db_order_sell.trailing_stop_win_ticks = bot_config.stop_success_ticks
+
+        try:
+            session.add(db_order_buy)
+            session.add(db_order_sell)
+            await session.commit()
+        except Exception as e:
+            await session.rollback()
+            logging.info(f"❌ Error adding market order to DB: {e}")
+            await asyncio.sleep(60)
+            return None, None
+
+        db_order_buy.client_order_id = f'buy_{db_order_buy.id}'
+        db_order_sell.client_order_id = f'sell_{db_order_sell.id}'
+
+        logging.info(db_order_buy.client_order_id)
+        logging.info(db_order_sell.client_order_id)
+
+        self.order_update_listener = UserDataWebSocketClient(
+            self.binance_client,
+            waiting_orders=[db_order_buy, db_order_sell]
+        )
+        await self.order_update_listener.start()
+
+        return db_order_buy, db_order_sell
+
     async def create_orders(
         self, balanceUSDT, bot_config,
         symbol, tick_size, lot_size, max_price, min_price, max_qty, min_qty,
         db_order_buy, db_order_sell
     ):
-        order_buy_create_task = asyncio.create_task(
-            self.create_order(
-                balanceUSDT=balanceUSDT,
-                bot_config=bot_config,
-                symbol=symbol,
-                tick_size=tick_size,
-                lot_size=lot_size,
-                max_price=max_price,
-                min_price=min_price,
-                max_qty=max_qty,
-                min_qty=min_qty,
-                creating_orders_type='buy',
-                futures_order_type=FUTURE_ORDER_TYPE_STOP_MARKET,
-                order_side=SIDE_BUY,
-                order_position_side="LONG",
-                db_order=db_order_buy,
-            )
-        )
+        order_buy = None
+        order_sell = None
 
-        order_sell_create_task = asyncio.create_task(
-            self.create_order(
-                balanceUSDT=balanceUSDT,
-                bot_config=bot_config,
-                symbol=symbol,
-                tick_size=tick_size,
-                lot_size=lot_size,
-                max_price=max_price,
-                min_price=min_price,
-                max_qty=max_qty,
-                min_qty=min_qty,
-                creating_orders_type='sell',
-                futures_order_type=FUTURE_ORDER_TYPE_STOP_MARKET,
-                order_side=SIDE_SELL,
-                order_position_side="SHORT",
-                db_order=db_order_sell,
+        if db_order_buy and db_order_sell:
+            order_buy_create_task = asyncio.create_task(
+                self.create_order(
+                    balanceUSDT=balanceUSDT,
+                    bot_config=bot_config,
+                    symbol=symbol,
+                    tick_size=tick_size,
+                    lot_size=lot_size,
+                    max_price=max_price,
+                    min_price=min_price,
+                    max_qty=max_qty,
+                    min_qty=min_qty,
+                    creating_orders_type='buy',
+                    futures_order_type=FUTURE_ORDER_TYPE_STOP_MARKET,
+                    order_side=SIDE_BUY,
+                    order_position_side="LONG",
+                    db_order=db_order_buy,
+                )
             )
-        )
 
-        order_buy = await order_buy_create_task
-        order_sell = await order_sell_create_task
+            order_sell_create_task = asyncio.create_task(
+                self.create_order(
+                    balanceUSDT=balanceUSDT,
+                    bot_config=bot_config,
+                    symbol=symbol,
+                    tick_size=tick_size,
+                    lot_size=lot_size,
+                    max_price=max_price,
+                    min_price=min_price,
+                    max_qty=max_qty,
+                    min_qty=min_qty,
+                    creating_orders_type='sell',
+                    futures_order_type=FUTURE_ORDER_TYPE_STOP_MARKET,
+                    order_side=SIDE_SELL,
+                    order_position_side="SHORT",
+                    db_order=db_order_sell,
+                )
+            )
+
+            order_buy = await order_buy_create_task
+            order_sell = await order_sell_create_task
 
         logging.info(
             f"order_buy: {order_buy}\n\n"
@@ -485,7 +513,7 @@ class BinanceBot(Command):
                         return order
 
             order_params = await self._get_order_params(
-                bot_config, balanceUSDT,
+                balanceUSDT,
                 symbol, tick_size, lot_size, max_price, min_price, max_qty, min_qty,
                 db_order
             )
@@ -533,7 +561,7 @@ class BinanceBot(Command):
                     break
 
                 order_params = await self._get_order_params(
-                    bot_config, balanceUSDT,
+                    balanceUSDT,
                     symbol, tick_size, lot_size, max_price, min_price, max_qty, min_qty,
                     db_order
                 )
@@ -747,8 +775,8 @@ class BinanceBot(Command):
 
         return True
 
-    async def setting_sl_sw_to_order(self, db_order, bot_config, tick_size):
-        sl_sw_params = self._get_sl_sw_params(db_order, bot_config, tick_size)
+    async def setting_sl_sw_to_order(self, db_order, tick_size):
+        sl_sw_params = self._get_sl_sw_params(db_order, tick_size)
 
         sl_custom_trailing = sl_sw_params['sl']['is_need_custom_callback']
         sw_custom_trailing = sl_sw_params['sw']['is_need_custom_callback']
@@ -758,13 +786,13 @@ class BinanceBot(Command):
         if sl_custom_trailing == sw_custom_trailing:
             if sl_custom_trailing:
                 logging.info('Creating custom trailing')
-                await self.creating_custom_trailing(db_order, bot_config, tick_size, sl_sw_params)
+                await self.creating_custom_trailing(db_order, tick_size, sl_sw_params)
             else:
                 logging.info('Creating binance trailing')
-                await self.creating_binance_trailing_order(db_order, bot_config, tick_size, sl_sw_params)
+                await self.creating_binance_trailing_order(db_order, tick_size, sl_sw_params)
         else:
             logging.info('Creating binance and custom trailings')
-            await self.creating_binance_n_custom_trailing(db_order, bot_config, tick_size, sl_sw_params)
+            await self.creating_binance_n_custom_trailing(db_order, tick_size, sl_sw_params)
 
         logging.info('order closed')
 
@@ -799,7 +827,7 @@ class BinanceBot(Command):
             await asyncio.sleep(0.1)
         return
 
-    def _get_sl_sw_params(self, db_order, bot_config, tick_size):
+    def _get_sl_sw_params(self, db_order, tick_size):
         if db_order.side == 'BUY':
             side = 'SELL'
             order_position_side = 'LONG'
@@ -812,7 +840,7 @@ class BinanceBot(Command):
             'order_position_side': order_position_side,
         }
 
-        for key, tick_count in {'sl': bot_config.stop_loss_ticks, 'sw': bot_config.stop_success_ticks}.items():
+        for key, tick_count in {'sl': db_order.stop_loss_ticks, 'sw': db_order.stop_success_ticks}.items():
             tick_value = tick_size * tick_count
 
             is_need_custom_callback = False
@@ -837,7 +865,7 @@ class BinanceBot(Command):
 
         return params
 
-    async def creating_custom_trailing(self, db_order, bot_config, tick_size, sl_sw_params, base_order_name=None):
+    async def creating_custom_trailing(self, db_order, tick_size, sl_sw_params, base_order_name=None):
         close_not_lose_price = (
             PriceCalculator.calculate_close_not_lose_price(
                 open_price=db_order.open_price, trade_type=db_order.side
@@ -909,7 +937,6 @@ class BinanceBot(Command):
 
                 is_need_to_stop_order = await self._check_if_price_less_then_stops(
                     close_not_lose_price=close_not_lose_price,
-                    bot_config=bot_config,
                     tick_size=tick_size,
                     db_order=db_order
                 )
@@ -920,7 +947,6 @@ class BinanceBot(Command):
                         db_order=db_order,
                         stop_type=current_stop_type,
                         prices={'max': max_price, 'min': min_price},
-                        bot_config=bot_config,
                         tick_size=tick_size
                     )
 
@@ -956,7 +982,7 @@ class BinanceBot(Command):
 
         return
 
-    async def creating_binance_trailing_order(self, db_order, bot_config, tick_size, sl_sw_params):
+    async def creating_binance_trailing_order(self, db_order, tick_size, sl_sw_params):
         close_not_lose_price = (
             PriceCalculator.calculate_close_not_lose_price(
                 open_price=db_order.open_price, trade_type=db_order.side
@@ -1005,7 +1031,6 @@ class BinanceBot(Command):
                 logging.info(f'binance trailing: _check_if_price_less_then_stops')
                 is_need_to_stop_order = await self._check_if_price_less_then_stops(
                     close_not_lose_price=close_not_lose_price,
-                    bot_config=bot_config,
                     tick_size=tick_size,
                     db_order=db_order
                 )
@@ -1030,7 +1055,7 @@ class BinanceBot(Command):
                     logging.info('When was process of changing stop lose/win - after deleting stop lose/win - price came to stop levels')
                     break
 
-    async def creating_binance_n_custom_trailing(self, db_order, bot_config, tick_size, sl_sw_params):
+    async def creating_binance_n_custom_trailing(self, db_order, tick_size, sl_sw_params):
         close_not_lose_price = (
             PriceCalculator.calculate_close_not_lose_price(
                 open_price=db_order.open_price, trade_type=db_order.side
@@ -1089,7 +1114,6 @@ class BinanceBot(Command):
                 logging.info(f'2 mods: _check_if_price_less_then_stops')
                 is_need_to_stop_order = await self._check_if_price_less_then_stops(
                     close_not_lose_price=close_not_lose_price,
-                    bot_config=bot_config,
                     tick_size=tick_size,
                     db_order=db_order
                 )
@@ -1107,7 +1131,7 @@ class BinanceBot(Command):
 
                 if sl_sw_params[current_param]['is_need_custom_callback']:
                     logging.info(f'2 mods: creating_custom_trailing')
-                    await self.creating_custom_trailing(db_order, bot_config, tick_size, sl_sw_params, base_order_name=current_stop_order_name)
+                    await self.creating_custom_trailing(db_order, tick_size, sl_sw_params, base_order_name=current_stop_order_name)
                 else:
                     logging.info(f'2 mods: create_new_sl_sw_order_binance_trailing')
                     await self.create_new_sl_sw_order_binance_trailing(
@@ -1120,11 +1144,11 @@ class BinanceBot(Command):
 
         return
 
-    async def _get_order_stop_price_for_custom_trailing(self, db_order, stop_type, prices, bot_config, tick_size):
+    async def _get_order_stop_price_for_custom_trailing(self, db_order, stop_type, prices, tick_size):
         if stop_type == 'stop_win':
-            tick_count = bot_config.stop_success_ticks * tick_size
+            tick_count = db_order.stop_success_ticks * tick_size
         else:
-            tick_count = bot_config.stop_loss_ticks * tick_size
+            tick_count = db_order.stop_loss_ticks * tick_size
 
         if db_order.side == 'BUY':
             stop_price = prices['max'] - tick_count
@@ -1238,11 +1262,11 @@ class BinanceBot(Command):
 
         return
 
-    async def _check_if_price_less_then_stops(self, close_not_lose_price, bot_config, tick_size, db_order):
+    async def _check_if_price_less_then_stops(self, close_not_lose_price, tick_size, db_order):
         current_price = await self.price_provider.get_price(symbol=db_order.symbol)
 
-        sw_tick_value = bot_config.stop_success_ticks * tick_size
-        sl_tick_value = bot_config.stop_loss_ticks * tick_size
+        sw_tick_value = db_order.stop_success_ticks * tick_size
+        sl_tick_value = db_order.stop_loss_ticks * tick_size
 
         if db_order.side == 'BUY':
             sw_price = current_price - sw_tick_value
@@ -1271,17 +1295,17 @@ class BinanceBot(Command):
         return is_need_to_stop_order
 
     async def _get_order_params(
-            self, bot_config, balanceUSDT,
+            self, balanceUSDT,
             symbol, tick_size, lot_size, max_price, min_price, max_qty, min_qty,
             db_order
     ):
         initial_price = await self.price_provider.get_price(symbol=symbol)
 
-        if bot_config.start_updown_ticks:
-            entry_price_buy = initial_price + bot_config.start_updown_ticks * tick_size
+        if db_order.start_updown_ticks:
+            entry_price_buy = initial_price + db_order.start_updown_ticks * tick_size
             entry_price_buy_str = self._round_price_for_order(price=entry_price_buy, tick_size=tick_size)
 
-            entry_price_sell = initial_price - bot_config.start_updown_ticks * tick_size
+            entry_price_sell = initial_price - db_order.start_updown_ticks * tick_size
             entry_price_sell_str = self._round_price_for_order(price=entry_price_sell, tick_size=tick_size)
 
             if any([
@@ -1328,8 +1352,6 @@ class BinanceBot(Command):
                 'quantityOrder_buy_str': quantityOrder_buy_str,
                 'quantityOrder_sell_str': quantityOrder_sell_str,
             }
-
-
 
     async def _safe_from_time_err_call_binance(self, func, *args, max_retries=20, retry_delay=1, **kwargs):
         for attempt in range(1, max_retries + 1):
