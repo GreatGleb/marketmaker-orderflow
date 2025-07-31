@@ -91,7 +91,7 @@ class BinanceBot(Command):
                 logging.info('before creating orders')
                 await self.creating_orders_bot()
                 # except Exception as e:
-                logging.info(f"❌ Ошибка в боте: {e}")
+                # logging.info(f"❌ Ошибка в боте: {e}")
                 await asyncio.sleep(60)
                 break
 
