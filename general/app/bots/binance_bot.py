@@ -155,7 +155,7 @@ class BinanceBot(Command):
             }
 
         if self.is_prod:
-            if refer_bot['start_updown_ticks']:
+            if 'start_updown_ticks' in refer_bot:
                 symbol = await self.redis.get(f"most_volatile_symbol_{refer_bot['min_timeframe_asset_volatility']}")
                 if not symbol:
                     logging.info(f"❌ Не найдено самую волатильную пару")
@@ -175,7 +175,7 @@ class BinanceBot(Command):
                     consider_ma_for_open_order=copy_bot.consider_ma_for_open_order,
                     consider_ma_for_close_order=copy_bot.consider_ma_for_close_order,
                 )
-            elif refer_bot['consider_ma_for_open_order'] and refer_bot['consider_ma_for_close_order']:
+            elif 'consider_ma_for_open_order' in refer_bot and 'consider_ma_for_close_order' in refer_bot:
                 symbol = refer_bot['symbol']
                 bot_config = TestBot(
                     symbol=refer_bot['symbol'],
@@ -356,6 +356,7 @@ class BinanceBot(Command):
             await close_order_by_ma25_task
 
         await delete_task
+        await self.close_all_open_positions()
         self.order_update_listener.stop()
         await self._db_commit(self.session)
 
