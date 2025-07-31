@@ -1274,47 +1274,59 @@ class BinanceBot(Command):
     ):
         initial_price = await self.price_provider.get_price(symbol=symbol)
 
-        entry_price_buy = initial_price + bot_config.start_updown_ticks * tick_size
-        entry_price_buy_str = self._round_price_for_order(price=entry_price_buy, tick_size=tick_size)
+        if bot_config.start_updown_ticks:
+            entry_price_buy = initial_price + bot_config.start_updown_ticks * tick_size
+            entry_price_buy_str = self._round_price_for_order(price=entry_price_buy, tick_size=tick_size)
 
-        entry_price_sell = initial_price - bot_config.start_updown_ticks * tick_size
-        entry_price_sell_str = self._round_price_for_order(price=entry_price_sell, tick_size=tick_size)
+            entry_price_sell = initial_price - bot_config.start_updown_ticks * tick_size
+            entry_price_sell_str = self._round_price_for_order(price=entry_price_sell, tick_size=tick_size)
 
-        quantityOrder_buy_str = self._calculate_quantity_for_order(amount=balanceUSDT, price=entry_price_buy, lot_size=lot_size)
-        quantityOrder_sell_str = self._calculate_quantity_for_order(amount=balanceUSDT, price=entry_price_sell, lot_size=lot_size)
+            if any([
+                entry_price_buy > max_price,
+                entry_price_buy < min_price,
+                entry_price_sell > max_price,
+                entry_price_sell < min_price
+            ]):
+                logging.info(f'Price bigger or less then maximums for {symbol}')
 
-        if any([
-            entry_price_buy > max_price,
-            entry_price_buy < min_price,
-            entry_price_sell > max_price,
-            entry_price_sell < min_price
-        ]):
-            logging.info(f'Price bigger or less then maximums for {symbol}')
+                db_order.status = 'CANCELED'
+                db_order.close_reason = f'Price bigger or less then maximums for {symbol}'
 
-            db_order.status = 'CANCELED'
-            db_order.close_reason = f'Price bigger or less then maximums for {symbol}'
+                return None
 
-            return None
+            quantityOrder_buy_str = self._calculate_quantity_for_order(amount=balanceUSDT, price=entry_price_buy, lot_size=lot_size)
+            quantityOrder_sell_str = self._calculate_quantity_for_order(amount=balanceUSDT, price=entry_price_sell, lot_size=lot_size)
 
-        if any([
-            Decimal(quantityOrder_buy_str) > max_qty,
-            Decimal(quantityOrder_buy_str) < min_qty,
-            Decimal(quantityOrder_sell_str) > max_qty,
-            Decimal(quantityOrder_sell_str) < min_qty
-        ]):
-            logging.info(f'Quantity bigger or less then maximums for {symbol}')
+            if any([
+                Decimal(quantityOrder_buy_str) > max_qty,
+                Decimal(quantityOrder_buy_str) < min_qty,
+                Decimal(quantityOrder_sell_str) > max_qty,
+                Decimal(quantityOrder_sell_str) < min_qty
+            ]):
+                logging.info(f'Quantity bigger or less then maximums for {symbol}')
 
-            db_order.status = 'CANCELED'
-            db_order.close_reason = f'Quantity bigger or less then maximums for {symbol}'
+                db_order.status = 'CANCELED'
+                db_order.close_reason = f'Quantity bigger or less then maximums for {symbol}'
 
-            return None
-        return {
-            'initial_price': initial_price,
-            'entry_price_buy_str': entry_price_buy_str,
-            'entry_price_sell_str': entry_price_sell_str,
-            'quantityOrder_buy_str': quantityOrder_buy_str,
-            'quantityOrder_sell_str': quantityOrder_sell_str,
-        }
+                return None
+            return {
+                'initial_price': initial_price,
+                'entry_price_buy_str': entry_price_buy_str,
+                'entry_price_sell_str': entry_price_sell_str,
+                'quantityOrder_buy_str': quantityOrder_buy_str,
+                'quantityOrder_sell_str': quantityOrder_sell_str,
+            }
+        else:
+            quantityOrder_buy_str = self._calculate_quantity_for_order(amount=balanceUSDT, price=initial_price, lot_size=lot_size)
+            quantityOrder_sell_str = self._calculate_quantity_for_order(amount=balanceUSDT, price=initial_price, lot_size=lot_size)
+
+            return {
+                'initial_price': initial_price,
+                'quantityOrder_buy_str': quantityOrder_buy_str,
+                'quantityOrder_sell_str': quantityOrder_sell_str,
+            }
+
+
 
     async def _safe_from_time_err_call_binance(self, func, *args, max_retries=20, retry_delay=1, **kwargs):
         for attempt in range(1, max_retries + 1):
