@@ -182,9 +182,9 @@ class BinanceBot(Command):
         #         time_to_wait_for_entry_price_to_open_order_in_minutes = 0.5
         #     )
 
-        symbol = 'BTCUSDT'
+        symbol = 'XRPUSDT'
         bot_config = TestBot(
-            symbol='BTCUSDT',
+            symbol='XRPUSDT',
             consider_ma_for_open_order=True,
             consider_ma_for_close_order=True,
         )
