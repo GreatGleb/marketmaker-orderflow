@@ -150,9 +150,9 @@ class BinanceBot(Command):
         else:
             asset_crud = AssetHistoryCrud(self.session)
             active_symbols = await asset_crud.get_all_active_pairs()
-            logging.info(f'active_symbols: {active_symbols}')
 
             if not active_symbols:
+                logging.info(f'active_symbols: {active_symbols}')
                 logging.info('prices not available')
                 await asyncio.sleep(60)
                 return
