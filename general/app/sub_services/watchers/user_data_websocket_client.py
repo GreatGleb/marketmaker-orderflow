@@ -90,8 +90,15 @@ class UserDataWebSocketClient:
         if not self.first_order_started_event.is_set() or (self.first_order and order['i'] == self.first_order['i']):
             self.first_order = order
 
-        if order['X'] == 'EXPIRED' and not self.first_order_started_event.is_set():
+        if (
+                (order['X'] == 'EXPIRED' or order['X'] == 'PARTIALLY_FILLED' or order['X'] == 'FILLED')
+                and not self.first_order_started_event.is_set()
+        ):
             self.first_order_started_event.set()
+
+        if order['X'] == 'FILLED':
+            if self.first_order and order['i'] == self.first_order['i']:
+                self.first_order_filled_event.set()
 
         current_order = self.waiting_orders[order['c']]
 
@@ -125,9 +132,6 @@ class UserDataWebSocketClient:
             original_order = self.waiting_orders.get(original_order_id)
 
         if order['X'] == 'FILLED':
-            if self.first_order and order['i'] == self.first_order['i']:
-                self.first_order_filled_event.set()
-
             if original_order:
                 original_order.close_price = Decimal(order['L'])
                 original_order.close_time = datetime.now(UTC).replace(tzinfo=None)

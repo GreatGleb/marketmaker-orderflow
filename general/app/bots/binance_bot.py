@@ -596,7 +596,7 @@ class BinanceBot(Command):
         return order
 
     async def delete_second_order(self, second_order):
-        if second_order.close_reason is None and second_order.exchange_order_id:
+        if second_order and second_order.close_reason is None and second_order.exchange_order_id:
             await self.delete_order(
                 db_order=second_order,
                 status='CANCELED',
