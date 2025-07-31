@@ -146,16 +146,8 @@ class BinanceBot(Command):
             await asyncio.sleep(60)
             return
 
-        if not refer_bot:
-            logging.info('not refer_bot, continue to work with XRP and ma strategy')
-            refer_bot = {
-                'symbol': 'XRPUSDT',
-                'consider_ma_for_open_order': True,
-                'consider_ma_for_close_order': True,
-            }
-
         if self.is_prod:
-            if 'start_updown_ticks' in refer_bot:
+            if refer_bot:
                 symbol = await self.redis.get(f"most_volatile_symbol_{refer_bot['min_timeframe_asset_volatility']}")
                 if not symbol:
                     logging.info(f"❌ Не найдено самую волатильную пару")
@@ -175,16 +167,15 @@ class BinanceBot(Command):
                     consider_ma_for_open_order=copy_bot.consider_ma_for_open_order,
                     consider_ma_for_close_order=copy_bot.consider_ma_for_close_order,
                 )
-            elif 'consider_ma_for_open_order' in refer_bot and 'consider_ma_for_close_order' in refer_bot:
-                symbol = refer_bot['symbol']
-                bot_config = TestBot(
-                    symbol=refer_bot['symbol'],
-                    consider_ma_for_open_order=copy_bot.consider_ma_for_open_order,
-                    consider_ma_for_close_order=copy_bot.consider_ma_for_close_order,
-                )
             else:
-                logging.info('not no one refer_bot')
-                return
+                logging.info('not refer_bot, continue to work with XRP and ma strategy')
+
+                symbol = 'XRPUSDT'
+                bot_config = TestBot(
+                    symbol=symbol,
+                    consider_ma_for_open_order=True,
+                    consider_ma_for_close_order=True,
+                )
         else:
             symbol = 'BTCUSDT'
             bot_config = TestBot(
