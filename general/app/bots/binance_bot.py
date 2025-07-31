@@ -831,6 +831,8 @@ class BinanceBot(Command):
                     db_order.close_reason = f'closed MA25 less then current price for {db_order.symbol}'
                     logging.info(f'closed MA25 less then current price for {db_order.symbol}')
 
+                    is_need_to_close_order = True
+
             if is_need_to_close_order:
                 await self.delete_order(
                     db_order=db_order,
