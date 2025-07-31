@@ -344,7 +344,7 @@ class BinanceBot(Command):
             await wait_db_commit_task
             return
 
-        logging.info("✅ Первый ордер получен:", wait_for_order['first_order_updating_data'])
+        logging.info(f"✅ Первый ордер получен: {wait_for_order['first_order_updating_data']}")
 
         if not bot_config.consider_ma_for_close_order:
             setting_sl_sw_to_order_task = asyncio.create_task(
