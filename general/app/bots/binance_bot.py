@@ -385,6 +385,7 @@ class BinanceBot(Command):
         except Exception as e:
             await self.session.rollback()
             logging.info(f"❌ Error DB: {e}")
+            logging.info(f"❌❌❌")
 
         return
 
@@ -394,6 +395,7 @@ class BinanceBot(Command):
         except Exception as e:
             await self.session.rollback()
             logging.info(f"❌ Error DB: {e}")
+            logging.error(f"❌ Error DB: {e}")
         return
 
     async def create_orders(
