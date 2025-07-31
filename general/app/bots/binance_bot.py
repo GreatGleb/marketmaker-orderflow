@@ -141,7 +141,7 @@ class BinanceBot(Command):
 
         test_order_crud = TestOrderCrud(self.session)
 
-        if 'stop_win_percents' in refer_bot:
+        if refer_bot and 'stop_win_percents' in refer_bot:
             are_bots_currently_active = await test_order_crud.are_bots_currently_active()
             if not are_bots_currently_active:
                 logging.info('not are_bots_currently_active')
