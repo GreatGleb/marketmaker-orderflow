@@ -76,9 +76,9 @@ class UserDataWebSocketClient:
             logging.info(f"⚠️ Ошибка при закрытии listenKey: {e}")
 
     async def handle_order_update(self, order):
-        # logging.info("📦 Обновление ордера:")
-        # logging.info(f"  id: {order['c']}")
-        # logging.info(f"  Статус: {order['X']}")
+        logging.info("📦 Обновление ордера:")
+        logging.info(f"  id: {order['c']}")
+        logging.info(f"  Статус: {order['X']}")
         # logging.info(f"  Тип: {order['o']}")
         # logging.info(f"  Side: {order['S']}")
         # logging.info(f"  Цена активации: {order.get('sp', '—')}")

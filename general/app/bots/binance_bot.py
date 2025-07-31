@@ -1364,7 +1364,7 @@ class BinanceBot(Command):
 
         if not timeout_missed:
             for db_order in [db_order_buy, db_order_sell]:
-                if db_order.close_reason is None and db_order.exchange_order_id:
+                if db_order.close_reason is None and db_order.exchange_order_id and db_order:
                     await self.delete_order(
                         db_order=db_order,
                         status='CANCELED',
