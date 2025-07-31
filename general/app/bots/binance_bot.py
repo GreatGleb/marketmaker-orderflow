@@ -378,6 +378,14 @@ class BinanceBot(Command):
         await wait_db_commit_task
 
         self.order_update_listener.stop()
+
+        # for not closing session before here
+        try:
+            await self.session.commit()
+        except Exception as e:
+            await self.session.rollback()
+            logging.info(f"❌ Error DB: {e}")
+
         return
 
     async def _db_commit(self):
