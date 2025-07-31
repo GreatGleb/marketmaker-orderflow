@@ -362,7 +362,7 @@ class BinanceBot(Command):
         logging.info(f'time: {(end - start)} s')
 
         wait_db_commit_task = asyncio.create_task(
-            self._db_commit()
+            self._db_commit(self.session)
         )
 
         wait_filled = await wait_filled_task
@@ -390,21 +390,13 @@ class BinanceBot(Command):
 
         self.order_update_listener.stop()
 
-        # for not closing session before here
-        try:
-            await self.session.commit()
-        except Exception as e:
-            await self.session.rollback()
-            logging.info(f"❌ Error DB: {e}")
-            logging.info(f"❌❌❌")
-
         return
 
-    async def _db_commit(self):
+    async def _db_commit(self, session):
         try:
-            await self.session.commit()
+            await session.commit()
         except Exception as e:
-            await self.session.rollback()
+            await session.rollback()
             logging.info(f"❌ Error DB: {e}")
             logging.error(f"❌ Error DB: {e}")
         return
