@@ -93,7 +93,8 @@ class BinanceBot(Command):
                 # except Exception as e:
                 # logging.info(f"❌ Ошибка в боте: {e}")
                 await asyncio.sleep(60)
-                # break
+                logging.info(self.session)
+                break
 
         tasks.append(asyncio.create_task(_run_loop()))
         await asyncio.gather(*tasks)
