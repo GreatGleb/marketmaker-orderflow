@@ -15,6 +15,7 @@ from redis.asyncio import Redis
 from sqlalchemy import distinct, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.crud.asset_history import AssetHistoryCrud
 from app.crud.exchange_pair_spec import AssetExchangeSpecCrud
 from app.crud.test_bot import TestBotCrud
 from app.crud.test_orders import TestOrderCrud
@@ -139,12 +140,22 @@ class BinanceBot(Command):
             logging.info('finished get_bot_config_by_params')
 
         test_order_crud = TestOrderCrud(self.session)
-        are_bots_currently_active = await test_order_crud.are_bots_currently_active()
 
-        if not are_bots_currently_active:
-            logging.info('not are_bots_currently_active')
-            await asyncio.sleep(60)
-            return
+        if 'stop_win_percents' in refer_bot:
+            are_bots_currently_active = await test_order_crud.are_bots_currently_active()
+            if not are_bots_currently_active:
+                logging.info('not are_bots_currently_active')
+                await asyncio.sleep(60)
+                return
+        else:
+            asset_crud = AssetHistoryCrud(self.session)
+            active_symbols = await asset_crud.get_all_active_pairs()
+            logging.info(f'active_symbols: {active_symbols}')
+
+            if not active_symbols:
+                logging.info('prices not available')
+                await asyncio.sleep(60)
+                return
 
         if self.is_prod:
             if refer_bot:
