@@ -368,7 +368,7 @@ class StartTestBotsCommand(Command):
                 "stop_success_ticks": bot_config.stop_success_ticks,
                 "stop_reason_event": order.stop_reason_event,
                 "referral_bot_id": bot_config.referral_bot_id,
-                "referral_bot_from_profit_func": bot_config.referral_bot_from_profit_func,
+                # "referral_bot_from_profit_func": bot_config.referral_bot_from_profit_func,
                 "created_at": datetime.now(UTC),
                 "updated_at": datetime.now(UTC),
             }
