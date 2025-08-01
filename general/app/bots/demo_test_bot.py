@@ -78,15 +78,15 @@ class StartTestBotsCommand(Command):
                         try:
                             error_traceback = traceback.format_exc()
                             print(error_traceback)
-                            telegram_service = (
-                                NotificationServiceFactory.get_telegram_service()
-                            )
-                            if telegram_service:
-                                await telegram_service.send_bot_error_notification(
-                                    bot_id=bot_config.id,
-                                    error_message=str(e),
-                                    additional_info=f"Полный стек ошибки:\n{error_traceback}",
-                                )
+                            # telegram_service = (
+                            #     NotificationServiceFactory.get_telegram_service()
+                            # )
+                            # if telegram_service:
+                            #     await telegram_service.send_bot_error_notification(
+                            #         bot_id=bot_config.id,
+                            #         error_message=str(e),
+                            #         additional_info=f"Полный стек ошибки:\n{error_traceback}",
+                            #     )
                         except Exception as telegram_error:
                             print(
                                 f"❌ Ошибка при отправке уведомления в Telegram: {telegram_error}"
@@ -110,6 +110,8 @@ class StartTestBotsCommand(Command):
                 f"❌ Не удалось найти реферального бота для ID: {bot_config.id}"
             )
             return False
+
+        print(refer_bot)
 
         bot_config.symbol = refer_bot["symbol"]
         bot_config.stop_success_ticks = refer_bot["stop_success_ticks"]
