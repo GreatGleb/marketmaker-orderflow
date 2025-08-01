@@ -36,23 +36,24 @@ class ProfitableBotUpdaterCommand(Command):
                 bot_id=min_bot_ids[0]
             )
 
-            if refer_bot.stop_win_percents is None:
-                refer_bot.stop_win_percents = ''
-            if refer_bot.stop_loss_percents is None:
-                refer_bot.stop_loss_percents = ''
-            if refer_bot.start_updown_percents is None:
-                refer_bot.start_updown_percents = ''
-            if refer_bot.min_timeframe_asset_volatility is None:
-                refer_bot.min_timeframe_asset_volatility = ''
-            if refer_bot.min_timeframe_asset_volatility is None:
-                refer_bot.min_timeframe_asset_volatility = ''
-            if refer_bot.ma_number_of_candles_for_open_order is None:
-                refer_bot.ma_number_of_candles_for_open_order = ''
-            if refer_bot.ma_number_of_candles_for_close_order is None:
-                refer_bot.ma_number_of_candles_for_close_order = ''
-
             if refer_bot:
                 refer_bot = refer_bot[0]
+
+                if refer_bot.stop_win_percents is None:
+                    refer_bot.stop_win_percents = ''
+                if refer_bot.stop_loss_percents is None:
+                    refer_bot.stop_loss_percents = ''
+                if refer_bot.start_updown_percents is None:
+                    refer_bot.start_updown_percents = ''
+                if refer_bot.min_timeframe_asset_volatility is None:
+                    refer_bot.min_timeframe_asset_volatility = ''
+                if refer_bot.min_timeframe_asset_volatility is None:
+                    refer_bot.min_timeframe_asset_volatility = ''
+                if refer_bot.ma_number_of_candles_for_open_order is None:
+                    refer_bot.ma_number_of_candles_for_open_order = ''
+                if refer_bot.ma_number_of_candles_for_close_order is None:
+                    refer_bot.ma_number_of_candles_for_close_order = ''
+
                 refer_bot_dict = {
                     "id": refer_bot.id,
                     "symbol": refer_bot.symbol,
