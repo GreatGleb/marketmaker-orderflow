@@ -227,9 +227,14 @@ class StartTestBotsCommand(Command):
             entry_price = None
 
             try:
+                wait_minutes = 1
+
+                if bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes:
+                    wait_minutes = bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes
+
                 timeout = (
                     Decimal(
-                        bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes
+                        wait_minutes
                     )
                     * 60
                 )
