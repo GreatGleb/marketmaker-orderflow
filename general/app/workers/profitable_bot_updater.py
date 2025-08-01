@@ -40,19 +40,19 @@ class ProfitableBotUpdaterCommand(Command):
                 refer_bot = refer_bot[0]
 
                 if refer_bot.stop_win_percents is None:
-                    refer_bot.stop_win_percents = ''
+                    refer_bot.stop_win_percents = 0
                 if refer_bot.stop_loss_percents is None:
-                    refer_bot.stop_loss_percents = ''
+                    refer_bot.stop_loss_percents = 0
                 if refer_bot.start_updown_percents is None:
-                    refer_bot.start_updown_percents = ''
+                    refer_bot.start_updown_percents = 0
                 if refer_bot.min_timeframe_asset_volatility is None:
-                    refer_bot.min_timeframe_asset_volatility = ''
+                    refer_bot.min_timeframe_asset_volatility = 0
                 if refer_bot.min_timeframe_asset_volatility is None:
-                    refer_bot.min_timeframe_asset_volatility = ''
+                    refer_bot.min_timeframe_asset_volatility = 0
                 if refer_bot.ma_number_of_candles_for_open_order is None:
-                    refer_bot.ma_number_of_candles_for_open_order = ''
+                    refer_bot.ma_number_of_candles_for_open_order = 0
                 if refer_bot.ma_number_of_candles_for_close_order is None:
-                    refer_bot.ma_number_of_candles_for_close_order = ''
+                    refer_bot.ma_number_of_candles_for_close_order = 0
 
                 refer_bot_dict = {
                     "id": refer_bot.id,
