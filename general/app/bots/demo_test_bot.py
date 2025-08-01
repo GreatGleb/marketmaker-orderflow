@@ -254,6 +254,9 @@ class StartTestBotsCommand(Command):
             except asyncio.TimeoutError:
                 is_timeout_occurred = True
 
+            if bot_config.id == 1:
+                print(f'is_timeout_occurred: {is_timeout_occurred}')
+
             if is_timeout_occurred or not trade_type or not entry_price:
                 return False
 
@@ -305,6 +308,9 @@ class StartTestBotsCommand(Command):
                     order_type=trade_type
                 )
 
+            if bot_config.id == 1:
+                print('wait for entry_price')
+
             while not stop_event.is_set():
                 updated_price = await price_provider.get_price(symbol=symbol)
 
@@ -338,6 +344,9 @@ class StartTestBotsCommand(Command):
                 price_from_previous_step = updated_price
 
                 await asyncio.sleep(0.1)
+
+            if bot_config.id == 1:
+                print('end wait')
 
             close_price = await price_provider.get_price(symbol=symbol)
 
