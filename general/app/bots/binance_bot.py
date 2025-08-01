@@ -352,10 +352,10 @@ class BinanceBot(Command):
             )
             await setting_sl_sw_to_order_task
         else:
-            close_order_by_ma25_task = asyncio.create_task(
-                self.close_order_by_ma25(db_order)
+            close_order_by_ma_task = asyncio.create_task(
+                self.close_order_by_ma(db_order)
             )
-            await close_order_by_ma25_task
+            await close_order_by_ma_task
 
         await delete_task
         await self.close_all_open_positions()
@@ -472,8 +472,60 @@ class BinanceBot(Command):
                 )
             )
 
-            order_buy = await order_buy_create_task
-            order_sell = await order_sell_create_task
+            tasks = {
+                'buy': order_buy_create_task,
+                'sell': order_sell_create_task
+            }
+
+            final_result_found = False
+
+            while tasks:
+                done, pending = await asyncio.wait(
+                    tasks.values(),
+                    return_when=asyncio.FIRST_COMPLETED
+                )
+
+                done_task = done.pop()
+
+                try:
+                    result = done_task.result()
+                except asyncio.CancelledError:
+                    result = None
+
+                if result is not None and not final_result_found:
+                    final_result_found = True
+
+                    if done_task == order_buy_create_task:
+                        order_buy = result
+                    else:
+                        order_sell = result
+
+                    for task in pending:
+                        task.cancel()
+
+                for k, v in list(tasks.items()):
+                    if v == done_task:
+                        del tasks[k]
+                        break
+
+            for task in [order_buy_create_task, order_sell_create_task]:
+                if task.done() and not task.cancelled():
+                    continue
+
+                if task.cancelled():
+                    if task == order_buy_create_task and order_buy is None:
+                        order_buy = None
+                    elif task == order_sell_create_task and order_sell is None:
+                        order_sell = None
+                    continue
+
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    if task == order_buy_create_task and order_buy is None:
+                        order_buy = None
+                    elif task == order_sell_create_task and order_sell is None:
+                        order_sell = None
 
         logging.info(
             f"order_buy: {order_buy}\n\n"
@@ -497,72 +549,77 @@ class BinanceBot(Command):
         order_stop_price = None
         try_create_order = 0
 
-        current_price = await self.price_provider.get_price(symbol=db_order.symbol)
-
         if bot_config.consider_ma_for_open_order:
-            ma10, ma25 = await self.get_double_ma(db_order.symbol, 10, 25, current_price)
+            while True:
+                order_params = await self._get_order_params(
+                    balanceUSDT,
+                    symbol, tick_size, lot_size, max_price, min_price, max_qty, min_qty,
+                    db_order
+                )
 
-            if not ma10 or not ma25:
-                db_order.status = 'CANCELED'
-                db_order.close_reason = f'MA25 can\'t find klines for {symbol}'
-                logging.info(f'MA25 can\'t find klines for {symbol}')
+                if not order_params:
+                    db_order.status = 'CANCELED'
+                    db_order.close_reason = f'Can\'t get order params for {symbol}'
+                    logging.info(f'Can\'t get order params for {creating_orders_type} {symbol}')
+                    return order
 
-                return order
-            else:
+                current_price = order_params['initial_price']
+
+                ma10, ma25 = await self.get_double_ma(db_order.symbol, 10, 25, current_price)
+
+                if not ma10 or not ma25:
+                    db_order.status = 'CANCELED'
+                    db_order.close_reason = f'MA25 can\'t find klines for {symbol}'
+                    logging.info(f'MA25 can\'t find klines for {symbol}')
+
+                    return order
+
                 if creating_orders_type == 'buy':
                     if current_price <= ma25 or current_price <= ma10:
                         db_order.status = 'CANCELED'
                         db_order.close_reason = f'MA25 bigger then current price for {symbol}'
                         logging.info(f'MA25 bigger then current price for {symbol}')
 
-                        return order
+                        await asyncio.sleep(0.1)
+                        continue
                 elif creating_orders_type == 'sell':
                     if current_price >= ma25 or current_price >= ma10:
                         db_order.status = 'CANCELED'
                         db_order.close_reason = f'MA25 less then current price for {symbol}'
                         logging.info(f'MA25 less then current price for {symbol}')
 
-                        return order
+                        await asyncio.sleep(0.1)
+                        continue
 
-            order_params = await self._get_order_params(
-                balanceUSDT,
-                symbol, tick_size, lot_size, max_price, min_price, max_qty, min_qty,
-                db_order
-            )
+                if creating_orders_type == 'buy':
+                    order_quantity = order_params['quantityOrder_buy_str']
+                    order_stop_price = 0
+                else:
+                    order_quantity = order_params['quantityOrder_sell_str']
+                    order_stop_price = 0
 
-            if not order_params:
-                db_order.status = 'CANCELED'
-                db_order.close_reason = f'Can\'t get order params for {symbol}'
-                logging.info(f'Can\'t get order params for {creating_orders_type} {symbol}')
-                return order
+                try:
+                    order = await self._safe_from_time_err_call_binance(
+                        self.binance_client.futures_create_order,
+                        symbol=symbol,
+                        side=order_side,
+                        positionSide=order_position_side,
+                        type=FUTURE_ORDER_TYPE_MARKET,
+                        quantity=order_quantity,
+                        newClientOrderId=db_order.client_order_id,
+                        newOrderRespType="RESULT",
+                        recvWindow=3000,
+                    )
+                except BinanceAPIException as e:
+                    db_order.status = 'CANCELED'
+                    db_order.close_reason = f'Binance error while creating order: {e}'
+                    logging.info(f'Binance error while creating order {creating_orders_type}: {e}')
+                except Exception as e:
+                    db_order.status = 'CANCELED'
+                    db_order.close_reason = f'Error while creating Binance order: {e}'
+                    logging.info(f"Error while creating binance order {creating_orders_type}: {e}")
 
-            if creating_orders_type == 'buy':
-                order_quantity = order_params['quantityOrder_buy_str']
-                order_stop_price = 0
-            else:
-                order_quantity = order_params['quantityOrder_sell_str']
-                order_stop_price = 0
-
-            try:
-                order = await self._safe_from_time_err_call_binance(
-                    self.binance_client.futures_create_order,
-                    symbol=symbol,
-                    side=order_side,
-                    positionSide=order_position_side,
-                    type=FUTURE_ORDER_TYPE_MARKET,
-                    quantity=order_quantity,
-                    newClientOrderId=db_order.client_order_id,
-                    newOrderRespType="RESULT",
-                    recvWindow=3000,
-                )
-            except BinanceAPIException as e:
-                db_order.status = 'CANCELED'
-                db_order.close_reason = f'Binance error while creating order: {e}'
-                logging.info(f'Binance error while creating order {creating_orders_type}: {e}')
-            except Exception as e:
-                db_order.status = 'CANCELED'
-                db_order.close_reason = f'Error while creating Binance order: {e}'
-                logging.info(f"Error while creating binance order {creating_orders_type}: {e}")
+                break
 
         else:
             while True:
@@ -809,7 +866,7 @@ class BinanceBot(Command):
 
         logging.info('order closed')
 
-    async def close_order_by_ma25(self, db_order):
+    async def close_order_by_ma(self, db_order):
         deleting_order_id = db_order.client_order_id + f'_stop_ma25'
 
         while db_order.close_time is None:
