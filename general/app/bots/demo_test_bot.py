@@ -289,7 +289,9 @@ class StartTestBotsCommand(Command):
 
                 order = TestOrder(
                     stop_loss_price=Decimal(stop_loss_price),
+                    start_updown_ticks=bot_config.start_updown_ticks,
                     stop_success_ticks=bot_config.stop_success_ticks,
+                    stop_loss_ticks=bot_config.stop_loss_ticks,
                     open_price=open_price,
                     open_time=datetime.now(UTC),
                     open_fee=(
@@ -300,7 +302,9 @@ class StartTestBotsCommand(Command):
             else:
                 order = TestOrder(
                     stop_loss_price=0,
+                    start_updown_ticks=0,
                     stop_success_ticks=0,
+                    stop_loss_ticks=0,
                     open_price=open_price,
                     open_time=datetime.now(UTC),
                     open_fee=(
