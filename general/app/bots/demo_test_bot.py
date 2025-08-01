@@ -200,6 +200,7 @@ class StartTestBotsCommand(Command):
 
             data = shared_data.get(symbol)
             if not data:
+                print('not symbols data')
                 return
             tick_size = data["tick_size"]
 
