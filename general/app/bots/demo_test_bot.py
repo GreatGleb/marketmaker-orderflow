@@ -310,7 +310,7 @@ class StartTestBotsCommand(Command):
                 )
 
             if bot_config.id == 1:
-                print('wait for entry_price')
+                print('wait for should_exit')
 
             while not stop_event.is_set():
                 updated_price = await price_provider.get_price(symbol=symbol)
