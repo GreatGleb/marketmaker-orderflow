@@ -76,11 +76,12 @@ class StartTestBotsCommand(Command):
                         )
                     except Exception as e:
                         try:
+                            error_traceback = traceback.format_exc()
+                            print(error_traceback)
                             telegram_service = (
                                 NotificationServiceFactory.get_telegram_service()
                             )
                             if telegram_service:
-                                error_traceback = traceback.format_exc()
                                 await telegram_service.send_bot_error_notification(
                                     bot_id=bot_config.id,
                                     error_message=str(e),
