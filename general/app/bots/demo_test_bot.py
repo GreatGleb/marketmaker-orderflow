@@ -240,6 +240,10 @@ class StartTestBotsCommand(Command):
                 timeout = int(timeout)
                 price_watcher = PriceWatcher(redis=redis)
 
+                print(
+                    f"Value: {bot_config.ma_number_of_candles_for_open_order}, Type: {type(bot_config.ma_number_of_candles_for_open_order)}"
+                )
+
                 trade_type, entry_price = await asyncio.wait_for(
                     price_watcher.wait_for_entry_price(
                         symbol=symbol,
