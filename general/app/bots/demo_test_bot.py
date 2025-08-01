@@ -128,6 +128,8 @@ class StartTestBotsCommand(Command):
             refer_bot["time_to_wait_for_entry_price_to_open_order_in_minutes"]
         )
         bot_config.referral_bot_id = refer_bot["id"]
+        bot_config.consider_ma_for_open_order = refer_bot['consider_ma_for_open_order'],
+        bot_config.consider_ma_for_close_order = refer_bot['consider_ma_for_close_order']
 
         # for test if copy_bot use right refer_bot
         # tf_bot_ids = (
@@ -166,32 +168,10 @@ class StartTestBotsCommand(Command):
         bot_crud,
         binance_bot,
     ):
-        setattr(bot_config, "referral_bot_id", None)
-        setattr(bot_config, "referral_bot_from_profit_func", None)
-
-        if bot_config.copy_bot_min_time_profitability_min:
-            bot_config_updated = await self.update_config_from_referral_bot(
-                bot_config=bot_config, redis=redis, bot_crud=bot_crud
-            )
-            if not bot_config_updated:
-                await asyncio.sleep(60)
-                return
-
-        symbol = await redis.get(
-            f"most_volatile_symbol_{bot_config.min_timeframe_asset_volatility}"
-        )
-        if not symbol:
-            await asyncio.sleep(60)
-            return
-
-        data = shared_data.get(symbol)
-
-        if not data:
-            return
-
-        tick_size = data["tick_size"]
-
         while not stop_event.is_set():
+            setattr(bot_config, "referral_bot_id", None)
+            # setattr(bot_config, "referral_bot_from_profit_func", None)
+
             if bot_config.copy_bot_min_time_profitability_min:
                 bot_config_updated = (
                     await self.update_config_from_referral_bot(
@@ -201,6 +181,22 @@ class StartTestBotsCommand(Command):
                 if not bot_config_updated:
                     await asyncio.sleep(60)
                     return
+
+            if bot_config.consider_ma_for_open_order:
+                symbol = bot_config.symbol
+            else:
+                symbol = await redis.get(
+                    f"most_volatile_symbol_{bot_config.min_timeframe_asset_volatility}"
+                )
+
+            if not symbol:
+                await asyncio.sleep(60)
+                return
+
+            data = shared_data.get(symbol)
+            if not data:
+                return
+            tick_size = data["tick_size"]
 
             bot_config = (
                 await ProfitableBotUpdaterCommand.update_config_for_percentage(

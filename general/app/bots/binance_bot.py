@@ -139,63 +139,61 @@ class BinanceBot(Command):
             )
             logging.info('finished get_bot_config_by_params')
 
+        asset_crud = AssetHistoryCrud(self.session)
+        active_symbols = await asset_crud.get_all_active_pairs()
+
+        if not active_symbols:
+            logging.info(f'active_symbols: {active_symbols}')
+            logging.info('prices not available')
+            await asyncio.sleep(60)
+            return
+
         test_order_crud = TestOrderCrud(self.session)
+        are_bots_currently_active = await test_order_crud.are_bots_currently_active()
+        if not are_bots_currently_active:
+            logging.info('not are_bots_currently_active')
+            await asyncio.sleep(60)
+            return
 
-        if refer_bot and 'stop_win_percents' in refer_bot:
-            are_bots_currently_active = await test_order_crud.are_bots_currently_active()
-            if not are_bots_currently_active:
-                logging.info('not are_bots_currently_active')
-                await asyncio.sleep(60)
-                return
-        else:
-            asset_crud = AssetHistoryCrud(self.session)
-            active_symbols = await asset_crud.get_all_active_pairs()
-
-            if not active_symbols:
-                logging.info(f'active_symbols: {active_symbols}')
-                logging.info('prices not available')
-                await asyncio.sleep(60)
-                return
+        if not refer_bot:
+            logging.info('not refer_bot')
+            await asyncio.sleep(60)
+            return
 
         if self.is_prod:
-            if refer_bot:
+            if copy_bot.consider_ma_for_open_order:
+                symbol = refer_bot['symbol']
+            else:
                 symbol = await self.redis.get(f"most_volatile_symbol_{refer_bot['min_timeframe_asset_volatility']}")
                 if not symbol:
                     logging.info(f"❌ Не найдено самую волатильную пару")
                     await asyncio.sleep(60)
                     return
 
-                bot_config = TestBot(
-                    symbol=refer_bot['symbol'],
-                    stop_success_ticks=refer_bot['stop_success_ticks'],
-                    stop_loss_ticks = refer_bot['stop_loss_ticks'],
-                    start_updown_ticks = refer_bot['start_updown_ticks'],
-                    stop_win_percents = Decimal(refer_bot['stop_win_percents']),
-                    stop_loss_percents = Decimal(refer_bot['stop_loss_percents']),
-                    start_updown_percents = Decimal(refer_bot['start_updown_percents']),
-                    min_timeframe_asset_volatility = refer_bot['min_timeframe_asset_volatility'],
-                    time_to_wait_for_entry_price_to_open_order_in_minutes = refer_bot['time_to_wait_for_entry_price_to_open_order_in_minutes'],
-                    consider_ma_for_open_order=copy_bot.consider_ma_for_open_order,
-                    consider_ma_for_close_order=copy_bot.consider_ma_for_close_order,
-                )
-            else:
-                logging.info('not refer_bot, continue to work with XRP and ma strategy')
-
-                symbol = 'XRPUSDT'
-                bot_config = TestBot(
-                    symbol=symbol,
-                    consider_ma_for_open_order=True,
-                    consider_ma_for_close_order=True,
-                )
+            bot_config = TestBot(
+                symbol=symbol,
+                stop_success_ticks=refer_bot['stop_success_ticks'],
+                stop_loss_ticks = refer_bot['stop_loss_ticks'],
+                start_updown_ticks = refer_bot['start_updown_ticks'],
+                stop_win_percents = Decimal(refer_bot['stop_win_percents']),
+                stop_loss_percents = Decimal(refer_bot['stop_loss_percents']),
+                start_updown_percents = Decimal(refer_bot['start_updown_percents']),
+                min_timeframe_asset_volatility = refer_bot['min_timeframe_asset_volatility'],
+                time_to_wait_for_entry_price_to_open_order_in_minutes = refer_bot['time_to_wait_for_entry_price_to_open_order_in_minutes'],
+                consider_ma_for_open_order=refer_bot['consider_ma_for_open_order'],
+                consider_ma_for_close_order=refer_bot['consider_ma_for_close_order'],
+            )
         else:
             symbol = 'BTCUSDT'
             bot_config = TestBot(
                 symbol='BTCUSDT',
-                stop_success_ticks = 20,
-                stop_loss_ticks = 20,
-                start_updown_ticks = 50,
-                min_timeframe_asset_volatility = 3,
-                time_to_wait_for_entry_price_to_open_order_in_minutes = 0.5,
+                # stop_success_ticks = 20,
+                # stop_loss_ticks = 20,
+                # start_updown_ticks = 50,
+                # min_timeframe_asset_volatility = 3,
+                # time_to_wait_for_entry_price_to_open_order_in_minutes = 0.5,
+                consider_ma_for_open_order=True,
+                consider_ma_for_close_order=True,
             )
 
         try:

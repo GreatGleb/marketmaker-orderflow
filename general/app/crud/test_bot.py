@@ -88,6 +88,13 @@ class TestBotCrud(BaseCrud[TestBot]):
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
+    async def get_bot_by_id(self, bot_id: int):
+        stmt = select(TestBot).where(
+            TestBot.id == bot_id,
+        )
+        result = await self.session.execute(stmt)
+        return result.scalars().all()
+
     async def get_unique_min_timeframe_volatility_values(self):
         stmt = select(distinct(TestBot.min_timeframe_asset_volatility)).where(
             TestBot.min_timeframe_asset_volatility.is_not(None)

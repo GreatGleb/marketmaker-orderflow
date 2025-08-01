@@ -32,8 +32,7 @@ class ProfitableBotUpdaterCommand(Command):
         min_bot_ids = tf_bot_ids[copy_bot_min_time_profitability_min]
 
         if min_bot_ids:
-
-            refer_bot = await bot_crud.get_bot_with_volatility_by_id(
+            refer_bot = await bot_crud.get_bot_by_id(
                 bot_id=min_bot_ids[0]
             )
 
@@ -54,6 +53,12 @@ class ProfitableBotUpdaterCommand(Command):
                     "time_to_wait_for_entry_price_to_open_order_in_minutes": str(
                         refer_bot.time_to_wait_for_entry_price_to_open_order_in_minutes
                         or 1
+                    ),
+                    "consider_ma_for_open_order": str(
+                        refer_bot.consider_ma_for_open_order
+                    ),
+                    "consider_ma_for_close_order": str(
+                        refer_bot.consider_ma_for_open_order
                     ),
                 }
             else:
