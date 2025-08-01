@@ -500,9 +500,9 @@ class BinanceBot(Command):
         current_price = await self.price_provider.get_price(symbol=db_order.symbol)
 
         if bot_config.consider_ma_for_open_order:
-            ma25 = await self.get_ma(db_order.symbol, 25, current_price)
+            ma10, ma25 = await self.get_double_ma(db_order.symbol, 10, 25, current_price)
 
-            if not ma25:
+            if not ma10 or not ma25:
                 db_order.status = 'CANCELED'
                 db_order.close_reason = f'MA25 can\'t find klines for {symbol}'
                 logging.info(f'MA25 can\'t find klines for {symbol}')
@@ -510,14 +510,14 @@ class BinanceBot(Command):
                 return order
             else:
                 if creating_orders_type == 'buy':
-                    if current_price < ma25:
+                    if current_price <= ma25 or current_price <= ma10:
                         db_order.status = 'CANCELED'
                         db_order.close_reason = f'MA25 bigger then current price for {symbol}'
                         logging.info(f'MA25 bigger then current price for {symbol}')
 
                         return order
                 elif creating_orders_type == 'sell':
-                    if current_price > ma25:
+                    if current_price >= ma25 or current_price >= ma10:
                         db_order.status = 'CANCELED'
                         db_order.close_reason = f'MA25 less then current price for {symbol}'
                         logging.info(f'MA25 less then current price for {symbol}')
@@ -814,22 +814,22 @@ class BinanceBot(Command):
 
         while db_order.close_time is None:
             current_price = await self.price_provider.get_price(symbol=db_order.symbol)
-            ma25 = await self.get_ma(db_order.symbol, 25, current_price)
+            ma10 = await self.get_ma(db_order.symbol, 10, current_price)
 
             is_need_to_close_order = False
 
             if db_order.side == 'BUY':
-                if current_price < ma25:
-                    db_order.status = 'CLOSED BY MA25'
-                    db_order.close_reason = f'closed MA25 bigger then current price for {db_order.symbol}'
-                    logging.info(f'closed MA25 bigger then current price for {db_order.symbol}')
+                if current_price < ma10:
+                    db_order.status = 'CLOSED BY MA10'
+                    db_order.close_reason = f'closed MA10 bigger then current price for {db_order.symbol}'
+                    logging.info(f'closed MA10 bigger then current price for {db_order.symbol}')
 
                     is_need_to_close_order = True
             elif db_order.side == 'SELL':
-                if current_price > ma25:
-                    db_order.status = 'CLOSED BY MA25'
-                    db_order.close_reason = f'closed MA25 less then current price for {db_order.symbol}'
-                    logging.info(f'closed MA25 less then current price for {db_order.symbol}')
+                if current_price > ma10:
+                    db_order.status = 'CLOSED BY MA10'
+                    db_order.close_reason = f'closed MA10 less then current price for {db_order.symbol}'
+                    logging.info(f'closed MA10 less then current price for {db_order.symbol}')
 
                     is_need_to_close_order = True
 
@@ -1521,3 +1521,37 @@ class BinanceBot(Command):
         ma = sum(closes) / Decimal(ma_window)
 
         return ma
+
+    async def get_double_ma(self, symbol, less_ma_number, more_ma_number, current_price = None):
+        limit = more_ma_number
+        try:
+            klines = await self._safe_from_time_err_call_binance(
+                self.binance_client.futures_klines,
+                symbol=symbol, interval=Client.KLINE_INTERVAL_1MINUTE, limit=limit
+            )
+        except Exception as e:
+            logging.info(f'Symbol: {symbol}, error when get klines: {e}')
+            logging.error(f'Symbol: {symbol}, error when get klines: {e}')
+            return None
+
+        if not klines:
+            logging.warning(f'Symbol: {symbol}, no klines returned.')
+            return None
+
+        if not current_price:
+            if not hasattr(self, 'price_provider'):
+                async with redis_context() as redis:
+                    self.price_provider = PriceProvider(redis)
+
+            current_price = await self.price_provider.get_price(symbol=symbol)
+
+        closes = [Decimal(kline[4]) for kline in klines]
+        closes.append(current_price)
+
+        less_ma_closes = closes[-(less_ma_number + 1):]
+        less_ma = sum(less_ma_closes) / Decimal(len(less_ma_closes))
+
+        more_ma_closes = closes
+        more_ma = sum(more_ma_closes) / Decimal(len(more_ma_closes))
+
+        return less_ma, more_ma
