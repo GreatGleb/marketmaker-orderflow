@@ -129,9 +129,9 @@ class StartTestBotsCommand(Command):
             refer_bot["time_to_wait_for_entry_price_to_open_order_in_minutes"]
         )
         bot_config.referral_bot_id = refer_bot["id"]
-        bot_config.consider_ma_for_open_order = refer_bot['consider_ma_for_open_order'],
+        bot_config.consider_ma_for_open_order = refer_bot['consider_ma_for_open_order']
         bot_config.consider_ma_for_close_order = refer_bot['consider_ma_for_close_order']
-        bot_config.ma_number_of_candles_for_open_order = refer_bot['ma_number_of_candles_for_open_order'],
+        bot_config.ma_number_of_candles_for_open_order = refer_bot['ma_number_of_candles_for_open_order']
         bot_config.ma_number_of_candles_for_close_order = refer_bot['ma_number_of_candles_for_close_order']
 
         # for test if copy_bot use right refer_bot
