@@ -38,6 +38,13 @@ class PriceWatcher:
             current_price = await self.price_provider.get_price(symbol)
 
             if bot_config.consider_ma_for_open_order:
+                try:
+                    int(bot_config.ma_number_of_candles_for_open_order)
+                except:
+                    print(
+                        f"Value: {bot_config.ma_number_of_candles_for_open_order}, Type: {type(bot_config.ma_number_of_candles_for_open_order)}"
+                    )
+
                 if int(bot_config.ma_number_of_candles_for_open_order) < int(bot_config.ma_number_of_candles_for_close_order):
                     less_ma_number = int(bot_config.ma_number_of_candles_for_open_order)
                     more_ma_number = int(bot_config.ma_number_of_candles_for_close_order)

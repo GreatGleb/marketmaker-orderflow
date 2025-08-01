@@ -1587,11 +1587,11 @@ class BinanceBot(Command):
         except Exception as e:
             logging.info(f'Symbol: {symbol}, error when get klines: {e}')
             logging.error(f'Symbol: {symbol}, error when get klines: {e}')
-            return None
+            return None, None
 
         if not klines:
             logging.warning(f'Symbol: {symbol}, no klines returned.')
-            return None
+            return None, None
 
         if not current_price:
             if not hasattr(self, 'price_provider'):

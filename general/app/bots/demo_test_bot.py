@@ -111,8 +111,6 @@ class StartTestBotsCommand(Command):
             )
             return False
 
-        print(refer_bot)
-
         bot_config.symbol = refer_bot["symbol"]
         bot_config.stop_success_ticks = refer_bot["stop_success_ticks"]
         bot_config.stop_loss_ticks = refer_bot["stop_loss_ticks"]
