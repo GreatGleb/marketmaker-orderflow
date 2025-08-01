@@ -71,7 +71,7 @@ class ExitStrategy:
         order,
         updated_price,
     ):
-        ma_close = await binance_bot.get_ma(symbol=symbol, ma_number=bot_config.ma_number_of_candles_for_close_order, current_price=updated_price)
+        ma_close = await binance_bot.get_ma(symbol=symbol, ma_number=int(bot_config.ma_number_of_candles_for_close_order), current_price=updated_price)
 
         if order.order_type == TradeType.BUY:
             if ma_close and updated_price < ma_close:
