@@ -130,6 +130,8 @@ class StartTestBotsCommand(Command):
         bot_config.referral_bot_id = refer_bot["id"]
         bot_config.consider_ma_for_open_order = refer_bot['consider_ma_for_open_order'],
         bot_config.consider_ma_for_close_order = refer_bot['consider_ma_for_close_order']
+        bot_config.ma_number_of_candles_for_open_order = refer_bot['ma_number_of_candles_for_open_order'],
+        bot_config.ma_number_of_candles_for_close_order = refer_bot['ma_number_of_candles_for_close_order']
 
         # for test if copy_bot use right refer_bot
         # tf_bot_ids = (
@@ -237,7 +239,7 @@ class StartTestBotsCommand(Command):
                         entry_price_buy=entry_price_buy,
                         entry_price_sell=entry_price_sell,
                         binance_bot=binance_bot,
-                        consider_ma_for_open_order=bot_config.consider_ma_for_open_order,
+                        bot_config=bot_config,
                     ),
                     timeout=timeout,
                 )
@@ -289,6 +291,7 @@ class StartTestBotsCommand(Command):
                     should_exit = (
                         await ExitStrategy.check_exit_ma_conditions(
                             binance_bot=binance_bot,
+                            bot_config=bot_config,
                             symbol=symbol,
                             order=order,
                             updated_price=updated_price,

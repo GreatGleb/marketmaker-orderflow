@@ -1,3 +1,4 @@
+from decimal import Decimal
 from typing import Optional
 
 from datetime import datetime
@@ -509,6 +510,16 @@ class TestBot(BaseId):
         types.Boolean,
         default=False,
         comment="Whether to consider the moving average (MA) when closing the order",
+    )
+    ma_number_of_candles_for_open_order: Mapped[Optional[Decimal]] = mapped_column(
+        types.Numeric,
+        nullable=True,
+        comment="The number of candles used to calculate the moving average (MA) for the order opening logic",
+    )
+    ma_number_of_candles_for_close_order: Mapped[Optional[Decimal]] = mapped_column(
+        types.Numeric,
+        nullable=True,
+        comment="The number of candles used to calculate the moving average (MA) for the order closing logic",
     )
 
 

@@ -60,6 +60,12 @@ class ProfitableBotUpdaterCommand(Command):
                     "consider_ma_for_close_order": str(
                         refer_bot.consider_ma_for_open_order
                     ),
+                    "ma_number_of_candles_for_open_order": str(
+                        refer_bot.ma_number_of_candles_for_open_order
+                    ),
+                    "ma_number_of_candles_for_close_order": str(
+                        refer_bot.ma_number_of_candles_for_close_order
+                    ),
                 }
             else:
                 refer_bot_dict = None

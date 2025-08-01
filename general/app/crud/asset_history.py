@@ -66,6 +66,25 @@ class AssetHistoryCrud(BaseCrud[AssetHistory]):
         result = await self.session.execute(query)
         return result.scalars().all()
 
+    async def get_most_volatiles_since_from_symbols_list(self, since: datetime, symbols_list):
+        query = (
+            select(
+                AssetHistory.symbol,
+                func.abs(
+                    (func.max(AssetHistory.last_price) - func.min(AssetHistory.last_price))
+                    / func.min(AssetHistory.last_price)
+                ).label("volatility")
+            )
+            .where(AssetHistory.event_time >= since)
+            .where(AssetHistory.symbol.in_(symbols_list))
+            .group_by(AssetHistory.symbol)
+            .order_by(text("volatility DESC"))
+            .limit(10)
+        )
+
+        result = await self.session.execute(query)
+        return result.scalars().all()
+
     async def get_latest_price(self, symbol: str) -> Decimal | None:
         stmt = (
             select(AssetHistory.last_price)
@@ -76,7 +95,7 @@ class AssetHistoryCrud(BaseCrud[AssetHistory]):
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def get_all_active_pairs(self):
+    async def get_all_active_pairs(self, is_need_full_info = False):
         UTC = timezone.utc
         now = datetime.now(UTC)
         five_minutes_ago = now - timedelta(minutes=5)
@@ -101,6 +120,16 @@ class AssetHistoryCrud(BaseCrud[AssetHistory]):
                 & (AssetHistory.event_time == sub_query_new.c.max_time),
             )
         )
+
+        if is_need_full_info:
+            new_prices = (
+                select(AssetHistory)
+                .join(
+                    sub_query_new,
+                    (AssetHistory.symbol == sub_query_new.c.symbol)
+                    & (AssetHistory.event_time == sub_query_new.c.max_time),
+                )
+            )
 
         result = await self.session.execute(new_prices)
         return result.scalars().all()

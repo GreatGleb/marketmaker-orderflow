@@ -1,4 +1,5 @@
 import time
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from sqlalchemy import select, func, text
@@ -92,6 +93,51 @@ async def get_average_percentage_for_minimum_tick():
 
     return average_percent
 
+async def get_volatile_symbols(session):
+    asset_crud = AssetHistoryCrud(session)
+    active_symbols = await asset_crud.get_all_active_pairs(is_need_full_info=True)
+
+    if not active_symbols:
+        return []
+
+    filtered_symbols = [
+        symbol for symbol in active_symbols
+        if float(symbol.quote_asset_volume_24h) > 2000000
+    ]
+
+    sorted_symbols = sorted(
+        filtered_symbols,
+        key=lambda x: float(x.price_change_percent_24h),
+        reverse=True
+    )
+
+    count = len(sorted_symbols)
+    top_10_percent_count = int(count * 0.1)
+    top_symbols = [
+        symbol.symbol for symbol in sorted_symbols[:top_10_percent_count]
+    ]
+
+    now = datetime.now(timezone.utc)
+    time_ago = now - timedelta(hours=6)
+
+    most_volatiles_h6 = await asset_crud.get_most_volatiles_since_from_symbols_list(
+        since=time_ago,
+        symbols_list=top_symbols
+    )
+
+    time_ago = now - timedelta(hours=3)
+
+    most_volatiles_h3 = await asset_crud.get_most_volatiles_since_from_symbols_list(
+        since=time_ago,
+        symbols_list=most_volatiles_h6
+    )
+
+    most_volatiles_h3_6 = most_volatiles_h3[:6]
+
+    return most_volatiles_h3_6
+
+
+
 async def create_bots():
     # average_percent_for_1_tick = await get_average_percentage_for_minimum_tick()
 
@@ -101,6 +147,13 @@ async def create_bots():
 
     async with dsm.get_session() as session:
         bot_crud = TestBotCrud(session)
+
+        try:
+            sql_command = "TRUNCATE TABLE test_bots RESTART IDENTITY CASCADE;"
+            await session.execute(text(sql_command))
+        except Exception as e:
+            print(e)
+            return
 
         # start_ticks_values = [10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 70, 80, 100]
         # stop_lose_ticks_values = [40, 45, 50, 55, 60, 70, 80, 90, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]
@@ -140,6 +193,36 @@ async def create_bots():
         #     print(f"✅ Успешно создано ботов. {len(new_bots)}")
         # except Exception as e:
         #     print(e)
+
+        # ma test bots
+
+        symbols = await get_volatile_symbols(session)
+        symbols.append('XRPUSDT')
+
+        open_ma_numbers = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100,105,110,115,120,125,130,135,140,145,150]
+        close_ma_numbers = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100,105,110,115,120,125,130,135,140,145,150]
+
+        try:
+            for symbol in symbols:
+                new_bots = []
+                for open_ma_number in open_ma_numbers:
+                    for close_ma_number in close_ma_numbers:
+                        bot_data = {
+                            "symbol": symbol,
+                            "balance": Decimal("1000.0"),
+                            "consider_ma_for_open_order": True,
+                            "consider_ma_for_close_order": True,
+                            "ma_number_of_candles_for_open_order": open_ma_number,
+                            "ma_number_of_candles_for_close_order": close_ma_number,
+                            "is_active": True,
+                        }
+                        new_bots.append(bot_data)
+
+                await bot_crud.bulk_create(new_bots)
+                await session.commit()
+                print(f"✅ Успешно создано ботов. {len(new_bots)}")
+        except Exception as e:
+            print(e)
 
         copy_bot_min_time_profitability_min_values = [10, 20, 30, 40, 50, 60, 120, 180, 240, 360, 420, 480, 540, 600, 660, 720, 1440]
 
