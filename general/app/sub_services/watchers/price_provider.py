@@ -39,11 +39,11 @@ class PriceWatcher:
 
             if bot_config.consider_ma_for_open_order:
                 if bot_config.ma_number_of_candles_for_open_order < bot_config.ma_number_of_candles_for_close_order:
-                    less_ma_number = bot_config.ma_number_of_candles_for_open_order
-                    more_ma_number = bot_config.ma_number_of_candles_for_close_order
+                    less_ma_number = int(bot_config.ma_number_of_candles_for_open_order)
+                    more_ma_number = int(bot_config.ma_number_of_candles_for_close_order)
                 else:
-                    less_ma_number = bot_config.ma_number_of_candles_for_close_order
-                    more_ma_number = bot_config.ma_number_of_candles_for_open_order
+                    less_ma_number = int(bot_config.ma_number_of_candles_for_close_order)
+                    more_ma_number = int(bot_config.ma_number_of_candles_for_open_order)
 
                 less_ma, more_ma = await binance_bot.get_double_ma(symbol=symbol, less_ma_number=less_ma_number, more_ma_number=more_ma_number, current_price=current_price)
                 if less_ma and more_ma and current_price > less_ma and current_price > more_ma:
