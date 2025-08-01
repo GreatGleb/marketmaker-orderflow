@@ -265,32 +265,45 @@ class StartTestBotsCommand(Command):
                     open_price=open_price, trade_type=trade_type
                 )
             )
-            stop_loss_price = PriceCalculator.calculate_stop_lose_price(
-                stop_loss_ticks=bot_config.stop_loss_ticks,
-                tick_size=tick_size,
-                open_price=open_price,
-                trade_type=trade_type,
-            )
-            original_take_profit_price = (
-                PriceCalculator.calculate_take_profit_price(
-                    stop_success_ticks=bot_config.stop_success_ticks,
+
+            if not bot_config.consider_ma_for_close_order:
+                stop_loss_price = PriceCalculator.calculate_stop_lose_price(
+                    stop_loss_ticks=bot_config.stop_loss_ticks,
                     tick_size=tick_size,
                     open_price=open_price,
                     trade_type=trade_type,
                 )
-            )
-            take_profit_price = original_take_profit_price
+                original_take_profit_price = (
+                    PriceCalculator.calculate_take_profit_price(
+                        stop_success_ticks=bot_config.stop_success_ticks,
+                        tick_size=tick_size,
+                        open_price=open_price,
+                        trade_type=trade_type,
+                    )
+                )
+                take_profit_price = original_take_profit_price
 
-            order = TestOrder(
-                stop_loss_price=Decimal(stop_loss_price),
-                stop_success_ticks=bot_config.stop_success_ticks,
-                open_price=open_price,
-                open_time=datetime.now(UTC),
-                open_fee=(
-                    Decimal(bot_config.balance) * Decimal(COMMISSION_OPEN)
-                ),
-                order_type=trade_type
-            )
+                order = TestOrder(
+                    stop_loss_price=Decimal(stop_loss_price),
+                    stop_success_ticks=bot_config.stop_success_ticks,
+                    open_price=open_price,
+                    open_time=datetime.now(UTC),
+                    open_fee=(
+                        Decimal(bot_config.balance) * Decimal(COMMISSION_OPEN)
+                    ),
+                    order_type=trade_type
+                )
+            else:
+                order = TestOrder(
+                    stop_loss_price=0,
+                    stop_success_ticks=0,
+                    open_price=open_price,
+                    open_time=datetime.now(UTC),
+                    open_fee=(
+                        Decimal(bot_config.balance) * Decimal(COMMISSION_OPEN)
+                    ),
+                    order_type=trade_type
+                )
 
             while not stop_event.is_set():
                 updated_price = await price_provider.get_price(symbol=symbol)
