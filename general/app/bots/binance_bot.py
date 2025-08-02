@@ -1612,31 +1612,6 @@ class BinanceBot(Command):
         return less_ma, more_ma
 
     async def get_prev_minutes_ma(self, symbol, less_ma_number, more_ma_number, minutes, current_price = None):
-        limit = more_ma_number + minutes
-        try:
-            klines = await self._safe_from_time_err_call_binance(
-                self.binance_client.futures_klines,
-                symbol=symbol, interval=Client.KLINE_INTERVAL_1MINUTE, limit=limit
-            )
-        except Exception as e:
-            logging.info(f'Symbol: {symbol}, error when get klines: {e}')
-            logging.error(f'Symbol: {symbol}, error when get klines: {e}')
-            return None, None
-
-        if not klines:
-            logging.warning(f'Symbol: {symbol}, no klines returned.')
-            return None, None
-
-        if not current_price:
-            if not hasattr(self, 'price_provider'):
-                async with redis_context() as redis:
-                    self.price_provider = PriceProvider(redis)
-
-            current_price = await self.price_provider.get_price(symbol=symbol)
-
-        closes = [Decimal(kline[4]) for kline in klines]
-        closes.append(current_price)
-
         result = {
             'less': {
                 'ma_number': less_ma_number,
@@ -1647,6 +1622,31 @@ class BinanceBot(Command):
                 'result': [],
             },
         }
+
+        limit = more_ma_number + minutes
+        try:
+            klines = await self._safe_from_time_err_call_binance(
+                self.binance_client.futures_klines,
+                symbol=symbol, interval=Client.KLINE_INTERVAL_1MINUTE, limit=limit
+            )
+        except Exception as e:
+            logging.info(f'Symbol: {symbol}, error when get klines: {e}')
+            logging.error(f'Symbol: {symbol}, error when get klines: {e}')
+            return result
+
+        if not klines:
+            logging.warning(f'Symbol: {symbol}, no klines returned.')
+            return result
+
+        if not current_price:
+            if not hasattr(self, 'price_provider'):
+                async with redis_context() as redis:
+                    self.price_provider = PriceProvider(redis)
+
+            current_price = await self.price_provider.get_price(symbol=symbol)
+
+        closes = [Decimal(kline[4]) for kline in klines]
+        closes.append(current_price)
 
         for minute in range(minutes + 1):
             for type_ma in result:

@@ -227,6 +227,8 @@ class StartTestBotsCommand(Command):
 
             try:
                 wait_minutes = 1
+                if bot_config.consider_ma_for_open_order:
+                    wait_minutes = 60
 
                 if bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes:
                     wait_minutes = bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes
@@ -239,11 +241,6 @@ class StartTestBotsCommand(Command):
                 )
                 timeout = int(timeout)
                 price_watcher = PriceWatcher(redis=redis)
-
-                if bot_config.id == 1 or bot_config.copy_bot_min_time_profitability_min:
-                    print(
-                        f"Valueee: {bot_config.ma_number_of_candles_for_open_order}, Type: {type(bot_config.ma_number_of_candles_for_open_order)}"
-                    )
 
                 trade_type, entry_price = await asyncio.wait_for(
                     price_watcher.wait_for_entry_price(
