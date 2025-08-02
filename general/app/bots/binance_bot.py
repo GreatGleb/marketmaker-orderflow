@@ -30,7 +30,7 @@ from app.workers.profitable_bot_updater import ProfitableBotUpdaterCommand
 UTC = timezone.utc
 
 class BinanceBot(Command):
-    def __init__(self, stop_event = None):
+    def __init__(self, stop_event = None, is_need_prod_for_data = False):
         super().__init__()
 
         logging.basicConfig(
@@ -48,7 +48,7 @@ class BinanceBot(Command):
         self.is_prod = os.getenv("ENVIRONMENT") == "prod"
         logging.info(f'is_prod = {self.is_prod}, {os.getenv("ENVIRONMENT")}')
 
-        if self.is_prod:
+        if self.is_prod or is_need_prod_for_data:
             api_key = os.getenv("BINANCE_API_KEY")
             api_secret = os.getenv("BINANCE_SECRET_KEY")
             self.binance_client = Client(api_key, api_secret)
@@ -1606,7 +1606,70 @@ class BinanceBot(Command):
         less_ma_closes = closes[-(less_ma_number + 1):]
         less_ma = sum(less_ma_closes) / Decimal(len(less_ma_closes))
 
-        more_ma_closes = closes
+        more_ma_closes = closes[-(more_ma_number + 1):]
         more_ma = sum(more_ma_closes) / Decimal(len(more_ma_closes))
 
         return less_ma, more_ma
+
+    async def get_prev_minutes_ma(self, symbol, less_ma_number, more_ma_number, minutes, current_price = None):
+        limit = more_ma_number + minutes
+        try:
+            klines = await self._safe_from_time_err_call_binance(
+                self.binance_client.futures_klines,
+                symbol=symbol, interval=Client.KLINE_INTERVAL_1MINUTE, limit=limit
+            )
+        except Exception as e:
+            logging.info(f'Symbol: {symbol}, error when get klines: {e}')
+            logging.error(f'Symbol: {symbol}, error when get klines: {e}')
+            return None, None
+
+        if not klines:
+            logging.warning(f'Symbol: {symbol}, no klines returned.')
+            return None, None
+
+        if not current_price:
+            if not hasattr(self, 'price_provider'):
+                async with redis_context() as redis:
+                    self.price_provider = PriceProvider(redis)
+
+            current_price = await self.price_provider.get_price(symbol=symbol)
+
+        closes = [Decimal(kline[4]) for kline in klines]
+        closes.append(current_price)
+
+        result = {
+            'less': {
+                'ma_number': less_ma_number,
+                'result': [],
+            },
+            'more': {
+                'ma_number': more_ma_number,
+                'result': [],
+            },
+        }
+
+        for minute in range(minutes + 1):
+            for type_ma in result:
+                ma_number = result[type_ma]['ma_number']
+                closes_for_ma_minutes_ago = None
+                if minute > 0:
+                    closes_minutes_ago = closes[:-(minute + 1)]
+
+                    if len(closes_minutes_ago) >= ma_number:
+                        closes_for_ma_minutes_ago = closes_minutes_ago[-ma_number:]
+                else:
+                    closes_minutes_ago = closes
+
+                    if len(closes_minutes_ago) >= (ma_number + 1):
+                        closes_for_ma_minutes_ago = closes_minutes_ago[-(ma_number + 1):]
+
+                if not closes_for_ma_minutes_ago:
+                    print(f"Недостаточно данных для расчета {ma_number}MA за {minute} минуты назад.")
+                    result[type_ma]['result'].append(None)
+                    continue
+
+                ma_minutes_ago = sum(closes_for_ma_minutes_ago) / Decimal(len(closes_for_ma_minutes_ago))
+                print(f"{ma_number}MA {minute} минуты назад: {ma_minutes_ago}")
+                result[type_ma]['result'].append(ma_minutes_ago)
+
+        return result
