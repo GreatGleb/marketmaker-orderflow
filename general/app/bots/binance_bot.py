@@ -1669,7 +1669,6 @@ class BinanceBot(Command):
                     continue
 
                 ma_minutes_ago = sum(closes_for_ma_minutes_ago) / Decimal(len(closes_for_ma_minutes_ago))
-                print(f"{ma_number}MA {minute} минуты назад: {ma_minutes_ago}")
                 result[type_ma]['result'].append(ma_minutes_ago)
 
         return result
