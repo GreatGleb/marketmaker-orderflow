@@ -50,7 +50,7 @@ class PriceWatcher:
                     symbol=symbol,
                     less_ma_number=less_ma_number,
                     more_ma_number=more_ma_number,
-                    minutes=1,
+                    minutes=2,
                     current_price=current_price
                 )
 
@@ -62,7 +62,7 @@ class PriceWatcher:
                 less_ma_history = ma_data['less']['result']
                 more_ma_history = ma_data['more']['result']
 
-                if len(less_ma_history) < (1+1) or len(more_ma_history) < (1+1):
+                if len(less_ma_history) < (2+1) or len(more_ma_history) < (2+1):
                     print("Недостаточно истории MA для проверки пересечения.")
                     await asyncio.sleep(0.1)
                     continue
@@ -73,7 +73,7 @@ class PriceWatcher:
                 is_it_buy = False
                 is_it_sell = False
 
-                for minute in range(1, (1 + 1)):
+                for minute in range(1, (2 + 1)):
                     less_ma_prev = less_ma_history[minute]
                     more_ma_prev = more_ma_history[minute]
 

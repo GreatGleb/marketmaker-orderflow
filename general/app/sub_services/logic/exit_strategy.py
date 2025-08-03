@@ -84,7 +84,7 @@ class ExitStrategy:
             symbol=symbol,
             less_ma_number=less_ma_number,
             more_ma_number=more_ma_number,
-            minutes=1,
+            minutes=2,
             current_price=updated_price
         )
 
@@ -94,21 +94,27 @@ class ExitStrategy:
         less_ma_history = ma_data['less']['result']
         more_ma_history = ma_data['more']['result']
 
-        if len(less_ma_history) < 2 or len(more_ma_history) < 2:
+        if len(less_ma_history) < 3 or len(more_ma_history) < 3:
             return False
 
         less_ma_current = less_ma_history[0]
         more_ma_current = more_ma_history[0]
-        less_ma_prev = less_ma_history[1]
-        more_ma_prev = more_ma_history[1]
 
-        if None in [less_ma_prev, less_ma_current, more_ma_prev, more_ma_current]:
+        less_ma_prev_1 = less_ma_history[1]
+        more_ma_prev_1 = more_ma_history[1]
+        less_ma_prev_2 = less_ma_history[2]
+        more_ma_prev_2 = more_ma_history[2]
+
+        if None in [less_ma_prev_2, less_ma_prev_1, less_ma_current, more_ma_prev_2, more_ma_prev_1, more_ma_current]:
             return False
 
         if order.order_type == TradeType.BUY:
             # Проверяем на "Крест смерти" (пересечение вниз)
             # Если быстрая MA пересекла медленную сверху вниз, закрываем позицию
-            if less_ma_prev > more_ma_prev and less_ma_current < more_ma_current:
+            if less_ma_prev_1 > more_ma_prev_1 and less_ma_current < more_ma_current:
+                print(f"Сигнал на закрытие покупки: Крест смерти на {symbol} в {datetime.now().strftime('%H:%M:%S')}")
+                return True
+            if less_ma_prev_2 > more_ma_prev_2 and less_ma_current < more_ma_current:
                 print(f"Сигнал на закрытие покупки: Крест смерти на {symbol} в {datetime.now().strftime('%H:%M:%S')}")
                 return True
 
@@ -116,7 +122,10 @@ class ExitStrategy:
         elif order.order_type == TradeType.SELL:
             # Проверяем на "Золотой крест" (пересечение вверх)
             # Если быстрая MA пересекла медленную снизу вверх, закрываем позицию
-            if less_ma_prev < more_ma_prev and less_ma_current > more_ma_current:
+            if less_ma_prev_1 < more_ma_prev_1 and less_ma_current > more_ma_current:
+                print(f"Сигнал на закрытие продажи: Золотой крест на {symbol} в {datetime.now().strftime('%H:%M:%S')}")
+                return True
+            if less_ma_prev_2 < more_ma_prev_2 and less_ma_current > more_ma_current:
                 print(f"Сигнал на закрытие продажи: Золотой крест на {symbol} в {datetime.now().strftime('%H:%M:%S')}")
                 return True
 
