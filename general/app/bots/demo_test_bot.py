@@ -228,7 +228,7 @@ class StartTestBotsCommand(Command):
             try:
                 wait_minutes = 1
                 if bot_config.consider_ma_for_open_order:
-                    wait_minutes = 60
+                    wait_minutes = 12 * 60
 
                 if bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes:
                     wait_minutes = bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes
