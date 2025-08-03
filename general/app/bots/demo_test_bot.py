@@ -53,7 +53,7 @@ class StartTestBotsCommand(Command):
         active_bots = await bot_crud.get_active_bots()
 
         price_provider = PriceProvider(redis=redis)
-        binance_bot = BinanceBot()
+        binance_bot = BinanceBot(is_need_prod_for_data=True, redis=redis)
 
         builder = MarketDataBuilder(session)
         shared_data = await builder.build()

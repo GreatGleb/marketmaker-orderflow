@@ -1,4 +1,5 @@
 import asyncio
+import json
 import math
 import os
 import time
@@ -30,7 +31,7 @@ from app.workers.profitable_bot_updater import ProfitableBotUpdaterCommand
 UTC = timezone.utc
 
 class BinanceBot(Command):
-    def __init__(self, stop_event = None, is_need_prod_for_data = False):
+    def __init__(self, stop_event = None, is_need_prod_for_data = False, redis = None):
         super().__init__()
 
         logging.basicConfig(
@@ -38,7 +39,7 @@ class BinanceBot(Command):
             level=logging.INFO
         )
 
-        self.redis = None
+        self.redis = redis
         self.session = None
         self.bot_crud = None
         self.symbols_characteristics = None
@@ -1623,29 +1624,25 @@ class BinanceBot(Command):
             },
         }
 
-        limit = more_ma_number + minutes
-        try:
-            klines = await self._safe_from_time_err_call_binance(
-                self.binance_client.futures_klines,
-                symbol=symbol, interval=Client.KLINE_INTERVAL_1MINUTE, limit=limit
-            )
-        except Exception as e:
-            logging.info(f'Symbol: {symbol}, error when get klines: {e}')
-            logging.error(f'Symbol: {symbol}, error when get klines: {e}')
-            return result
-
-        if not klines:
-            logging.warning(f'Symbol: {symbol}, no klines returned.')
-            return result
-
         if not current_price:
             if not hasattr(self, 'price_provider'):
-                async with redis_context() as redis:
-                    self.price_provider = PriceProvider(redis)
-
+                self.price_provider = PriceProvider(self.redis)
             current_price = await self.price_provider.get_price(symbol=symbol)
 
-        closes = [Decimal(kline[4]) for kline in klines]
+        try:
+            key = f"candles:{symbol}"
+            klines = await self.redis.get(key)
+            candle_list = json.loads(klines)
+        except Exception as e:
+            logging.info(f'Symbol: {symbol}, error when get candle_list: {e}')
+            logging.error(f'Symbol: {symbol}, error when get candle_list: {e}')
+            return result
+
+        if not candle_list:
+            logging.warning(f'Symbol: {symbol}, no candle_list returned.')
+            return result
+
+        closes = [Decimal(candle) for candle in candle_list]
         closes.append(current_price)
 
         for minute in range(minutes + 1):
