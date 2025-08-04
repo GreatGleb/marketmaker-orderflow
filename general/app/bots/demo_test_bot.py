@@ -238,6 +238,9 @@ class StartTestBotsCommand(Command):
             trade_type = None
             entry_price = None
 
+            if bot_config.copy_bot_min_time_profitability_min:
+                print(f'waiting')
+
             try:
                 wait_minutes = 1
                 if bot_config.consider_ma_for_open_order:
