@@ -94,7 +94,6 @@ class ProfitableBotUpdaterCommand(Command):
                     ),
                     "time_to_wait_for_entry_price_to_open_order_in_minutes": str(
                         refer_bot.time_to_wait_for_entry_price_to_open_order_in_minutes
-                        or 1
                     ),
                     "consider_ma_for_open_order": refer_bot.consider_ma_for_open_order,
                     "consider_ma_for_close_order": refer_bot.consider_ma_for_close_order,
