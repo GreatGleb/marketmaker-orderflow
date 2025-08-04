@@ -1,10 +1,12 @@
 import asyncio
 import json
+
 import websockets
 from datetime import datetime
 
 from sqlalchemy import select, distinct, func
 
+from app.bots.binance_bot import BinanceBot
 from app.config import settings
 from app.db.base import DatabaseSessionManager
 from app.db.models import TestBot
@@ -28,12 +30,15 @@ async def build_ws_url(session):
     ma_number = max(ma_numbers)
 
     count_of_saved_candles = ma_number + 10
+    count_of_saved_candles = int(count_of_saved_candles)
+    print(f'count_of_saved_candles: {count_of_saved_candles}')
+
     streams = [f"{symbol.lower()}@kline_{INTERVAL}" for symbol in all_symbols]
     stream_path = "/".join(streams)
     return f"wss://fstream.binance.com/stream?streams={stream_path}", all_symbols, count_of_saved_candles
 
 
-async def save_candle_to_redis(redis, symbol: str, candle: dict, count_of_saved_candles: int):
+async def save_candle_to_redis(redis, binance_bot, symbol: str, candle: str, count_of_saved_candles: int):
     key = f"candles:{symbol}"
     existing = await redis.get(key)
     try:
@@ -41,11 +46,19 @@ async def save_candle_to_redis(redis, symbol: str, candle: dict, count_of_saved_
     except Exception:
         candle_list = []
 
+    if len(candle_list) == 0:
+        klines = await binance_bot.get_klines(symbol=symbol, limit=count_of_saved_candles)
+
+        if klines:
+            klines = klines[:-1]
+            candle_list = [kline[4] for kline in klines]
+
     candle_list.append(candle)
+
     if len(candle_list) > count_of_saved_candles:
         candle_list = candle_list[-count_of_saved_candles:]
 
-    print(f'Saving candle {candle_list}')
+    print(f'{datetime.now().strftime("%H:%M:%S")} - Saving candle {symbol}')
 
     await redis.set(key, json.dumps(candle_list))
 
@@ -60,6 +73,8 @@ async def run_websocket_listener():
                 print(f"Connecting to WebSocket: {ws_url}")
                 async with websockets.connect(ws_url) as websocket:
                     print("✅ Connected to Binance WebSocket for klines.")
+
+                    binance_bot = BinanceBot(is_need_prod_for_data=True)
 
                     while True:
                         async with redis_context() as redis:
@@ -78,9 +93,9 @@ async def run_websocket_listener():
 
                             if is_closed:
                                 # event_time = datetime.fromtimestamp(kline_data.get("T") / 1000)
-                                await save_candle_to_redis(redis, symbol, candle_close_price, count_of_saved_candles)
-                            else:
-                                await redis.set(f"candle_current:{symbol}", candle_close_price)
+                                await save_candle_to_redis(redis, binance_bot, symbol, candle_close_price, count_of_saved_candles)
+                            # else:
+                            #     await redis.set(f"candle_current:{symbol}", candle_close_price)
 
             except websockets.exceptions.ConnectionClosedOK:
                 print("⚠️ WebSocket closed gracefully. Reconnecting...")

@@ -564,7 +564,7 @@ class BinanceBot(Command):
 
                 current_price = order_params['initial_price']
 
-                ma10, ma25 = await self.get_double_ma(db_order.symbol, 10, 25, current_price)
+                ma10, ma25 = await self.get_double_ma(db_order.symbol, 10, 25)
 
                 if not ma10 or not ma25:
                     db_order.status = 'CANCELED'
@@ -870,7 +870,7 @@ class BinanceBot(Command):
 
         while db_order.close_time is None:
             current_price = await self.price_provider.get_price(symbol=db_order.symbol)
-            ma10 = await self.get_ma(db_order.symbol, 10, current_price)
+            ma10 = await self.get_ma(db_order.symbol, 10)
 
             is_need_to_close_order = False
 
@@ -1553,38 +1553,32 @@ class BinanceBot(Command):
         rounded_price = f"{price:.{precision}f}"
         return rounded_price
 
-    async def get_ma(self, symbol, ma_number, current_price = None):
+    async def get_klines(self, symbol, limit):
+        klines = await self._safe_from_time_err_call_binance(
+            self.binance_client.futures_klines,
+            symbol=symbol, interval=Client.KLINE_INTERVAL_1MINUTE, limit=limit
+        )
+
+        return klines
+
+    async def get_ma(self, symbol, ma_number):
         try:
-            klines = await self._safe_from_time_err_call_binance(
-                self.binance_client.futures_klines,
-                symbol=symbol, interval=Client.KLINE_INTERVAL_1MINUTE, limit=ma_number
-            )
+            klines = await self.get_klines(symbol=symbol, limit=ma_number)
         except Exception as e:
             logging.info(f'Symbol: {symbol}, error when get klines: {e}')
             logging.error(f'Symbol: {symbol}, error when get klines: {e}')
             return None
 
-        if not current_price:
-            if not hasattr(self, 'price_provider'):
-                async with redis_context() as redis:
-                    self.price_provider = PriceProvider(redis)
-
-            current_price = await self.price_provider.get_price(symbol=symbol)
-
         closes = [Decimal(kline[4]) for kline in klines]
-        closes.append(current_price)
-        ma_window = ma_number + 1
+        ma_window = ma_number
         ma = sum(closes) / Decimal(ma_window)
 
         return ma
 
-    async def get_double_ma(self, symbol, less_ma_number, more_ma_number, current_price = None):
+    async def get_double_ma(self, symbol, less_ma_number, more_ma_number):
         limit = more_ma_number
         try:
-            klines = await self._safe_from_time_err_call_binance(
-                self.binance_client.futures_klines,
-                symbol=symbol, interval=Client.KLINE_INTERVAL_1MINUTE, limit=limit
-            )
+            klines = await self.get_klines(symbol=symbol, limit=limit)
         except Exception as e:
             logging.info(f'Symbol: {symbol}, error when get klines: {e}')
             logging.error(f'Symbol: {symbol}, error when get klines: {e}')
@@ -1594,20 +1588,12 @@ class BinanceBot(Command):
             logging.warning(f'Symbol: {symbol}, no klines returned.')
             return None, None
 
-        if not current_price:
-            if not hasattr(self, 'price_provider'):
-                async with redis_context() as redis:
-                    self.price_provider = PriceProvider(redis)
-
-            current_price = await self.price_provider.get_price(symbol=symbol)
-
         closes = [Decimal(kline[4]) for kline in klines]
-        closes.append(current_price)
 
-        less_ma_closes = closes[-(less_ma_number + 1):]
+        less_ma_closes = closes[-less_ma_number:]
         less_ma = sum(less_ma_closes) / Decimal(len(less_ma_closes))
 
-        more_ma_closes = closes[-(more_ma_number + 1):]
+        more_ma_closes = closes[-more_ma_number:]
         more_ma = sum(more_ma_closes) / Decimal(len(more_ma_closes))
 
         return less_ma, more_ma
