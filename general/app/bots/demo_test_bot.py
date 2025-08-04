@@ -147,7 +147,10 @@ class StartTestBotsCommand(Command):
         # if refer_bot:
         #     bot_config.referral_bot_from_profit_func = refer_bot["id"]
 
-        return bot_config
+        return {
+            'config': bot_config,
+            'referral_bot_id': refer_bot['id']
+        }
 
     @staticmethod
     def json_serializer(obj):
@@ -166,8 +169,8 @@ class StartTestBotsCommand(Command):
         binance_bot,
     ):
         while not stop_event.is_set():
-            setattr(bot_config, "referral_bot_id", None)
             # setattr(bot_config, "referral_bot_from_profit_func", None)
+            referral_bot_id = 0
 
             if bot_config.copybot_v2_time_in_minutes:
                 copybot_v2_time_in_minutes = bot_config.copybot_v2_time_in_minutes
@@ -183,11 +186,14 @@ class StartTestBotsCommand(Command):
                     return
 
             if bot_config.copy_bot_min_time_profitability_min:
-                bot_config = (
+                updating_config_res = (
                     await self.update_config_from_referral_bot(
                         bot_config=bot_config, redis=redis, bot_crud=bot_crud
                     )
                 )
+                bot_config = updating_config_res['config']
+                referral_bot_id = updating_config_res['referral_bot_id']
+
                 if not bot_config:
                     await asyncio.sleep(60)
                     return
@@ -388,7 +394,7 @@ class StartTestBotsCommand(Command):
                 "stop_loss_ticks": order.stop_loss_ticks,
                 "stop_success_ticks": order.stop_success_ticks,
                 "stop_reason_event": order.stop_reason_event,
-                "referral_bot_id": bot_config.referral_bot_id,
+                "referral_bot_id": referral_bot_id,
                 # "referral_bot_from_profit_func": bot_config.referral_bot_from_profit_func,
                 "created_at": datetime.now(UTC),
                 "updated_at": datetime.now(UTC),
