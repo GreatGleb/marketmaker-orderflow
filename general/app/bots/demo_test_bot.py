@@ -174,7 +174,7 @@ class StartTestBotsCommand(Command):
     ):
         while not stop_event.is_set():
             # setattr(bot_config, "referral_bot_from_profit_func", None)
-            referral_bot_id = 0
+            referral_bot_id = None
 
             if bot_config.copybot_v2_time_in_minutes:
                 id = bot_config.id
