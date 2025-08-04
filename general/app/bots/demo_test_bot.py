@@ -108,7 +108,10 @@ class StartTestBotsCommand(Command):
             print(
                 f"❌ Не удалось найти реферального бота для ID: {bot_config.id}"
             )
-            return False
+            return {
+                'config': False,
+                'referral_bot_id': 0
+            }
 
         print(refer_bot[
             'time_to_wait_for_entry_price_to_open_order_in_minutes'
