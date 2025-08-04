@@ -110,6 +110,11 @@ class StartTestBotsCommand(Command):
             )
             return False
 
+        print(refer_bot[
+            'time_to_wait_for_entry_price_to_open_order_in_minutes'
+        ])
+        print('huyna')
+
         ref_bot_config = TestBot(
             balance=1000,
             symbol=refer_bot["symbol"],
