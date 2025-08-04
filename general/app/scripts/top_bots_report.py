@@ -11,7 +11,7 @@ from app.crud.test_bot import TestBotCrud
 UTC = timezone.utc
 
 
-async def update_bot_profits(hours: int = None, minutes: int = None, just_copy_bots: str = None, just_not_copy_bots: str = None, top_count: int = 10):
+async def update_bot_profits(hours: int = None, minutes: int = None, just_copy_bots: str = None, just_copy_bots_v2: str = None, just_not_copy_bots: str = None, top_count: int = 10):
     dsm = DatabaseSessionManager.create(settings.DB_URL)
     async with (dsm.get_session() as session):
         now = datetime.now(UTC)
@@ -28,6 +28,7 @@ async def update_bot_profits(hours: int = None, minutes: int = None, just_copy_b
         profits_data = await bot_crud.get_sorted_by_profit(
             since=since_timedelta,
             just_copy_bots=just_copy_bots,
+            just_copy_bots_v2=just_copy_bots_v2,
             just_not_copy_bots=just_not_copy_bots,
         )
 
@@ -80,6 +81,8 @@ def main():
                         help="Количество минут для фильтрации данных (например, 30).")
     parser.add_argument('-just_copy', '--just_copy_bots', type=str,
                         help="Только копиботы")
+    parser.add_argument('-just_copy_v2', '--just_copy_bots_v2', type=str,
+                        help="Только копиботы v2")
     parser.add_argument('-just_not_copy', '--just_not_copy_bots', type=str,
                         help="Только обычные боты")
     parser.add_argument('-top_count', '--top_count', type=int,
@@ -88,7 +91,7 @@ def main():
     args = parser.parse_args()
 
     print("⏳ Обновляем статистику ботов...\n")
-    asyncio.run(update_bot_profits(hours=args.hours, minutes=args.minutes, just_copy_bots=args.just_copy_bots, just_not_copy_bots=args.just_not_copy_bots, top_count=args.top_count))
+    asyncio.run(update_bot_profits(hours=args.hours, minutes=args.minutes, just_copy_bots=args.just_copy_bots, just_copy_bots_v2=args.just_copy_bots_v2, just_not_copy_bots=args.just_not_copy_bots, top_count=args.top_count))
 
 
 if __name__ == "__main__":
