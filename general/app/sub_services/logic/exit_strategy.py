@@ -107,10 +107,10 @@ class ExitStrategy:
             # Проверяем на "Крест смерти" (пересечение вниз)
             # Если быстрая MA пересекла медленную сверху вниз, закрываем позицию
             if less_ma_current < more_ma_current:
-                print(f"Сигнал на закрытие покупки: Крест смерти на {symbol} в {datetime.now().strftime('%H:%M:%S')}")
+                # print(f"Сигнал на закрытие покупки: Крест смерти на {symbol} в {datetime.now().strftime('%H:%M:%S')}")
                 return True
             if less_ma_current < more_ma_current:
-                print(f"Сигнал на закрытие покупки: Крест смерти на {symbol} в {datetime.now().strftime('%H:%M:%S')}")
+                # print(f"Сигнал на закрытие покупки: Крест смерти на {symbol} в {datetime.now().strftime('%H:%M:%S')}")
                 return True
 
         # Если открыт ордер на ПРОДАЖУ
@@ -118,10 +118,10 @@ class ExitStrategy:
             # Проверяем на "Золотой крест" (пересечение вверх)
             # Если быстрая MA пересекла медленную снизу вверх, закрываем позицию
             if less_ma_current > more_ma_current:
-                print(f"Сигнал на закрытие продажи: Золотой крест на {symbol} в {datetime.now().strftime('%H:%M:%S')}")
+                # print(f"Сигнал на закрытие продажи: Золотой крест на {symbol} в {datetime.now().strftime('%H:%M:%S')}")
                 return True
             if less_ma_current > more_ma_current:
-                print(f"Сигнал на закрытие продажи: Золотой крест на {symbol} в {datetime.now().strftime('%H:%M:%S')}")
+                # print(f"Сигнал на закрытие продажи: Золотой крест на {symbol} в {datetime.now().strftime('%H:%M:%S')}")
                 return True
 
         # Если обратного пересечения не было, оставляем ордер открытым

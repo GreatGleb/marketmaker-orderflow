@@ -1618,15 +1618,16 @@ class BinanceBot(Command):
         try:
             key = f"candles:{symbol}"
             klines = await self.redis.get(key)
-            candle_list = json.loads(klines)
         except Exception as e:
-            logging.info(f'Symbol: {symbol}, error when get candle_list: {e}')
-            logging.error(f'Symbol: {symbol}, error when get candle_list: {e}')
+            logging.info(f'Symbol: {symbol}, error when get klines: {e}')
+            logging.error(f'Symbol: {symbol}, error when get klines: {e}')
             return result
 
-        if not candle_list:
-            logging.warning(f'Symbol: {symbol}, no candle_list returned.')
+        if not klines:
+            logging.warning(f'Symbol: {symbol}, no klines returned.')
             return result
+
+        candle_list = json.loads(klines)
 
         closes = [Decimal(candle) for candle in candle_list]
         closes.append(current_price)

@@ -82,18 +82,18 @@ class PriceWatcher:
 
                     # Золотой крест: быстрая MA пересекла медленную снизу вверх
                     if less_ma_prev < more_ma_prev and less_ma_current > more_ma_current:
-                        print(
-                            f"Сигнал на покупку: Золотой крест. Fast MA ({less_ma_number}) пересекла Slow MA ({more_ma_number}) снизу вверх. на {symbol} в "
-                        )
-                        print(datetime.now().strftime("%H:%M:%S"))
+                        # print(
+                        #     f"Сигнал на покупку: Золотой крест. Fast MA ({less_ma_number}) пересекла Slow MA ({more_ma_number}) снизу вверх. на {symbol} в "
+                        # )
+                        # print(datetime.now().strftime("%H:%M:%S"))
                         is_it_buy = True
 
                     # Крест смерти: быстрая MA пересекла медленную сверху вниз
                     elif less_ma_prev > more_ma_prev and less_ma_current < more_ma_current:
-                        print(
-                            f"Сигнал на продажу: Крест смерти. Fast MA ({less_ma_number}) пересекла Slow MA ({more_ma_number}) сверху вниз. на {symbol} в "
-                        )
-                        print(datetime.now().strftime("%H:%M:%S"))
+                        # print(
+                        #     f"Сигнал на продажу: Крест смерти. Fast MA ({less_ma_number}) пересекла Slow MA ({more_ma_number}) сверху вниз. на {symbol} в "
+                        # )
+                        # print(datetime.now().strftime("%H:%M:%S"))
                         is_it_sell = True
 
                 if is_it_buy:

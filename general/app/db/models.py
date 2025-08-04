@@ -454,7 +454,7 @@ class TestBot(BaseId):
         nullable=False,
         comment="Total profit",
     )
-    start_updown_ticks: Mapped[int] = mapped_column(
+    start_updown_ticks: Mapped[Optional[int]] = mapped_column(
         types.Integer,
         default=0,
         nullable=True,

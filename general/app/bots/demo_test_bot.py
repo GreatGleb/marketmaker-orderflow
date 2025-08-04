@@ -91,7 +91,6 @@ class StartTestBotsCommand(Command):
                             print(
                                 f"❌ Ошибка при отправке уведомления в Telegram: {telegram_error}"
                             )
-
                         await asyncio.sleep(1)
 
             tasks.append(asyncio.create_task(_run_loop()))
@@ -101,7 +100,7 @@ class StartTestBotsCommand(Command):
     @staticmethod
     async def update_config_from_referral_bot(
         bot_config: TestBot, redis, bot_crud
-    ) -> bool:
+    ):
         refer_bot_js = await redis.get(f"copy_bot_{bot_config.id}")
         refer_bot = json.loads(refer_bot_js) if refer_bot_js else None
 
@@ -111,28 +110,22 @@ class StartTestBotsCommand(Command):
             )
             return False
 
-        bot_config.symbol = refer_bot["symbol"]
-        bot_config.stop_success_ticks = refer_bot["stop_success_ticks"]
-        bot_config.stop_loss_ticks = refer_bot["stop_loss_ticks"]
-        bot_config.start_updown_ticks = refer_bot["start_updown_ticks"]
-        bot_config.stop_win_percents = Decimal(refer_bot["stop_win_percents"])
-        bot_config.stop_loss_percents = Decimal(
-            refer_bot["stop_loss_percents"]
+        bot_config = TestBot(
+            symbol=refer_bot["symbol"],
+            stop_success_ticks=Decimal(refer_bot['stop_success_ticks'] or 0),
+            stop_loss_ticks=Decimal(refer_bot['stop_loss_ticks'] or 0),
+            start_updown_ticks=Decimal(refer_bot['start_updown_ticks'] or 0),
+            stop_win_percents=Decimal(refer_bot['stop_win_percents']),
+            stop_loss_percents=Decimal(refer_bot['stop_loss_percents']),
+            start_updown_percents=Decimal(refer_bot['start_updown_percents']),
+            min_timeframe_asset_volatility=refer_bot['min_timeframe_asset_volatility'],
+            time_to_wait_for_entry_price_to_open_order_in_minutes=refer_bot[
+                'time_to_wait_for_entry_price_to_open_order_in_minutes'],
+            consider_ma_for_open_order=bool(refer_bot['consider_ma_for_open_order']),
+            consider_ma_for_close_order=bool(refer_bot['consider_ma_for_close_order']),
+            ma_number_of_candles_for_open_order=refer_bot['ma_number_of_candles_for_open_order'],
+            ma_number_of_candles_for_close_order=refer_bot['ma_number_of_candles_for_close_order'],
         )
-        bot_config.start_updown_percents = Decimal(
-            refer_bot["start_updown_percents"]
-        )
-        bot_config.min_timeframe_asset_volatility = refer_bot[
-            "min_timeframe_asset_volatility"
-        ]
-        bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes = (
-            refer_bot["time_to_wait_for_entry_price_to_open_order_in_minutes"]
-        )
-        bot_config.referral_bot_id = refer_bot["id"]
-        bot_config.consider_ma_for_open_order = refer_bot['consider_ma_for_open_order']
-        bot_config.consider_ma_for_close_order = refer_bot['consider_ma_for_close_order']
-        bot_config.ma_number_of_candles_for_open_order = refer_bot['ma_number_of_candles_for_open_order']
-        bot_config.ma_number_of_candles_for_close_order = refer_bot['ma_number_of_candles_for_close_order']
 
         # for test if copy_bot use right refer_bot
         # tf_bot_ids = (
@@ -153,7 +146,7 @@ class StartTestBotsCommand(Command):
         # if refer_bot:
         #     bot_config.referral_bot_from_profit_func = refer_bot["id"]
 
-        return True
+        return bot_config
 
     @staticmethod
     def json_serializer(obj):
@@ -176,10 +169,11 @@ class StartTestBotsCommand(Command):
             # setattr(bot_config, "referral_bot_from_profit_func", None)
 
             if bot_config.copybot_v2_time_in_minutes:
+                copybot_v2_time_in_minutes = bot_config.copybot_v2_time_in_minutes
                 bot_config = (
                     await ProfitableBotUpdaterCommand.get_copybot_config(
                         bot_crud=bot_crud,
-                        copybot_v2_time_in_minutes=bot_config.copybot_v2_time_in_minutes
+                        copybot_v2_time_in_minutes=copybot_v2_time_in_minutes
                     )
                 )
 
@@ -188,12 +182,12 @@ class StartTestBotsCommand(Command):
                     return
 
             if bot_config.copy_bot_min_time_profitability_min:
-                bot_config_updated = (
+                bot_config = (
                     await self.update_config_from_referral_bot(
                         bot_config=bot_config, redis=redis, bot_crud=bot_crud
                     )
                 )
-                if not bot_config_updated:
+                if not bot_config:
                     await asyncio.sleep(60)
                     return
 
