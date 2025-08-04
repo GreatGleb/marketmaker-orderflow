@@ -111,6 +111,7 @@ class StartTestBotsCommand(Command):
             return False
 
         bot_config = TestBot(
+            balance=1000,
             symbol=refer_bot["symbol"],
             stop_success_ticks=Decimal(refer_bot['stop_success_ticks'] or 0),
             stop_loss_ticks=Decimal(refer_bot['stop_loss_ticks'] or 0),
