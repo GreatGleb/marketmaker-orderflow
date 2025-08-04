@@ -175,6 +175,18 @@ class StartTestBotsCommand(Command):
             setattr(bot_config, "referral_bot_id", None)
             # setattr(bot_config, "referral_bot_from_profit_func", None)
 
+            if bot_config.copybot_v2_time_in_minutes:
+                bot_config = (
+                    await ProfitableBotUpdaterCommand.get_copybot_config(
+                        bot_crud=bot_crud,
+                        copybot_v2_time_in_minutes=bot_config.copybot_v2_time_in_minutes
+                    )
+                )
+
+                if not bot_config:
+                    await asyncio.sleep(60)
+                    return
+
             if bot_config.copy_bot_min_time_profitability_min:
                 bot_config_updated = (
                     await self.update_config_from_referral_bot(

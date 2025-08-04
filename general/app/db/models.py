@@ -436,21 +436,17 @@ class TestBot(BaseId):
         nullable=False,
         comment="Balance for trading",
     )
-
     stop_success_ticks: Mapped[Optional[int]] = mapped_column(
         types.Integer,
         nullable=True,
         comment="Target Profit/Close in Ticks",
     )
-
     stop_loss_ticks: Mapped[Optional[int]] = mapped_column(
         types.Integer, nullable=True, comment="Stop-loss in ticks"
     )
-
     is_active: Mapped[bool] = mapped_column(
         types.Boolean, default=True, nullable=False, comment="Is active bot"
     )
-
     total_profit: Mapped[float] = mapped_column(
         types.Numeric(precision=20, scale=10),
         default=0,
@@ -458,32 +454,27 @@ class TestBot(BaseId):
         nullable=False,
         comment="Total profit",
     )
-
     start_updown_ticks: Mapped[int] = mapped_column(
         types.Integer,
         default=0,
         nullable=True,
         comment="Start updown ticks",
     )
-
     min_timeframe_asset_volatility: Mapped[float] = mapped_column(
         types.Numeric(precision=10, scale=2),
         nullable=True,
         comment="Duration of the time window (in minutes) over which asset volatility is measured",
     )
-
     copy_bot_max_time_profitability_min: Mapped[float] = mapped_column(
         types.Numeric(precision=10, scale=2),
         nullable=True,
         comment="For copy bot the maximum time it takes for the original bot being monitored to be profitable",
     )
-
     copy_bot_min_time_profitability_min: Mapped[float] = mapped_column(
         types.Numeric(precision=10, scale=2),
         nullable=True,
         comment="For copy bot the minimum time it takes for the original bot being monitored to be profitable",
     )
-
     time_to_wait_for_entry_price_to_open_order_in_minutes: Mapped[float] = (
         mapped_column(
             types.Numeric(precision=10, scale=2),
@@ -491,7 +482,6 @@ class TestBot(BaseId):
             comment="The maximum duration (in minutes) a bot will wait for the entry price to be reached before attempting to open an order",
         )
     )
-
     stop_win_percents: Mapped[Optional[float]] = mapped_column(
         types.Numeric, nullable=True, comment="Stop win percentage"
     )
@@ -520,6 +510,11 @@ class TestBot(BaseId):
         types.Numeric,
         nullable=True,
         comment="The number of candles used to calculate the moving average (MA) for the order closing logic",
+    )
+    copybot_v2_time_in_minutes: Mapped[Optional[Decimal]] = mapped_column(
+        types.Numeric,
+        nullable=True,
+        comment="For copy bot version 2 the time it takes for the copy bot v1 being monitored to be profitable",
     )
 
 

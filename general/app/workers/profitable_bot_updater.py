@@ -26,6 +26,30 @@ class ProfitableBotUpdaterCommand(Command):
         self.stop_event = stop_event
 
     @staticmethod
+    async def get_copybot_config(
+            bot_crud, copybot_v2_time_in_minutes = 60
+    ):
+        copy_bot = None
+        copy_bot_id = None
+
+        profits_data = await bot_crud.get_sorted_by_profit(since=timedelta(minutes=copybot_v2_time_in_minutes), just_copy_bots=True)
+        profits_data_filtered_sorted = sorted([item for item in profits_data if item[1] > 0], key=lambda x: x[1], reverse=True)
+
+        try:
+            copy_bot_id = profits_data_filtered_sorted[0][0]
+        except (IndexError, TypeError):
+            pass
+
+        if copy_bot_id:
+            copy_bots = await bot_crud.get_bot_by_id(
+                bot_id=copy_bot_id
+            )
+            if copy_bots:
+                copy_bot = copy_bots[0]
+
+        return copy_bot
+
+    @staticmethod
     async def get_bot_config_by_params(
         bot_crud, tf_bot_ids, copy_bot_min_time_profitability_min
     ):
