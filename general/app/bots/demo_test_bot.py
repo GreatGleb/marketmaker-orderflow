@@ -187,7 +187,9 @@ class StartTestBotsCommand(Command):
                     await asyncio.sleep(60)
                     return
 
-            if bot_config.copy_bot_min_time_profitability_min:
+            is_it_copy = bot_config.copy_bot_min_time_profitability_min
+
+            if is_it_copy:
                 id = bot_config.id
                 updating_config_res = (
                     await self.update_config_from_referral_bot(
@@ -244,7 +246,7 @@ class StartTestBotsCommand(Command):
             trade_type = None
             entry_price = None
 
-            if bot_config.copy_bot_min_time_profitability_min:
+            if is_it_copy:
                 print(f'waiting')
 
             try:
@@ -277,7 +279,7 @@ class StartTestBotsCommand(Command):
             except asyncio.TimeoutError:
                 is_timeout_occurred = True
 
-            if bot_config.copy_bot_min_time_profitability_min:
+            if is_it_copy:
                 print(f'is_timeout_occurred: {is_timeout_occurred}')
 
             if is_timeout_occurred or not trade_type or not entry_price:
@@ -335,7 +337,7 @@ class StartTestBotsCommand(Command):
                     order_type=trade_type
                 )
 
-            if bot_config.copy_bot_min_time_profitability_min:
+            if is_it_copy:
                 print('wait for should_exit')
 
             while not stop_event.is_set():
@@ -372,7 +374,7 @@ class StartTestBotsCommand(Command):
 
                 await asyncio.sleep(0.1)
 
-            if bot_config.copy_bot_min_time_profitability_min:
+            if is_it_copy:
                 print('end wait')
 
             close_price = await price_provider.get_price(symbol=symbol)
