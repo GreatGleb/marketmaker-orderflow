@@ -110,7 +110,7 @@ class StartTestBotsCommand(Command):
             )
             return False
 
-        bot_config = TestBot(
+        ref_bot_config = TestBot(
             balance=1000,
             symbol=refer_bot["symbol"],
             stop_success_ticks=Decimal(refer_bot['stop_success_ticks'] or 0),
@@ -148,7 +148,7 @@ class StartTestBotsCommand(Command):
         #     bot_config.referral_bot_from_profit_func = refer_bot["id"]
 
         return {
-            'config': bot_config,
+            'config': ref_bot_config,
             'referral_bot_id': refer_bot['id']
         }
 
@@ -173,6 +173,7 @@ class StartTestBotsCommand(Command):
             referral_bot_id = 0
 
             if bot_config.copybot_v2_time_in_minutes:
+                id = bot_config.id
                 copybot_v2_time_in_minutes = bot_config.copybot_v2_time_in_minutes
                 bot_config = (
                     await ProfitableBotUpdaterCommand.get_copybot_config(
@@ -182,11 +183,12 @@ class StartTestBotsCommand(Command):
                 )
 
                 if not bot_config:
-                    print('there no copybot_v2 ref')
+                    print(f'there no copybot_v2 ref {id}')
                     await asyncio.sleep(60)
                     return
 
             if bot_config.copy_bot_min_time_profitability_min:
+                id = bot_config.id
                 updating_config_res = (
                     await self.update_config_from_referral_bot(
                         bot_config=bot_config, redis=redis, bot_crud=bot_crud
@@ -199,6 +201,7 @@ class StartTestBotsCommand(Command):
                     print('there no copybot ref')
                     await asyncio.sleep(60)
                     return
+                print(f'found ref for {id}')
 
             if bot_config.consider_ma_for_open_order:
                 symbol = bot_config.symbol
