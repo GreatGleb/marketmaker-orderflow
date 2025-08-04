@@ -209,7 +209,6 @@ class StartTestBotsCommand(Command):
                 referral_bot_id = updating_config_res['referral_bot_id']
 
                 if not bot_config:
-                    print('there no copybot ref')
                     await asyncio.sleep(60)
                     return
                 print(f'found ref for {id}')

@@ -187,6 +187,8 @@ class ProfitableBotUpdaterCommand(Command):
                     tf_bot_ids=tf_bot_ids,
                     copy_bot_min_time_profitability_min=bot.copy_bot_min_time_profitability_min,
                 )
+                print(refer_bot_dict)
+                print(f"copy_bot_{bot.id}")
                 if refer_bot_dict:
                     await redis.set(
                         f"copy_bot_{bot.id}", json.dumps(refer_bot_dict)
