@@ -39,7 +39,7 @@ class TestBotCrud(BaseCrud[TestBot]):
             )
         elif just_copy_bots_v2:
             active_bots_subquery = active_bots_subquery.where(
-                TestBot.copybot_v2_time_in_minutes.is_(None)
+                TestBot.copybot_v2_time_in_minutes.is_not(None)
             )
         elif just_not_copy_bots:
             active_bots_subquery = active_bots_subquery.where(
