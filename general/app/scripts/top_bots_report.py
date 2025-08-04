@@ -57,6 +57,18 @@ async def update_bot_profits(hours: int = None, minutes: int = None, just_copy_b
                 'success_percentage': success_percentage
             })
 
+
+        if True:
+            BATCH_SIZE = 100
+            for i in range(0, len(update_data), BATCH_SIZE):
+                batch = update_data[i:i + BATCH_SIZE]
+                await session.execute(
+                    update(TestBot),
+                    batch
+                )
+                await session.commit()
+                print(f"Обновлено записей: {i + len(batch)}/{len(update_data)}")
+
         bot_stats.sort(key=lambda x: x['total_profit'], reverse=True)
 
         if not top_count:
