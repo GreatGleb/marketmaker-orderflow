@@ -182,6 +182,7 @@ class StartTestBotsCommand(Command):
                 )
 
                 if not bot_config:
+                    print('there no copybot_v2 ref')
                     await asyncio.sleep(60)
                     return
 
@@ -195,6 +196,7 @@ class StartTestBotsCommand(Command):
                 referral_bot_id = updating_config_res['referral_bot_id']
 
                 if not bot_config:
+                    print('there no copybot ref')
                     await asyncio.sleep(60)
                     return
 
@@ -206,6 +208,7 @@ class StartTestBotsCommand(Command):
                 )
 
             if not symbol:
+                print('there no symbol')
                 await asyncio.sleep(60)
                 return
 
