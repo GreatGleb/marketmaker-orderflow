@@ -171,6 +171,8 @@ class ProfitableBotUpdaterCommand(Command):
                 bot_profitability_timeframes = (
                     await bot_crud.get_unique_copy_bot_min_time_profitability()
                 )
+                print(bot_profitability_timeframes)
+                print('bot_profitability_timeframes')
 
             tf_bot_ids = await self.get_profitable_bots_id_by_tf(
                 bot_crud=bot_crud,
