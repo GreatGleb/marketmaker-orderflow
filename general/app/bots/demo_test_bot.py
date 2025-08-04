@@ -120,9 +120,9 @@ class StartTestBotsCommand(Command):
             stop_loss_percents=Decimal(refer_bot['stop_loss_percents']),
             start_updown_percents=Decimal(refer_bot['start_updown_percents']),
             min_timeframe_asset_volatility=refer_bot['min_timeframe_asset_volatility'],
-            time_to_wait_for_entry_price_to_open_order_in_minutes=refer_bot[
+            time_to_wait_for_entry_price_to_open_order_in_minutes=Decimal(refer_bot[
                 'time_to_wait_for_entry_price_to_open_order_in_minutes'
-            ],
+            ]),
             consider_ma_for_open_order=bool(refer_bot['consider_ma_for_open_order']),
             consider_ma_for_close_order=bool(refer_bot['consider_ma_for_close_order']),
             ma_number_of_candles_for_open_order=refer_bot['ma_number_of_candles_for_open_order'],
