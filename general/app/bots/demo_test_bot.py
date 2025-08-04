@@ -262,6 +262,7 @@ class StartTestBotsCommand(Command):
                     print(f'wait_minutes {wait_minutes}')
                     print(f'consider_ma_for_open_order {bot_config.consider_ma_for_open_order}')
                     print(f'time_to_wait_for_entry_price_to_open_order_in_minutes {bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes}')
+                    print(f'type {type(bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes)}')
 
                 timeout = (
                     Decimal(
