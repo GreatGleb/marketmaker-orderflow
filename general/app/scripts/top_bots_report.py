@@ -80,10 +80,11 @@ async def update_bot_profits(hours: int = None, minutes: int = None, just_copy_b
             f"по состоянию на: {now.strftime('%Y-%m-%d %H:%M:%S')}:\n"
         )
         for idx, bot_data in enumerate(bot_stats[:top_count], 1):
-            print(
-                f"{idx}. Бот {bot_data['bot_id']} — 💰 Общая прибыль: {bot_data['total_profit']:.4f}, "
-                f"📈 Успешных ордеров: {bot_data['successful_orders']}/{bot_data['total_orders']} ({bot_data['success_percentage']:.1f}%)"
-            )
+            if bot_data['bot_id'] >=8665:
+                print(
+                    f"{idx}. Бот {bot_data['bot_id']} — 💰 Общая прибыль: {bot_data['total_profit']:.4f}, "
+                    f"📈 Успешных ордеров: {bot_data['successful_orders']}/{bot_data['total_orders']} ({bot_data['success_percentage']:.1f}%)"
+                )
 
 def main():
     parser = argparse.ArgumentParser(description="Обновляет и выводит статистику прибыльности торговых ботов.")
