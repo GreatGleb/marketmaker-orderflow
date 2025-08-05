@@ -27,7 +27,7 @@ class TestBotCrud(BaseCrud[TestBot]):
         await self.session.execute(stmt)
 
     async def get_sorted_by_profit(
-        self, since=None, just_copy_bots=False, just_copy_bots_v2=False, just_not_copy_bots=False, add_asset_symbol=False
+        self, since=None, just_copy_bots=False, just_copy_bots_v2=False, just_not_copy_bots=False, add_asset_symbol=False, symbol=None
     ):
         active_bots_subquery = select(TestBot.id).where(
             TestBot.is_active == True
@@ -45,6 +45,11 @@ class TestBotCrud(BaseCrud[TestBot]):
             active_bots_subquery = active_bots_subquery.where(
                 TestBot.copy_bot_min_time_profitability_min.is_(None),
                 TestBot.copybot_v2_time_in_minutes.is_(None)
+            )
+
+        if symbol:
+            active_bots_subquery = active_bots_subquery.where(
+                TestBot.symbol == symbol
             )
 
         select_columns = [
