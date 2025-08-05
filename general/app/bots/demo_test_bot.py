@@ -165,7 +165,7 @@ class StartTestBotsCommand(Command):
     async def simulate_bot(
         self,
         redis,
-        bot_config: TestBot,
+        original_bot_config: TestBot,
         shared_data,
         stop_event,
         price_provider,
@@ -175,10 +175,11 @@ class StartTestBotsCommand(Command):
         while not stop_event.is_set():
             # setattr(bot_config, "referral_bot_from_profit_func", None)
             referral_bot_id = None
-            bot_id = bot_config.id
+            bot_id = original_bot_config.id
+            bot_config = None
 
-            if bot_config.copybot_v2_time_in_minutes:
-                copybot_v2_time_in_minutes = bot_config.copybot_v2_time_in_minutes
+            if original_bot_config.copybot_v2_time_in_minutes:
+                copybot_v2_time_in_minutes = original_bot_config.copybot_v2_time_in_minutes
                 bot_config = (
                     await ProfitableBotUpdaterCommand.get_copybot_config(
                         bot_crud=bot_crud,
@@ -190,6 +191,9 @@ class StartTestBotsCommand(Command):
                     print(f'there no copybot_v2 ref {bot_id}')
                     await asyncio.sleep(60)
                     return
+
+            if not bot_config:
+                bot_config = original_bot_config
 
             is_it_copy = bot_config.copy_bot_min_time_profitability_min
 
