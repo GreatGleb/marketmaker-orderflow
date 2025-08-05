@@ -52,7 +52,7 @@ async def update_bot_profits(hours: int = None, minutes: int = None, just_copy_b
             success_percentage = (successful_orders / total_orders * 100) if total_orders > 0 else 0
             bot_stats.append({
                 'bot_id': bot_id,
-                'symbol': symbol,
+                'symbol': symbol[0],
                 'total_profit': total_profit,
                 'total_orders': total_orders,
                 'successful_orders': successful_orders,
