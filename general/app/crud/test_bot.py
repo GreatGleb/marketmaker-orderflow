@@ -27,7 +27,7 @@ class TestBotCrud(BaseCrud[TestBot]):
         await self.session.execute(stmt)
 
     async def get_sorted_by_profit(
-        self, since=None, just_copy_bots=False, just_copy_bots_v2=False, just_not_copy_bots=False
+        self, since=None, just_copy_bots=False, just_copy_bots_v2=False, just_not_copy_bots=False, add_asset_symbol=False
     ):
         active_bots_subquery = select(TestBot.id).where(
             TestBot.is_active == True
@@ -47,7 +47,7 @@ class TestBotCrud(BaseCrud[TestBot]):
                 TestBot.copybot_v2_time_in_minutes.is_(None)
             )
 
-        profits_query = select(
+        select_columns = [
             TestOrder.bot_id,
             func.coalesce(func.sum(TestOrder.profit_loss), None).label(
                 "total_profit"
@@ -56,8 +56,12 @@ class TestBotCrud(BaseCrud[TestBot]):
             func.sum(case((TestOrder.profit_loss > 0, 1), else_=0)).label(
                 "successful_orders"
             ),
-            func.array_agg(TestOrder.asset_symbol.distinct()).label("asset_symbol")
-        ).where(TestOrder.bot_id.in_(active_bots_subquery))
+        ]
+
+        if add_asset_symbol:
+            select_columns.append(func.array_agg(TestOrder.asset_symbol.distinct()).label("asset_symbol"))
+
+        profits_query = select(*select_columns).where(TestOrder.bot_id.in_(active_bots_subquery))
 
         if since is not None:
             now = datetime.now(UTC)

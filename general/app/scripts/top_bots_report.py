@@ -30,9 +30,8 @@ async def update_bot_profits(hours: int = None, minutes: int = None, just_copy_b
             just_copy_bots=just_copy_bots,
             just_copy_bots_v2=just_copy_bots_v2,
             just_not_copy_bots=just_not_copy_bots,
+            add_asset_symbol=True
         )
-
-        print(profits_data)
 
         earliest_query = select(
             func.min(TestOrder.created_at).label('earliest_date')
@@ -47,18 +46,18 @@ async def update_bot_profits(hours: int = None, minutes: int = None, just_copy_b
         update_data = []
         bot_stats = []
 
-        for bot_id, total_profit, total_orders, successful_orders in profits_data:
+        for bot_id, total_profit, total_orders, successful_orders, symbol in profits_data:
             update_data.append({'id': bot_id, 'total_profit': total_profit})
 
             success_percentage = (successful_orders / total_orders * 100) if total_orders > 0 else 0
             bot_stats.append({
                 'bot_id': bot_id,
+                'symbol': symbol,
                 'total_profit': total_profit,
                 'total_orders': total_orders,
                 'successful_orders': successful_orders,
                 'success_percentage': success_percentage
             })
-
 
         if False:
             BATCH_SIZE = 100
@@ -83,7 +82,7 @@ async def update_bot_profits(hours: int = None, minutes: int = None, just_copy_b
         )
         for idx, bot_data in enumerate(bot_stats[:top_count], 1):
 
-            if bot_data:
+            if bot_data['symbol'] == 'XRPUSDT':
                 print(
                     f"{idx}. Бот {bot_data['bot_id']} — 💰 Общая прибыль: {bot_data['total_profit']:.4f}, "
                     f"📈 Успешных ордеров: {bot_data['successful_orders']}/{bot_data['total_orders']} ({bot_data['success_percentage']:.1f}%)"
