@@ -34,20 +34,24 @@ class ProfitableBotUpdaterCommand(Command):
 
         copybot_v2_time_in_minutes = int(copybot_v2_time_in_minutes)
 
-        profits_data = await bot_crud.get_sorted_by_profit(since=timedelta(minutes=copybot_v2_time_in_minutes), just_copy_bots=True)
-        profits_data_filtered_sorted = sorted([item for item in profits_data if item[1] > 0], key=lambda x: x[1], reverse=True)
-
         try:
-            copy_bot_id = profits_data_filtered_sorted[0][0]
-        except (IndexError, TypeError):
-            pass
+            profits_data = await bot_crud.get_sorted_by_profit(since=timedelta(minutes=copybot_v2_time_in_minutes), just_copy_bots=True)
+            profits_data_filtered_sorted = sorted([item for item in profits_data if item[1] > 0], key=lambda x: x[1], reverse=True)
 
-        if copy_bot_id:
-            copy_bots = await bot_crud.get_bot_by_id(
-                bot_id=copy_bot_id
-            )
-            if copy_bots:
-                copy_bot = copy_bots[0]
+            try:
+                copy_bot_id = profits_data_filtered_sorted[0][0]
+            except (IndexError, TypeError):
+                pass
+
+            if copy_bot_id:
+                copy_bots = await bot_crud.get_bot_by_id(
+                    bot_id=copy_bot_id
+                )
+                if copy_bots:
+                    copy_bot = copy_bots[0]
+        except Exception as e:
+            print('Failed to get copybot data')
+            print(e)
 
         return copy_bot
 

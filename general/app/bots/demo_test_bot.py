@@ -12,10 +12,8 @@ from fastapi import Depends
 from redis.asyncio import Redis
 
 from app.bots.binance_bot import BinanceBot
-from app.config import settings
 from app.constants.order import ORDER_QUEUE_KEY
 from app.crud.test_bot import TestBotCrud
-from app.db.base import DatabaseSessionManager
 from app.db.models import TestBot, TestOrder
 from app.dependencies import (
     get_session,
@@ -74,6 +72,7 @@ class StartTestBotsCommand(Command):
                             stop_event=self.stop_event,
                             price_provider=price_provider,
                             binance_bot=binance_bot,
+                            bot_crud=bot_crud,
                         )
                     except Exception as e:
                         try:
@@ -171,29 +170,26 @@ class StartTestBotsCommand(Command):
         stop_event,
         price_provider,
         binance_bot,
+        bot_crud,
     ):
         while not stop_event.is_set():
             # setattr(bot_config, "referral_bot_from_profit_func", None)
             referral_bot_id = None
 
             if bot_config.copybot_v2_time_in_minutes:
-                dsm = DatabaseSessionManager.create(settings.DB_URL)
-                async with (dsm.get_session() as session):
-                    bot_crud = TestBotCrud(session)
-
-                    id = bot_config.id
-                    copybot_v2_time_in_minutes = bot_config.copybot_v2_time_in_minutes
-                    bot_config = (
-                        await ProfitableBotUpdaterCommand.get_copybot_config(
-                            bot_crud=bot_crud,
-                            copybot_v2_time_in_minutes=copybot_v2_time_in_minutes
-                        )
+                id = bot_config.id
+                copybot_v2_time_in_minutes = bot_config.copybot_v2_time_in_minutes
+                bot_config = (
+                    await ProfitableBotUpdaterCommand.get_copybot_config(
+                        bot_crud=bot_crud,
+                        copybot_v2_time_in_minutes=copybot_v2_time_in_minutes
                     )
+                )
 
-                    if not bot_config:
-                        print(f'there no copybot_v2 ref {id}')
-                        await asyncio.sleep(60)
-                        return
+                if not bot_config:
+                    print(f'there no copybot_v2 ref {id}')
+                    await asyncio.sleep(60)
+                    return
 
             is_it_copy = bot_config.copy_bot_min_time_profitability_min
 
