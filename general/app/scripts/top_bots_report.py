@@ -30,8 +30,8 @@ async def update_bot_profits(hours: int = None, minutes: int = None, just_copy_b
             just_copy_bots=just_copy_bots,
             just_copy_bots_v2=just_copy_bots_v2,
             just_not_copy_bots=just_not_copy_bots,
-            add_asset_symbol=True,
-            symbol='SWARMSUSDT'
+            # add_asset_symbol=True,
+            # symbol='SWARMSUSDT'
         )
 
         earliest_query = select(
@@ -47,13 +47,14 @@ async def update_bot_profits(hours: int = None, minutes: int = None, just_copy_b
         update_data = []
         bot_stats = []
 
-        for bot_id, total_profit, total_orders, successful_orders, symbol in profits_data:
+        # for bot_id, total_profit, total_orders, successful_orders, symbol in profits_data:
+        for bot_id, total_profit, total_orders, successful_orders in profits_data:
             update_data.append({'id': bot_id, 'total_profit': total_profit})
 
             success_percentage = (successful_orders / total_orders * 100) if total_orders > 0 else 0
             bot_stats.append({
                 'bot_id': bot_id,
-                'symbol': symbol[0],
+                # 'symbol': symbol[0],
                 'total_profit': total_profit,
                 'total_orders': total_orders,
                 'successful_orders': successful_orders,
