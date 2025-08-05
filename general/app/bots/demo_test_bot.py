@@ -175,9 +175,9 @@ class StartTestBotsCommand(Command):
         while not stop_event.is_set():
             # setattr(bot_config, "referral_bot_from_profit_func", None)
             referral_bot_id = None
+            bot_id = bot_config.id
 
             if bot_config.copybot_v2_time_in_minutes:
-                id = bot_config.id
                 copybot_v2_time_in_minutes = bot_config.copybot_v2_time_in_minutes
                 bot_config = (
                     await ProfitableBotUpdaterCommand.get_copybot_config(
@@ -187,14 +187,13 @@ class StartTestBotsCommand(Command):
                 )
 
                 if not bot_config:
-                    print(f'there no copybot_v2 ref {id}')
+                    print(f'there no copybot_v2 ref {bot_id}')
                     await asyncio.sleep(60)
                     return
 
             is_it_copy = bot_config.copy_bot_min_time_profitability_min
 
             if is_it_copy:
-                id = bot_config.id
                 updating_config_res = (
                     await self.update_config_from_referral_bot(
                         bot_config=bot_config, redis=redis
@@ -206,7 +205,7 @@ class StartTestBotsCommand(Command):
                 if not bot_config:
                     await asyncio.sleep(60)
                     return
-                print(f'found ref for {id}')
+                print(f'found ref for {bot_id}')
 
             if bot_config.consider_ma_for_open_order:
                 symbol = bot_config.symbol
@@ -398,7 +397,7 @@ class StartTestBotsCommand(Command):
                 "open_time": order.open_time,
                 "open_fee": str(order.open_fee),
                 "stop_loss_price": str(order.stop_loss_price),
-                "bot_id": bot_config.id,
+                "bot_id": bot_id,
                 "close_price": str(close_price),
                 "close_time": datetime.now(UTC),
                 "close_fee": str(order.open_price * Decimal(COMMISSION_CLOSE)),
