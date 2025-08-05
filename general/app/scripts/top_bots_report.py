@@ -80,7 +80,8 @@ async def update_bot_profits(hours: int = None, minutes: int = None, just_copy_b
             f"по состоянию на: {now.strftime('%Y-%m-%d %H:%M:%S')}:\n"
         )
         for idx, bot_data in enumerate(bot_stats[:top_count], 1):
-            if bot_data['bot_id'] >=8665:
+
+            if bot_data:
                 print(
                     f"{idx}. Бот {bot_data['bot_id']} — 💰 Общая прибыль: {bot_data['total_profit']:.4f}, "
                     f"📈 Успешных ордеров: {bot_data['successful_orders']}/{bot_data['total_orders']} ({bot_data['success_percentage']:.1f}%)"

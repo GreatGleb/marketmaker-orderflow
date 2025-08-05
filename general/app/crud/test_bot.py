@@ -56,6 +56,7 @@ class TestBotCrud(BaseCrud[TestBot]):
             func.sum(case((TestOrder.profit_loss > 0, 1), else_=0)).label(
                 "successful_orders"
             ),
+            TestOrder.asset_symbol
         ).where(TestOrder.bot_id.in_(active_bots_subquery))
 
         if since is not None:
