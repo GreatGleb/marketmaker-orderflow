@@ -12,8 +12,10 @@ from fastapi import Depends
 from redis.asyncio import Redis
 
 from app.bots.binance_bot import BinanceBot
+from app.config import settings
 from app.constants.order import ORDER_QUEUE_KEY
 from app.crud.test_bot import TestBotCrud
+from app.db.base import DatabaseSessionManager
 from app.db.models import TestBot, TestOrder
 from app.dependencies import (
     get_session,
@@ -71,7 +73,6 @@ class StartTestBotsCommand(Command):
                             redis=redis,
                             stop_event=self.stop_event,
                             price_provider=price_provider,
-                            bot_crud=bot_crud,
                             binance_bot=binance_bot,
                         )
                     except Exception as e:
@@ -99,7 +100,7 @@ class StartTestBotsCommand(Command):
 
     @staticmethod
     async def update_config_from_referral_bot(
-        bot_config: TestBot, redis, bot_crud
+        bot_config: TestBot, redis
     ):
         refer_bot_js = await redis.get(f"copy_bot_{bot_config.id}")
         refer_bot = json.loads(refer_bot_js) if refer_bot_js else None
@@ -169,7 +170,6 @@ class StartTestBotsCommand(Command):
         shared_data,
         stop_event,
         price_provider,
-        bot_crud,
         binance_bot,
     ):
         while not stop_event.is_set():
@@ -177,19 +177,23 @@ class StartTestBotsCommand(Command):
             referral_bot_id = None
 
             if bot_config.copybot_v2_time_in_minutes:
-                id = bot_config.id
-                copybot_v2_time_in_minutes = bot_config.copybot_v2_time_in_minutes
-                bot_config = (
-                    await ProfitableBotUpdaterCommand.get_copybot_config(
-                        bot_crud=bot_crud,
-                        copybot_v2_time_in_minutes=copybot_v2_time_in_minutes
-                    )
-                )
+                dsm = DatabaseSessionManager.create(settings.DB_URL)
+                async with (dsm.get_session() as session):
+                    bot_crud = TestBotCrud(session)
 
-                if not bot_config:
-                    print(f'there no copybot_v2 ref {id}')
-                    await asyncio.sleep(60)
-                    return
+                    id = bot_config.id
+                    copybot_v2_time_in_minutes = bot_config.copybot_v2_time_in_minutes
+                    bot_config = (
+                        await ProfitableBotUpdaterCommand.get_copybot_config(
+                            bot_crud=bot_crud,
+                            copybot_v2_time_in_minutes=copybot_v2_time_in_minutes
+                        )
+                    )
+
+                    if not bot_config:
+                        print(f'there no copybot_v2 ref {id}')
+                        await asyncio.sleep(60)
+                        return
 
             is_it_copy = bot_config.copy_bot_min_time_profitability_min
 
@@ -197,7 +201,7 @@ class StartTestBotsCommand(Command):
                 id = bot_config.id
                 updating_config_res = (
                     await self.update_config_from_referral_bot(
-                        bot_config=bot_config, redis=redis, bot_crud=bot_crud
+                        bot_config=bot_config, redis=redis
                     )
                 )
                 bot_config = updating_config_res['config']
