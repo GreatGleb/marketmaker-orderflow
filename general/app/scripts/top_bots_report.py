@@ -31,7 +31,7 @@ async def update_bot_profits(hours: int = None, minutes: int = None, just_copy_b
             just_copy_bots_v2=just_copy_bots_v2,
             just_not_copy_bots=just_not_copy_bots,
             add_asset_symbol=True,
-            symbol='TACUSDT'
+            symbol='SPKUSDT'
         )
 
         earliest_query = select(
