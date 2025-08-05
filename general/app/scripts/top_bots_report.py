@@ -32,6 +32,8 @@ async def update_bot_profits(hours: int = None, minutes: int = None, just_copy_b
             just_not_copy_bots=just_not_copy_bots,
         )
 
+        print(profits_data)
+
         earliest_query = select(
             func.min(TestOrder.created_at).label('earliest_date')
         )
