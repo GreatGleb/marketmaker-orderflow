@@ -66,7 +66,7 @@ class StartTestBotsCommand(Command):
                 while not self.stop_event.is_set():
                     try:
                         await self.simulate_bot(
-                            bot_config=bot_config,
+                            original_bot_config=bot_config,
                             shared_data=shared_data,
                             redis=redis,
                             stop_event=self.stop_event,
