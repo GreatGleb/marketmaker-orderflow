@@ -72,6 +72,7 @@ class ExitStrategy:
         symbol,
         order,
         updated_price,
+        close_not_lose_price,
     ):
         if int(bot_config.ma_number_of_candles_for_open_order) < int(bot_config.ma_number_of_candles_for_close_order):
             less_ma_number = int(bot_config.ma_number_of_candles_for_open_order)
@@ -112,6 +113,8 @@ class ExitStrategy:
             if less_ma_current < more_ma_current:
                 # print(f"Сигнал на закрытие покупки: Крест смерти на {symbol} в {datetime.now().strftime('%H:%M:%S')}")
                 return True
+            if less_ma_current > updated_price > close_not_lose_price:
+                return True
 
         # Если открыт ордер на ПРОДАЖУ
         elif order.order_type == TradeType.SELL:
@@ -122,6 +125,8 @@ class ExitStrategy:
                 return True
             if less_ma_current > more_ma_current:
                 # print(f"Сигнал на закрытие продажи: Золотой крест на {symbol} в {datetime.now().strftime('%H:%M:%S')}")
+                return True
+            if less_ma_current < updated_price < close_not_lose_price:
                 return True
 
         # Если обратного пересечения не было, оставляем ордер открытым

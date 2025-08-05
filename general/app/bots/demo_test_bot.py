@@ -357,6 +357,7 @@ class StartTestBotsCommand(Command):
                             symbol=symbol,
                             order=order,
                             updated_price=updated_price,
+                            close_not_lose_price=close_not_lose_price,
                         )
                     )
                 else:
