@@ -140,6 +140,17 @@ async def get_volatile_symbols(session):
 async def deactive_not_profit_bots(bot_crud):
     bot_symbols = await bot_crud.get_bot_symbols()
 
+    since_timedelta = timedelta(hours=12)
+
+    for symbol in bot_symbols:
+        profits_data = await bot_crud.get_sorted_by_profit(
+            since=since_timedelta,
+            just_not_copy_bots=True,
+            symbol=symbol
+        )
+
+        print(profits_data)
+
     print(bot_symbols)
     print('bot_symbols')
 
