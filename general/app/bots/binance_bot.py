@@ -122,8 +122,11 @@ class BinanceBot(Command):
 
     async def creating_orders_bot(self):
         logging.info('start function creating_orders_bot')
-        copy_bot = await self._get_copy_bot_tf_params()
-        logging.info('finished get_copy_bot_tf_params')
+        copy_bot = await self._get_best_copy_bot()
+        logging.info('finished _get_best_copy_bot')
+        print(copy_bot.copy_bot_min_time_profitability_min)
+        await asyncio.sleep(60)
+        return
 
         refer_bot = None
         if copy_bot:
@@ -1515,11 +1518,11 @@ class BinanceBot(Command):
 
         return first_order_updating_data
 
-    async def _get_copy_bot_tf_params(self):
+    async def _get_best_copy_bot(self):
         copy_bot = None
         copy_bot_id = None
 
-        profits_data = await self.bot_crud.get_sorted_by_profit(since=timedelta(hours=1), just_copy_bots=True)
+        profits_data = await self.bot_crud.get_sorted_by_profit(since=timedelta(hours=12), just_copy_bots_v2=True)
         profits_data_filtered_sorted = sorted([item for item in profits_data if item[1] > 0], key=lambda x: x[1], reverse=True)
 
         try:
