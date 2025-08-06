@@ -78,15 +78,15 @@ class StartTestBotsCommand(Command):
                         try:
                             error_traceback = traceback.format_exc()
                             print(error_traceback)
-                            # telegram_service = (
-                            #     NotificationServiceFactory.get_telegram_service()
-                            # )
-                            # if telegram_service:
-                            #     await telegram_service.send_bot_error_notification(
-                            #         bot_id=bot_config.id,
-                            #         error_message=str(e),
-                            #         additional_info=f"Полный стек ошибки:\n{error_traceback}",
-                            #     )
+                            telegram_service = (
+                                NotificationServiceFactory.get_telegram_service()
+                            )
+                            if telegram_service:
+                                await telegram_service.send_bot_error_notification(
+                                    bot_id=bot_config.id,
+                                    error_message=str(e),
+                                    additional_info=f"Полный стек ошибки:\n{error_traceback}",
+                                )
                         except Exception as telegram_error:
                             print(
                                 f"❌ Ошибка при отправке уведомления в Telegram: {telegram_error}"
