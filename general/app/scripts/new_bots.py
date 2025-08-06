@@ -133,6 +133,8 @@ async def get_volatile_symbols(session):
         symbols_list=most_volatiles_h6
     )
 
+    print(most_volatiles_h3)
+
     most_volatiles_h3_6 = most_volatiles_h3[:7]
 
     return most_volatiles_h3_6
