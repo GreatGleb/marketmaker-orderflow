@@ -153,6 +153,7 @@ async def deactivate_not_profit_bots(bot_crud):
         sorted_data = sorted(profits_data, key=lambda x: x[1], reverse=True)
         if sorted_data[0][1] < 100:
             need_to_deactivate_bots.append(symbol)
+        print(f'Symbol: {symbol}, max profit for 12 hours: {sorted_data[0][1]}')
 
     print(bot_symbols)
     print('bot_symbols')
