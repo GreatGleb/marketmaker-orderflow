@@ -229,10 +229,11 @@ async def create_bots():
 
         await deactivate_not_profit_bots(bot_crud)
 
-        return
-
         symbols = await get_volatile_symbols(session)
-        symbols.append('XRPUSDT')
+
+        print(symbols)
+        print('Most volatile symbols')
+        return
 
         open_ma_numbers = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100,105,110,115,120,125,130,135,140,145,150]
         close_ma_numbers = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100,105,110,115,120,125,130,135,140,145,150]

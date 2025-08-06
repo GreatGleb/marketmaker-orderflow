@@ -155,4 +155,3 @@ class TestBotCrud(BaseCrud[TestBot]):
                 .values(is_active=False)
             )
             await self.session.commit()
-            print("батч")
