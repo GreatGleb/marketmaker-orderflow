@@ -154,6 +154,7 @@ async def deactive_not_profit_bots(bot_crud):
         print(sorted_data)
         print(sorted_data[0])
         print(symbol)
+        break
 
     print(bot_symbols)
     print('bot_symbols')
