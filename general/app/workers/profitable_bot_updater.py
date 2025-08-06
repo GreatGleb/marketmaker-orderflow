@@ -61,6 +61,8 @@ class ProfitableBotUpdaterCommand(Command):
     ):
         min_bot_ids = tf_bot_ids[copy_bot_min_time_profitability_min]
 
+        print(min_bot_ids)
+
         if min_bot_ids:
             refer_bot = await bot_crud.get_bot_by_id(
                 bot_id=min_bot_ids[0]
