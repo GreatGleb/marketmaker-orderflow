@@ -149,7 +149,10 @@ async def deactive_not_profit_bots(bot_crud):
             symbol=symbol
         )
 
-        print(profits_data)
+        sorted_data = sorted(profits_data, key=lambda x: x[1], reverse=True)
+
+        print(sorted_data)
+        print(sorted_data[0])
 
     print(bot_symbols)
     print('bot_symbols')
