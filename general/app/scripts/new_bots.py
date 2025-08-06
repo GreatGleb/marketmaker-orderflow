@@ -137,6 +137,12 @@ async def get_volatile_symbols(session):
 
     return most_volatiles_h3_6
 
+async def deactive_not_profit_bots(bot_crud):
+    bot_symbols = await bot_crud.get_bot_symbols()
+
+    print(bot_symbols)
+    print('bot_symbols')
+
 
 async def create_bots():
     # average_percent_for_1_tick = await get_average_percentage_for_minimum_tick()
@@ -198,34 +204,39 @@ async def create_bots():
 
         # ma test bots
 
-        if False:
-            symbols = await get_volatile_symbols(session)
-            symbols.append('XRPUSDT')
+        await deactive_not_profit_bots(bot_crud)
 
-            open_ma_numbers = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100,105,110,115,120,125,130,135,140,145,150]
-            close_ma_numbers = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100,105,110,115,120,125,130,135,140,145,150]
+        return
 
-            try:
-                for symbol in symbols:
-                    new_bots = []
-                    for open_ma_number in open_ma_numbers:
-                        for close_ma_number in close_ma_numbers:
-                            bot_data = {
-                                "symbol": symbol,
-                                "balance": Decimal("1000.0"),
-                                "consider_ma_for_open_order": True,
-                                "consider_ma_for_close_order": True,
-                                "ma_number_of_candles_for_open_order": open_ma_number,
-                                "ma_number_of_candles_for_close_order": close_ma_number,
-                                "is_active": True,
-                            }
-                            new_bots.append(bot_data)
+        symbols = await get_volatile_symbols(session)
+        symbols.append('XRPUSDT')
 
-                    await bot_crud.bulk_create(new_bots)
-                    await session.commit()
-                    print(f"✅ Успешно создано ботов. {len(new_bots)}")
-            except Exception as e:
-                print(e)
+        open_ma_numbers = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100,105,110,115,120,125,130,135,140,145,150]
+        close_ma_numbers = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100,105,110,115,120,125,130,135,140,145,150]
+
+        try:
+            for symbol in symbols:
+                new_bots = []
+                for open_ma_number in open_ma_numbers:
+                    for close_ma_number in close_ma_numbers:
+                        bot_data = {
+                            "symbol": symbol,
+                            "balance": Decimal("1000.0"),
+                            "consider_ma_for_open_order": True,
+                            "consider_ma_for_close_order": True,
+                            "ma_number_of_candles_for_open_order": open_ma_number,
+                            "ma_number_of_candles_for_close_order": close_ma_number,
+                            "is_active": True,
+                        }
+                        new_bots.append(bot_data)
+
+                await bot_crud.bulk_create(new_bots)
+                await session.commit()
+                print(f"✅ Успешно создано ботов. {len(new_bots)}")
+        except Exception as e:
+            print(e)
+
+        return
 
         copy_bot_min_time_profitability_min_values = [10, 20, 30, 40, 50, 60, 120, 180, 240, 360, 420, 480, 540, 600, 660, 720, 1440]
 

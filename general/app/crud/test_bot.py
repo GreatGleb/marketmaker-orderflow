@@ -116,3 +116,10 @@ class TestBotCrud(BaseCrud[TestBot]):
         )
         result = await self.session.execute(stmt)
         return result.scalars().all()
+
+    async def get_bot_symbols(self):
+        stmt = select(distinct(TestBot.symbol)).where(
+            TestBot.is_active.is_(True)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalars().all()
