@@ -127,7 +127,33 @@ class TestBotCrud(BaseCrud[TestBot]):
         return result
 
     async def deactivate_bot(self, symbol):
-        stmt = update(TestBot).where(TestBot.symbol == symbol).values(is_active=False)
+        result = await self.session.execute(
+            select(TestBot.id)
+            .where(
+                TestBot.symbol == symbol,
+                TestBot.is_active == True
+            )
+        )
 
-        await self.session.execute(stmt)
+        bot_ids = [row[0] for row in result]
+
+        if not bot_ids:
+            print(f"Нет активных ботов для символа '{symbol}'.")
+            return
+
+        BATCH_SIZE = 100
+
+        batches = [
+            bot_ids[i:i + BATCH_SIZE]
+            for i in range(0, len(bot_ids), BATCH_SIZE)
+        ]
+
+        for batch_of_ids in batches:
+            await self.session.execute(
+                update(TestBot)
+                .where(TestBot.id.in_(batch_of_ids))
+                .values(is_active=False)
+            )
+            print("батч")
+
         await self.session.commit()

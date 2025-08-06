@@ -155,6 +155,8 @@ async def deactivate_not_profit_bots(bot_crud):
             need_to_deactivate_bots.append(symbol)
         print(f'Symbol: {symbol}, max profit for 12 hours: {sorted_data[0][1]}')
 
+    print('deactivating bots...')
+
     for symbol in need_to_deactivate_bots:
         await bot_crud.deactivate_bot(symbol)
 
