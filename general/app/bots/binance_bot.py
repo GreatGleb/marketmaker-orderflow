@@ -1546,7 +1546,8 @@ class BinanceBot(Command):
                 copy_bot_v2 = copy_bots[0]
 
         if copy_bot_v2:
-            profits_data = await self.bot_crud.get_sorted_by_profit(since=timedelta(minutes=copy_bot_v2.copybot_v2_time_in_minutes), just_copy_bots=True)
+            minutes = int(copy_bot_v2.copybot_v2_time_in_minutes)
+            profits_data = await self.bot_crud.get_sorted_by_profit(since=timedelta(minutes=minutes), just_copy_bots=True)
             profits_data_filtered_sorted = sorted([item for item in profits_data if item[1] > 0], key=lambda x: x[1], reverse=True)
 
             try:
