@@ -1,5 +1,5 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, case, distinct
+from sqlalchemy import select, func, case, distinct, update
 from sqlalchemy.dialects.postgresql import insert
 from datetime import datetime, timezone
 
@@ -125,3 +125,9 @@ class TestBotCrud(BaseCrud[TestBot]):
         result = result.scalars().all()
         result = [elem for elem in result if elem]
         return result
+
+    async def deactivate_bot(self, symbol):
+        stmt = update(TestBot).where(TestBot.symbol == symbol).values(is_active=False)
+
+        await self.session.execute(stmt)
+        await self.session.commit()
