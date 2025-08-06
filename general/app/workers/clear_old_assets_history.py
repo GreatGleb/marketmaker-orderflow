@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, UTC
 
 from dotenv import load_dotenv
 from fastapi.params import Depends
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from redis.asyncio import Redis
 
@@ -34,6 +35,29 @@ class ClearOldAssetsHistoryCommand(Command):
         repack_result = await self.clear_disk()
         if not repack_result.success:
             return repack_result
+
+        # vacuum_result = await self.vacuum_disk()
+
+        return CommandResult(success=True)
+
+    async def vacuum_disk(self, session) -> CommandResult:
+        start_time = time.time()
+
+        session.commit()
+        try:
+            session.execute(text("VACUUM FULL;"))
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            print(f"Произошла ошибка: {e}")
+
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+
+        minutes = int(elapsed_time // 60)
+        seconds = elapsed_time % 60
+
+        print(f"Время, чтобы очистить БД от старой истории цен: {minutes} минут и {seconds:.2f} секунд")
 
         return CommandResult(success=True)
 
@@ -106,7 +130,6 @@ class ClearOldAssetsHistoryCommand(Command):
 
 async def main() -> None:
     await ClearOldAssetsHistoryCommand().run_async()
-
 
 if __name__ == "__main__":
     print("🧹 Starting ClearOldAssetsHistoryCommand...")
