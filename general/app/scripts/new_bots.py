@@ -137,8 +137,9 @@ async def get_volatile_symbols(session):
 
     return most_volatiles_h3_6
 
-async def deactive_not_profit_bots(bot_crud):
+async def deactivate_not_profit_bots(bot_crud):
     bot_symbols = await bot_crud.get_bot_symbols()
+    need_to_deactivate_bots = []
 
     since_timedelta = timedelta(hours=12)
 
@@ -150,14 +151,13 @@ async def deactive_not_profit_bots(bot_crud):
         )
 
         sorted_data = sorted(profits_data, key=lambda x: x[1], reverse=True)
-
-        print(sorted_data)
-        print(sorted_data[0])
-        print(symbol)
-        break
+        if sorted_data[0][1] < 100:
+            need_to_deactivate_bots.append(symbol)
 
     print(bot_symbols)
     print('bot_symbols')
+    print(need_to_deactivate_bots)
+    print('need_to_deactivate_bots')
 
 
 async def create_bots():
@@ -220,7 +220,7 @@ async def create_bots():
 
         # ma test bots
 
-        await deactive_not_profit_bots(bot_crud)
+        await deactivate_not_profit_bots(bot_crud)
 
         return
 
