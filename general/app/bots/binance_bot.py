@@ -127,6 +127,9 @@ class BinanceBot(Command):
 
         print(copy_bot)
         print(copy_bot.copybot_v2_time_in_minutes)
+        print(type(copy_bot.copybot_v2_time_in_minutes))
+
+        copy_bot.copybot_v2_time_in_minutes = Decimal(copy_bot.copybot_v2_time_in_minutes)
 
         refer_bot = None
         if copy_bot:
