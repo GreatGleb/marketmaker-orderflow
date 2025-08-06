@@ -158,6 +158,7 @@ async def deactivate_not_profit_bots(bot_crud):
     print('deactivating bots...')
 
     for symbol in need_to_deactivate_bots:
+        print(f'deactivating {symbol}')
         await bot_crud.deactivate_bot(symbol)
 
     print(bot_symbols)
