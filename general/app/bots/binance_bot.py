@@ -135,6 +135,8 @@ class BinanceBot(Command):
                 bot_profitability_timeframes=[copy_bot.copybot_v2_time_in_minutes],
             )
 
+            print(tf_bot_ids)
+
             logging.info('finished get_profitable_bots_id_by_tf')
             refer_bot = await ProfitableBotUpdaterCommand.get_bot_config_by_params(
                 bot_crud=self.bot_crud,
