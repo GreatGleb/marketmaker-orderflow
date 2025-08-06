@@ -125,6 +125,9 @@ class BinanceBot(Command):
         copy_bot = await self._get_best_copy_bot()
         logging.info('finished _get_best_copy_bot')
 
+        print(copy_bot)
+        print(copy_bot.copybot_v2_time_in_minutes)
+
         refer_bot = None
         if copy_bot:
             tf_bot_ids = await ProfitableBotUpdaterCommand.get_profitable_bots_id_by_tf(
