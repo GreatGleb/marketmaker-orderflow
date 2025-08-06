@@ -133,7 +133,7 @@ async def get_volatile_symbols(session):
         symbols_list=most_volatiles_h6
     )
 
-    most_volatiles_h3_6 = most_volatiles_h3[:6]
+    most_volatiles_h3_6 = most_volatiles_h3[:7]
 
     return most_volatiles_h3_6
 
@@ -232,6 +232,8 @@ async def create_bots():
         new_symbols = await get_volatile_symbols(session)
         bot_existing_symbols = await bot_crud.get_bot_symbols()
         new_symbols = [symbol for symbol in new_symbols if symbol not in bot_existing_symbols]
+        print(new_symbols)
+        new_symbols = new_symbols[:7 - len(bot_existing_symbols)]
 
         print(new_symbols)
         print('Most volatile symbols')
