@@ -154,6 +154,5 @@ class TestBotCrud(BaseCrud[TestBot]):
                 .where(TestBot.id.in_(batch_of_ids))
                 .values(is_active=False)
             )
+            await self.session.commit()
             print("батч")
-
-        await self.session.commit()
