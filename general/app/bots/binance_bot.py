@@ -125,6 +125,7 @@ class BinanceBot(Command):
         copy_bot = await self._get_best_copy_bot()
         logging.info('finished _get_best_copy_bot')
         print(copy_bot.copy_bot_min_time_profitability_min)
+        print(copy_bot.copybot_v2_time_in_minutes)
         await asyncio.sleep(60)
         return
 
