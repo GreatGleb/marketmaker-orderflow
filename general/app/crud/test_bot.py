@@ -122,4 +122,6 @@ class TestBotCrud(BaseCrud[TestBot]):
             TestBot.is_active.is_(True)
         )
         result = await self.session.execute(stmt)
-        return result.scalars().all()
+        result = result.scalars().all()
+        result = [elem for elem in result if elem]
+        return result
