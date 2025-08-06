@@ -124,16 +124,12 @@ class BinanceBot(Command):
         logging.info('start function creating_orders_bot')
         copy_bot = await self._get_best_copy_bot()
         logging.info('finished _get_best_copy_bot')
-        print(copy_bot.copy_bot_min_time_profitability_min)
-        print(copy_bot.copybot_v2_time_in_minutes)
-        await asyncio.sleep(60)
-        return
 
         refer_bot = None
         if copy_bot:
             tf_bot_ids = await ProfitableBotUpdaterCommand.get_profitable_bots_id_by_tf(
                 bot_crud=self.bot_crud,
-                bot_profitability_timeframes=[copy_bot.copy_bot_min_time_profitability_min],
+                bot_profitability_timeframes=[copy_bot.copybot_v2_time_in_minutes],
             )
 
             logging.info('finished get_profitable_bots_id_by_tf')
@@ -143,6 +139,9 @@ class BinanceBot(Command):
                 copy_bot_min_time_profitability_min=copy_bot.copy_bot_min_time_profitability_min
             )
             logging.info('finished get_bot_config_by_params')
+        print(refer_bot)
+        print('refer_bot')
+        return
 
         asset_crud = AssetHistoryCrud(self.session)
         active_symbols = await asset_crud.get_all_active_pairs()
