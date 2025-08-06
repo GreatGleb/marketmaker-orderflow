@@ -126,17 +126,13 @@ class BinanceBot(Command):
         logging.info('finished _get_best_copy_bot')
 
         print(copy_bot)
-        print(copy_bot.copybot_v2_time_in_minutes)
-        print(type(copy_bot.copybot_v2_time_in_minutes))
 
         refer_bot = None
         if copy_bot:
             tf_bot_ids = await ProfitableBotUpdaterCommand.get_profitable_bots_id_by_tf(
                 bot_crud=self.bot_crud,
-                bot_profitability_timeframes=[copy_bot.copybot_v2_time_in_minutes],
+                bot_profitability_timeframes=[copy_bot.copy_bot_min_time_profitability_min],
             )
-
-            print(tf_bot_ids)
 
             logging.info('finished get_profitable_bots_id_by_tf')
             refer_bot = await ProfitableBotUpdaterCommand.get_bot_config_by_params(
@@ -1525,6 +1521,8 @@ class BinanceBot(Command):
         return first_order_updating_data
 
     async def _get_best_copy_bot(self):
+        copy_bot_v2 = None
+        copy_bot_id_v2 = None
         copy_bot = None
         copy_bot_id = None
 
@@ -1532,20 +1530,40 @@ class BinanceBot(Command):
         profits_data_filtered_sorted = sorted([item for item in profits_data if item[1] > 0], key=lambda x: x[1], reverse=True)
 
         try:
-            copy_bot_id = profits_data_filtered_sorted[0][0]
+            copy_bot_id_v2 = profits_data_filtered_sorted[0][0]
         except (IndexError, TypeError):
             pass
 
-        if copy_bot_id:
-            copy_bots = await self.session.execute(
+        if copy_bot_id_v2:
+            copy_bots_v2 = await self.session.execute(
                 select(TestBot)
                 .where(
-                    TestBot.id == copy_bot_id,
+                    TestBot.id == copy_bot_id_v2,
                 )
             )
-            copy_bots = copy_bots.scalars().all()
+            copy_bots = copy_bots_v2.scalars().all()
             if copy_bots:
-                copy_bot = copy_bots[0]
+                copy_bot_v2 = copy_bots[0]
+
+        if copy_bot_v2:
+            profits_data = await self.bot_crud.get_sorted_by_profit(since=timedelta(minutes=copy_bot_v2.copybot_v2_time_in_minutes), just_copy_bots=True)
+            profits_data_filtered_sorted = sorted([item for item in profits_data if item[1] > 0], key=lambda x: x[1], reverse=True)
+
+            try:
+                copy_bot_id = profits_data_filtered_sorted[0][0]
+            except (IndexError, TypeError):
+                pass
+
+            if copy_bot_id:
+                copy_bots = await self.session.execute(
+                    select(TestBot)
+                    .where(
+                        TestBot.id == copy_bot_id,
+                    )
+                )
+                copy_bots = copy_bots.scalars().all()
+                if copy_bots:
+                    copy_bot = copy_bots[0]
 
         return copy_bot
 
