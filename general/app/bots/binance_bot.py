@@ -22,6 +22,7 @@ from app.crud.test_bot import TestBotCrud
 from app.crud.test_orders import TestOrderCrud
 from app.db.models import MarketOrder, TestBot, TestOrder
 from app.dependencies import get_redis, get_session, resolve_crud, redis_context
+from app.sub_services.logic.exit_strategy import ExitStrategy
 from app.sub_services.logic.price_calculator import PriceCalculator
 from app.sub_services.watchers.price_provider import PriceProvider, PriceWatcher
 from app.sub_services.watchers.user_data_websocket_client import UserDataWebSocketClient
@@ -349,16 +350,16 @@ class BinanceBot(Command):
 
         logging.info(f"✅ Первый ордер получен: {wait_for_order['first_order_updating_data']}")
 
-        if not bot_config.consider_ma_for_close_order:
+        if bot_config.consider_ma_for_close_order:
+            close_order_by_ma_task = asyncio.create_task(
+                self.close_order_by_ma(bot_config=bot_config, db_order=db_order)
+            )
+            await close_order_by_ma_task
+        else:
             setting_sl_sw_to_order_task = asyncio.create_task(
                 self.setting_sl_sw_to_order(db_order, tick_size)
             )
             await setting_sl_sw_to_order_task
-        else:
-            close_order_by_ma_task = asyncio.create_task(
-                self.close_order_by_ma(db_order)
-            )
-            await close_order_by_ma_task
 
         await delete_task
         await self.close_all_open_positions()
@@ -889,29 +890,28 @@ class BinanceBot(Command):
 
         logging.info('order closed')
 
-    async def close_order_by_ma(self, db_order):
-        deleting_order_id = db_order.client_order_id + f'_stop_ma25'
+    async def close_order_by_ma(self, bot_config, db_order):
+        close_not_lose_price = (
+            PriceCalculator.calculate_close_not_lose_price(
+                open_price=db_order.open_price, trade_type=db_order.side
+            )
+        )
+
+        deleting_order_id = db_order.client_order_id + f'_stop_ma'
 
         while db_order.close_time is None:
             current_price = await self.price_provider.get_price(symbol=db_order.symbol)
-            ma10 = await self.get_ma(db_order.symbol, 10)
 
-            is_need_to_close_order = False
-
-            if db_order.side == 'BUY':
-                if current_price < ma10:
-                    db_order.status = 'CLOSED BY MA10'
-                    db_order.close_reason = f'closed MA10 bigger then current price for {db_order.symbol}'
-                    logging.info(f'closed MA10 bigger then current price for {db_order.symbol}')
-
-                    is_need_to_close_order = True
-            elif db_order.side == 'SELL':
-                if current_price > ma10:
-                    db_order.status = 'CLOSED BY MA10'
-                    db_order.close_reason = f'closed MA10 less then current price for {db_order.symbol}'
-                    logging.info(f'closed MA10 less then current price for {db_order.symbol}')
-
-                    is_need_to_close_order = True
+            is_need_to_close_order = (
+                await ExitStrategy.check_exit_ma_conditions(
+                    binance_bot=self,
+                    bot_config=bot_config,
+                    symbol=db_order.symbol,
+                    order_side=db_order.side,
+                    updated_price=current_price,
+                    close_not_lose_price=close_not_lose_price,
+                )
+            )
 
             if is_need_to_close_order:
                 await self.delete_order(

@@ -70,7 +70,7 @@ class ExitStrategy:
         binance_bot,
         bot_config,
         symbol,
-        order,
+        order_side,
         updated_price,
         close_not_lose_price,
     ):
@@ -104,7 +104,7 @@ class ExitStrategy:
         if None in [less_ma_current, more_ma_current]:
             return False
 
-        if order.order_type == TradeType.BUY:
+        if order_side == TradeType.BUY:
             # Проверяем на "Крест смерти" (пересечение вниз)
             # Если быстрая MA пересекла медленную сверху вниз, закрываем позицию
             if less_ma_current < more_ma_current:
@@ -117,7 +117,7 @@ class ExitStrategy:
                 return True
 
         # Если открыт ордер на ПРОДАЖУ
-        elif order.order_type == TradeType.SELL:
+        elif order_side == TradeType.SELL:
             # Проверяем на "Золотой крест" (пересечение вверх)
             # Если быстрая MA пересекла медленную снизу вверх, закрываем позицию
             if less_ma_current > more_ma_current:

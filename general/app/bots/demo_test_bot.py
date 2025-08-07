@@ -362,7 +362,7 @@ class StartTestBotsCommand(Command):
                             binance_bot=binance_bot,
                             bot_config=bot_config,
                             symbol=symbol,
-                            order=order,
+                            order_side=order.order_type,
                             updated_price=updated_price,
                             close_not_lose_price=close_not_lose_price,
                         )
