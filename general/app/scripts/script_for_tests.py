@@ -33,7 +33,22 @@ async def run():
             reverse=True,
         )
         result = [item[0] for item in filtered_sorted]
-        print(f'result: {result}')
+
+        time_ago_24h = timedelta(hours=float(24))
+
+        profits_data_24h = await bot_crud.get_sorted_by_profit(
+            since=time_ago_24h, just_not_copy_bots=True
+        )
+        filtered_sorted_24h = sorted(
+            [item for item in profits_data_24h if item[1] > 0],
+            key=lambda x: x[1],
+            reverse=True,
+        )
+        result_24h = [item[0] for item in filtered_sorted_24h]
+
+        result_checked = [item for item in filtered_sorted if item in result_24h]
+
+        print(f'result: {len(result)}, result 24h: {len(result_24h)}, result checked: {len(result_checked)}')
 
     return
 
