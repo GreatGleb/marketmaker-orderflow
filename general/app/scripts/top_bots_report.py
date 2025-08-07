@@ -34,6 +34,20 @@ async def update_bot_profits(hours: int = None, minutes: int = None, just_copy_b
             # symbol='SWARMSUSDT'
         )
 
+        # to filter only profitable for last 24h
+        time_ago_24h = timedelta(hours=float(24))
+        profits_data_24h = await bot_crud.get_sorted_by_profit(
+            since=time_ago_24h, just_not_copy_bots=True
+        )
+        filtered_sorted_24h = sorted(
+            [item for item in profits_data_24h if item[1] > 0],
+            key=lambda x: x[1],
+            reverse=True,
+        )
+        result_24h = [item[0] for item in filtered_sorted_24h]
+        profits_data = [item for item in profits_data if item[0] in result_24h]
+        # end part to filter only profitable for last 24h
+
         earliest_query = select(
             func.min(TestOrder.created_at).label('earliest_date')
         )
