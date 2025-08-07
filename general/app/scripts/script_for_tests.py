@@ -20,7 +20,7 @@ async def run():
     async with dsm.get_session() as session:
         bot_crud = TestBotCrud(session)
 
-        tf = 60
+        tf = 120
 
         time_ago = timedelta(minutes=float(tf))
 
