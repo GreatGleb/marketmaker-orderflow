@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import traceback
 
 from datetime import datetime, timezone
@@ -60,6 +61,11 @@ class StartTestBotsCommand(Command):
 
         tasks = []
 
+        logging.basicConfig(
+            format='%(asctime)s - %(levelname)s - %(message)s',
+            level=logging.INFO
+        )
+
         for bot in active_bots:
 
             async def _run_loop(bot_config=bot):
@@ -77,7 +83,7 @@ class StartTestBotsCommand(Command):
                     except Exception as e:
                         try:
                             error_traceback = traceback.format_exc()
-                            print(error_traceback)
+                            logging.info(error_traceback)
                             telegram_service = (
                                 NotificationServiceFactory.get_telegram_service()
                             )
@@ -88,7 +94,7 @@ class StartTestBotsCommand(Command):
                                     additional_info=f"Полный стек ошибки:\n{error_traceback}",
                                 )
                         except Exception as telegram_error:
-                            print(
+                            logging.info(
                                 f"❌ Ошибка при отправке уведомления в Telegram: {telegram_error}"
                             )
                         await asyncio.sleep(1)
@@ -105,7 +111,7 @@ class StartTestBotsCommand(Command):
         refer_bot = json.loads(refer_bot_js) if refer_bot_js else None
 
         if not refer_bot:
-            print(
+            logging.info(
                 f"❌ Не удалось найти реферального бота для ID: {bot_config.id}"
             )
             return {
@@ -188,7 +194,7 @@ class StartTestBotsCommand(Command):
                 )
 
                 if not bot_config:
-                    print(f'there no copybot_v2 ref {bot_id}')
+                    logging.info(f'there no copybot_v2 ref {bot_id}')
                     await asyncio.sleep(60)
                     return
 
@@ -209,7 +215,8 @@ class StartTestBotsCommand(Command):
                 if not bot_config:
                     await asyncio.sleep(60)
                     return
-                print(f'found ref for {bot_id}')
+
+                logging.info(f'found ref for {bot_id}')
 
             if bot_config.consider_ma_for_open_order:
                 symbol = bot_config.symbol
@@ -219,13 +226,13 @@ class StartTestBotsCommand(Command):
                 )
 
             if not symbol:
-                print('there no symbol')
+                logging.info('there no symbol')
                 await asyncio.sleep(60)
                 return
 
             data = shared_data.get(symbol)
             if not data:
-                print('not symbols data')
+                logging.info('not symbols data')
                 return
             tick_size = data["tick_size"]
 
@@ -253,7 +260,7 @@ class StartTestBotsCommand(Command):
             entry_price = None
 
             if is_it_copy:
-                print(f'waiting')
+                logging.info(f'waiting for {bot_id}')
 
             try:
                 wait_minutes = 1
@@ -286,7 +293,7 @@ class StartTestBotsCommand(Command):
                 is_timeout_occurred = True
 
             if is_it_copy:
-                print(f'is_timeout_occurred: {is_timeout_occurred}')
+                logging.info(f'is_timeout_occurred: {is_timeout_occurred} for {bot_id}')
 
             if is_timeout_occurred or not trade_type or not entry_price:
                 return False
@@ -344,7 +351,7 @@ class StartTestBotsCommand(Command):
                 )
 
             if is_it_copy:
-                print('wait for should_exit')
+                logging.info(f'wait for should_exit for {bot_id}')
 
             while not stop_event.is_set():
                 updated_price = await price_provider.get_price(symbol=symbol)
@@ -382,7 +389,7 @@ class StartTestBotsCommand(Command):
                 await asyncio.sleep(0.1)
 
             if is_it_copy:
-                print('end wait')
+                logging.info(f'end wait for {bot_id}')
 
             close_price = await price_provider.get_price(symbol=symbol)
 
