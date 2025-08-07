@@ -12,9 +12,34 @@ from app.config import settings
 import asyncio
 
 from app.dependencies import redis_context
+from app.workers.profitable_bot_updater import ProfitableBotUpdaterCommand
 
 
-async def ma():
+async def run():
+    dsm = DatabaseSessionManager.create(settings.DB_URL)
+    async with dsm.get_session() as session:
+        bot_crud = TestBotCrud(session)
+
+        tf = 60
+
+        time_ago = timedelta(minutes=float(tf))
+
+        profits_data = await bot_crud.get_sorted_by_profit(
+            since=time_ago, just_not_copy_bots=True
+        )
+        filtered_sorted = sorted(
+            [item for item in profits_data if item[1] > 0],
+            key=lambda x: x[1],
+            reverse=True,
+        )
+        result = [item[0] for item in filtered_sorted]
+        print(f'result: {result}')
+
+    return
+
+
+
+
     async with redis_context() as redis:
         binance_bot = BinanceBot(is_need_prod_for_data=True, redis=redis)
 
@@ -35,4 +60,4 @@ async def ma():
 
 
 if __name__ == "__main__":
-    asyncio.run(ma())
+    asyncio.run(run())
