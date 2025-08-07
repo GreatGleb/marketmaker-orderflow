@@ -20,7 +20,7 @@ async def run():
     async with dsm.get_session() as session:
         bot_crud = TestBotCrud(session)
 
-        tf = 120
+        tf = 60
 
         time_ago = timedelta(minutes=float(tf))
 
@@ -46,7 +46,7 @@ async def run():
         )
         result_24h = [item[0] for item in filtered_sorted_24h]
 
-        result_checked = [item for item in filtered_sorted if item in result_24h]
+        result_checked = [item for item in result if item in result_24h]
 
         print(f'result: {len(result)}, result 24h: {len(result_24h)}, result checked: {len(result_checked)}')
 
