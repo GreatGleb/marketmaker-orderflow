@@ -155,7 +155,21 @@ class ProfitableBotUpdaterCommand(Command):
                 key=lambda x: x[1],
                 reverse=True,
             )
-            tf_bot_ids[tf] = [item[0] for item in filtered_sorted]
+            tf_ids = [item[0] for item in filtered_sorted]
+
+            time_ago_24h = timedelta(hours=float(24))
+            profits_data_24h = await bot_crud.get_sorted_by_profit(
+                since=time_ago_24h, just_not_copy_bots=True
+            )
+            filtered_sorted_24h = sorted(
+                [item for item in profits_data_24h if item[1] > 0],
+                key=lambda x: x[1],
+                reverse=True,
+            )
+            result_24h = [item[0] for item in filtered_sorted_24h]
+            result_checked = [item for item in tf_ids if item in result_24h]
+
+            tf_bot_ids[tf] = result_checked
 
         return tf_bot_ids
 
