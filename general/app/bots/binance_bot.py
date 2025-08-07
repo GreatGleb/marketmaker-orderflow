@@ -23,7 +23,7 @@ from app.crud.test_orders import TestOrderCrud
 from app.db.models import MarketOrder, TestBot, TestOrder
 from app.dependencies import get_redis, get_session, resolve_crud, redis_context
 from app.sub_services.logic.price_calculator import PriceCalculator
-from app.sub_services.watchers.price_provider import PriceProvider
+from app.sub_services.watchers.price_provider import PriceProvider, PriceWatcher
 from app.sub_services.watchers.user_data_websocket_client import UserDataWebSocketClient
 from app.utils import Command
 from app.workers.profitable_bot_updater import ProfitableBotUpdaterCommand
@@ -140,11 +140,6 @@ class BinanceBot(Command):
             )
             logging.info('finished get_bot_config_by_params')
 
-        print(copy_bot)
-        print(refer_bot)
-        print('refer_bot')
-        return
-
         asset_crud = AssetHistoryCrud(self.session)
         active_symbols = await asset_crud.get_all_active_pairs()
 
@@ -167,7 +162,7 @@ class BinanceBot(Command):
             return
 
         if self.is_prod:
-            if copy_bot.consider_ma_for_open_order:
+            if refer_bot['consider_ma_for_open_order']:
                 symbol = refer_bot['symbol']
             else:
                 symbol = await self.redis.get(f"most_volatile_symbol_{refer_bot['min_timeframe_asset_volatility']}")
@@ -252,6 +247,10 @@ class BinanceBot(Command):
             logging.info('not balanceUSDT')
             await asyncio.sleep(60)
             return
+
+        # temporarily
+        if balanceUSDT > 10:
+            balanceUSDT = Decimal(10)
 
         if not self.is_prod:
             balanceUSDT = 100
@@ -438,48 +437,99 @@ class BinanceBot(Command):
         order_sell = None
 
         if db_order_buy and db_order_sell:
-            order_buy_create_task = asyncio.create_task(
-                self.create_order(
-                    balanceUSDT=balanceUSDT,
-                    bot_config=bot_config,
-                    symbol=symbol,
-                    tick_size=tick_size,
-                    lot_size=lot_size,
-                    max_price=max_price,
-                    min_price=min_price,
-                    max_qty=max_qty,
-                    min_qty=min_qty,
-                    creating_orders_type='buy',
-                    futures_order_type=FUTURE_ORDER_TYPE_STOP_MARKET,
-                    order_side=SIDE_BUY,
-                    order_position_side="LONG",
-                    db_order=db_order_buy,
-                )
-            )
+            order_buy_create_task = None
+            order_sell_create_task = None
 
-            order_sell_create_task = asyncio.create_task(
-                self.create_order(
-                    balanceUSDT=balanceUSDT,
-                    bot_config=bot_config,
+            if bot_config.consider_ma_for_open_order:
+                price_watcher = PriceWatcher(redis=self.redis)
+                trade_type, entry_price = await price_watcher.wait_for_entry_price(
                     symbol=symbol,
-                    tick_size=tick_size,
-                    lot_size=lot_size,
-                    max_price=max_price,
-                    min_price=min_price,
-                    max_qty=max_qty,
-                    min_qty=min_qty,
-                    creating_orders_type='sell',
-                    futures_order_type=FUTURE_ORDER_TYPE_STOP_MARKET,
-                    order_side=SIDE_SELL,
-                    order_position_side="SHORT",
-                    db_order=db_order_sell,
+                    binance_bot=self,
+                    bot_config=bot_config,
                 )
-            )
 
-            tasks = {
-                'buy': order_buy_create_task,
-                'sell': order_sell_create_task
-            }
+                if trade_type == 'BUY':
+                    order_buy_create_task = asyncio.create_task(
+                        self.create_order(
+                            balanceUSDT=balanceUSDT,
+                            bot_config=bot_config,
+                            symbol=symbol,
+                            tick_size=tick_size,
+                            lot_size=lot_size,
+                            max_price=max_price,
+                            min_price=min_price,
+                            max_qty=max_qty,
+                            min_qty=min_qty,
+                            creating_orders_type='buy',
+                            futures_order_type=FUTURE_ORDER_TYPE_STOP_MARKET,
+                            order_side=SIDE_BUY,
+                            order_position_side="LONG",
+                            db_order=db_order_buy,
+                        )
+                    )
+                elif trade_type == 'SELL':
+                    order_sell_create_task = asyncio.create_task(
+                        self.create_order(
+                            balanceUSDT=balanceUSDT,
+                            bot_config=bot_config,
+                            symbol=symbol,
+                            tick_size=tick_size,
+                            lot_size=lot_size,
+                            max_price=max_price,
+                            min_price=min_price,
+                            max_qty=max_qty,
+                            min_qty=min_qty,
+                            creating_orders_type='sell',
+                            futures_order_type=FUTURE_ORDER_TYPE_STOP_MARKET,
+                            order_side=SIDE_SELL,
+                            order_position_side="SHORT",
+                            db_order=db_order_sell,
+                        )
+                    )
+            else:
+                order_buy_create_task = asyncio.create_task(
+                    self.create_order(
+                        balanceUSDT=balanceUSDT,
+                        bot_config=bot_config,
+                        symbol=symbol,
+                        tick_size=tick_size,
+                        lot_size=lot_size,
+                        max_price=max_price,
+                        min_price=min_price,
+                        max_qty=max_qty,
+                        min_qty=min_qty,
+                        creating_orders_type='buy',
+                        futures_order_type=FUTURE_ORDER_TYPE_STOP_MARKET,
+                        order_side=SIDE_BUY,
+                        order_position_side="LONG",
+                        db_order=db_order_buy,
+                    )
+                )
+
+                order_sell_create_task = asyncio.create_task(
+                    self.create_order(
+                        balanceUSDT=balanceUSDT,
+                        bot_config=bot_config,
+                        symbol=symbol,
+                        tick_size=tick_size,
+                        lot_size=lot_size,
+                        max_price=max_price,
+                        min_price=min_price,
+                        max_qty=max_qty,
+                        min_qty=min_qty,
+                        creating_orders_type='sell',
+                        futures_order_type=FUTURE_ORDER_TYPE_STOP_MARKET,
+                        order_side=SIDE_SELL,
+                        order_position_side="SHORT",
+                        db_order=db_order_sell,
+                    )
+                )
+
+            tasks = {}
+            if order_buy_create_task:
+                tasks['buy'] = order_buy_create_task
+            if order_sell_create_task:
+                tasks['sell'] = order_sell_create_task
 
             final_result_found = False
 
@@ -554,76 +604,45 @@ class BinanceBot(Command):
         try_create_order = 0
 
         if bot_config.consider_ma_for_open_order:
-            while True:
-                order_params = await self._get_order_params(
-                    balanceUSDT,
-                    symbol, tick_size, lot_size, max_price, min_price, max_qty, min_qty,
-                    db_order
+            order_params = await self._get_order_params(
+                balanceUSDT,
+                symbol, tick_size, lot_size, max_price, min_price, max_qty, min_qty,
+                db_order
+            )
+
+            if not order_params:
+                db_order.status = 'CANCELED'
+                db_order.close_reason = f'Can\'t get order params for {symbol}'
+                logging.info(f'Can\'t get order params for {creating_orders_type} {symbol}')
+                return order
+
+            order_stop_price = 0
+
+            if creating_orders_type == 'buy':
+                order_quantity = order_params['quantityOrder_buy_str']
+            else:
+                order_quantity = order_params['quantityOrder_sell_str']
+
+            try:
+                order = await self._safe_from_time_err_call_binance(
+                    self.binance_client.futures_create_order,
+                    symbol=symbol,
+                    side=order_side,
+                    positionSide=order_position_side,
+                    type=FUTURE_ORDER_TYPE_MARKET,
+                    quantity=order_quantity,
+                    newClientOrderId=db_order.client_order_id,
+                    newOrderRespType="RESULT",
+                    recvWindow=3000,
                 )
-
-                if not order_params:
-                    db_order.status = 'CANCELED'
-                    db_order.close_reason = f'Can\'t get order params for {symbol}'
-                    logging.info(f'Can\'t get order params for {creating_orders_type} {symbol}')
-                    return order
-
-                current_price = order_params['initial_price']
-
-                ma10, ma25 = await self.get_double_ma(db_order.symbol, 10, 25)
-
-                if not ma10 or not ma25:
-                    db_order.status = 'CANCELED'
-                    db_order.close_reason = f'MA25 can\'t find klines for {symbol}'
-                    logging.info(f'MA25 can\'t find klines for {symbol}')
-
-                    return order
-
-                if creating_orders_type == 'buy':
-                    if current_price <= ma25 or current_price <= ma10:
-                        db_order.status = 'CANCELED'
-                        db_order.close_reason = f'MA25 bigger then current price for {symbol}'
-                        logging.info(f'MA25 bigger then current price for {symbol}')
-
-                        await asyncio.sleep(0.1)
-                        continue
-                elif creating_orders_type == 'sell':
-                    if current_price >= ma25 or current_price >= ma10:
-                        db_order.status = 'CANCELED'
-                        db_order.close_reason = f'MA25 less then current price for {symbol}'
-                        logging.info(f'MA25 less then current price for {symbol}')
-
-                        await asyncio.sleep(0.1)
-                        continue
-
-                if creating_orders_type == 'buy':
-                    order_quantity = order_params['quantityOrder_buy_str']
-                    order_stop_price = 0
-                else:
-                    order_quantity = order_params['quantityOrder_sell_str']
-                    order_stop_price = 0
-
-                try:
-                    order = await self._safe_from_time_err_call_binance(
-                        self.binance_client.futures_create_order,
-                        symbol=symbol,
-                        side=order_side,
-                        positionSide=order_position_side,
-                        type=FUTURE_ORDER_TYPE_MARKET,
-                        quantity=order_quantity,
-                        newClientOrderId=db_order.client_order_id,
-                        newOrderRespType="RESULT",
-                        recvWindow=3000,
-                    )
-                except BinanceAPIException as e:
-                    db_order.status = 'CANCELED'
-                    db_order.close_reason = f'Binance error while creating order: {e}'
-                    logging.info(f'Binance error while creating order {creating_orders_type}: {e}')
-                except Exception as e:
-                    db_order.status = 'CANCELED'
-                    db_order.close_reason = f'Error while creating Binance order: {e}'
-                    logging.info(f"Error while creating binance order {creating_orders_type}: {e}")
-
-                break
+            except BinanceAPIException as e:
+                db_order.status = 'CANCELED'
+                db_order.close_reason = f'Binance error while creating order: {e}'
+                logging.info(f'Binance error while creating order {creating_orders_type}: {e}')
+            except Exception as e:
+                db_order.status = 'CANCELED'
+                db_order.close_reason = f'Error while creating Binance order: {e}'
+                logging.info(f"Error while creating binance order {creating_orders_type}: {e}")
 
         else:
             while True:

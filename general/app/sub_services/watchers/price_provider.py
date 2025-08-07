@@ -29,11 +29,11 @@ class PriceWatcher:
 
     async def wait_for_entry_price(
         self,
-        symbol: str | Mapped[str],
-        entry_price_buy: Decimal,
-        entry_price_sell: Decimal,
         binance_bot,
-        bot_config
+        bot_config,
+        symbol: str | Mapped[str],
+        entry_price_buy: Decimal | None = None,
+        entry_price_sell: Decimal | None = None,
     ) -> tuple[TradeType, Decimal]:
         while True:
             current_price = await self.price_provider.get_price(symbol)
@@ -56,7 +56,7 @@ class PriceWatcher:
 
                 if not ma_data:
                     print("Недостаточно данных для принятия решения.")
-                    await asyncio.sleep(0.1)
+                    await asyncio.sleep(10)
                     continue
 
                 less_ma_history = ma_data['less']['result']
@@ -64,7 +64,7 @@ class PriceWatcher:
 
                 if len(less_ma_history) < (2+1) or len(more_ma_history) < (2+1):
                     print("Недостаточно истории MA для проверки пересечения.")
-                    await asyncio.sleep(0.1)
+                    await asyncio.sleep(10)
                     continue
 
                 less_ma_current = less_ma_history[0]
