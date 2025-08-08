@@ -65,6 +65,7 @@ async def run():
                 f"Бот {bot_id} — 💰 Общая прибыль: {total_profit:.4f}, "
                 f"📈 Успешных ордеров: {successful_orders}/{total_orders}"
             )
+        print(ids_checked_by_referral)
 
     return
 
