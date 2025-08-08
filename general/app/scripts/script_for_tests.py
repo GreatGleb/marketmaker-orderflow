@@ -60,6 +60,11 @@ async def run():
         ids_checked_by_referral = [item for item in ids_checked_24h if item in tf_ids_by_referral]
 
         print(f'result: {len(ids_tf)}, result 24h: {len(ids_24h)}, result checked: {len(ids_checked_24h)}, tf_ids_by_referral: {len(tf_ids_by_referral)}, ids_checked_by_referral: {len(ids_checked_by_referral)}')
+        for bot_id, total_profit, total_orders, successful_orders in profits_data_by_referral:
+            print(
+                f"Бот {bot_id} — 💰 Общая прибыль: {total_profit:.4f}, "
+                f"📈 Успешных ордеров: {successful_orders}/{total_orders}"
+            )
 
     return
 
