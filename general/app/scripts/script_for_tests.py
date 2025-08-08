@@ -49,7 +49,7 @@ async def run():
         ids_checked_24h = [item for item in ids_tf if item in ids_24h]
 
         profits_data_by_referral = await bot_crud.get_sorted_by_profit(
-            since=time_ago, just_not_copy_bots=True, by_referral_bot_id=True
+            since=time_ago_24h, just_not_copy_bots=True, by_referral_bot_id=True
         )
         filtered_sorted_by_referral = sorted(
             [item for item in profits_data_by_referral if item[1] > 0],
