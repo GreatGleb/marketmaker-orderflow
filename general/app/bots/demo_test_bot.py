@@ -105,10 +105,24 @@ class StartTestBotsCommand(Command):
 
     @staticmethod
     async def update_config_from_referral_bot(
-        bot_config: TestBot, redis
+        bot_config: TestBot, bot_crud, redis, is_it_copy_bot_v2 = False
     ):
-        refer_bot_js = await redis.get(f"copy_bot_{bot_config.id}")
-        refer_bot = json.loads(refer_bot_js) if refer_bot_js else None
+        if is_it_copy_bot_v2:
+            tf_bot_ids = await ProfitableBotUpdaterCommand.get_profitable_bots_id_by_tf(
+                bot_crud=bot_crud,
+                bot_profitability_timeframes=[bot_config.copy_bot_min_time_profitability_min],
+                by_referral_bot_id=True,
+            )
+
+            logging.info('finished get_profitable_bots_id_by_tf')
+            refer_bot = await ProfitableBotUpdaterCommand.get_bot_config_by_params(
+                bot_crud=bot_crud,
+                tf_bot_ids=tf_bot_ids,
+                copy_bot_min_time_profitability_min=bot_config.copy_bot_min_time_profitability_min
+            )
+        else:
+            refer_bot_js = await redis.get(f"copy_bot_{bot_config.id}")
+            refer_bot = json.loads(refer_bot_js) if refer_bot_js else None
 
         if not refer_bot:
             logging.info(
@@ -206,7 +220,7 @@ class StartTestBotsCommand(Command):
             if is_it_copy:
                 updating_config_res = (
                     await self.update_config_from_referral_bot(
-                        bot_config=bot_config, redis=redis
+                        bot_config=bot_config, bot_crud=bot_crud, redis=redis, is_it_copy_bot_v2=(original_bot_config.copybot_v2_time_in_minutes > 0)
                     )
                 )
                 bot_config = updating_config_res['config']

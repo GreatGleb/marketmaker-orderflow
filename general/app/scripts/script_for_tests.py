@@ -32,7 +32,7 @@ async def run():
             key=lambda x: x[1],
             reverse=True,
         )
-        result = [item[0] for item in filtered_sorted]
+        ids_tf = [item[0] for item in filtered_sorted]
 
         time_ago_24h = timedelta(hours=float(24))
 
@@ -44,11 +44,22 @@ async def run():
             key=lambda x: x[1],
             reverse=True,
         )
-        result_24h = [item[0] for item in filtered_sorted_24h]
 
-        result_checked = [item for item in result if item in result_24h]
+        ids_24h = [item[0] for item in filtered_sorted_24h]
+        ids_checked_24h = [item for item in ids_tf if item in ids_24h]
 
-        print(f'result: {len(result)}, result 24h: {len(result_24h)}, result checked: {len(result_checked)}')
+        profits_data_by_referral = await bot_crud.get_sorted_by_profit(
+            since=time_ago, just_not_copy_bots=True, by_referral_bot_id=True
+        )
+        filtered_sorted_by_referral = sorted(
+            [item for item in profits_data_by_referral if item[1] > 0],
+            key=lambda x: x[1],
+            reverse=True,
+        )
+        tf_ids_by_referral = [item[0] for item in filtered_sorted_by_referral]
+        ids_checked_by_referral = [item for item in ids_checked_24h if item in tf_ids_by_referral]
+
+        print(f'result: {len(ids_tf)}, result 24h: {len(ids_24h)}, result checked: {len(ids_checked_24h)}, tf_ids_by_referral: {len(tf_ids_by_referral)}, ids_checked_by_referral: {len(ids_checked_by_referral)}')
 
     return
 

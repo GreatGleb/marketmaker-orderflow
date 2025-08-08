@@ -27,7 +27,10 @@ class TestBotCrud(BaseCrud[TestBot]):
         await self.session.execute(stmt)
 
     async def get_sorted_by_profit(
-        self, since=None, just_copy_bots=False, just_copy_bots_v2=False, just_not_copy_bots=False, add_asset_symbol=False, symbol=None
+        self, since=None,
+        just_copy_bots=False, just_copy_bots_v2=False, just_not_copy_bots=False,
+        symbol=None,
+        by_referral_bot_id=False,
     ):
         active_bots_subquery = select(TestBot.id).where(
             TestBot.is_active == True
@@ -63,10 +66,13 @@ class TestBotCrud(BaseCrud[TestBot]):
             ),
         ]
 
-        if add_asset_symbol:
-            select_columns.append(func.array_agg(TestOrder.asset_symbol.distinct()).label("asset_symbol"))
+        if by_referral_bot_id:
+            select_columns[0] = TestOrder.referral_bot_id
 
         profits_query = select(*select_columns).where(TestOrder.bot_id.in_(active_bots_subquery))
+
+        if by_referral_bot_id:
+            profits_query = select(*select_columns).where(TestOrder.referral_bot_id.in_(active_bots_subquery))
 
         if since is not None:
             now = datetime.now(UTC)
@@ -76,7 +82,11 @@ class TestBotCrud(BaseCrud[TestBot]):
                 TestOrder.created_at >= time_ago
             )
 
-        profits_query = profits_query.group_by(TestOrder.bot_id)
+        if by_referral_bot_id:
+            profits_query = profits_query.group_by(TestOrder.referral_bot_id)
+        else:
+            profits_query = profits_query.group_by(TestOrder.bot_id)
+
         profits_data = (await self.session.execute(profits_query)).all()
 
         return profits_data

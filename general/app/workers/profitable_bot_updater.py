@@ -140,7 +140,8 @@ class ProfitableBotUpdaterCommand(Command):
 
     @staticmethod
     async def get_profitable_bots_id_by_tf(
-        bot_crud, bot_profitability_timeframes
+        bot_crud, bot_profitability_timeframes,
+        by_referral_bot_id=False,
     ):
         tf_bot_ids = {}
 
@@ -166,10 +167,23 @@ class ProfitableBotUpdaterCommand(Command):
                 key=lambda x: x[1],
                 reverse=True,
             )
-            result_24h = [item[0] for item in filtered_sorted_24h]
-            result_checked = [item for item in tf_ids if item in result_24h]
+            ids_24h = [item[0] for item in filtered_sorted_24h]
+            ids_checked_24h = [item for item in tf_ids if item in ids_24h]
 
-            tf_bot_ids[tf] = result_checked
+            tf_bot_ids[tf] = ids_checked_24h
+
+            if by_referral_bot_id:
+                profits_data_by_referral = await bot_crud.get_sorted_by_profit(
+                    since=time_ago, just_not_copy_bots=True, by_referral_bot_id=True
+                )
+                filtered_sorted_by_referral = sorted(
+                    [item for item in profits_data_by_referral if item[1] > 0],
+                    key=lambda x: x[1],
+                    reverse=True,
+                )
+                tf_ids_by_referral = [item[0] for item in filtered_sorted_by_referral]
+                ids_checked_by_referral = [item for item in ids_checked_24h if item in tf_ids_by_referral]
+                tf_bot_ids[tf] = ids_checked_by_referral
 
         return tf_bot_ids
 
