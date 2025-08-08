@@ -66,6 +66,11 @@ async def run():
                 f"📈 Успешных ордеров: {successful_orders}/{total_orders}"
             )
         print(ids_checked_by_referral)
+        for bot_id, total_profit, total_orders, successful_orders in [item for item in filtered_sorted if item[0] in ids_24h]:
+            print(
+                f"Бот {bot_id} — 💰 Общая прибыль: {total_profit:.4f}, "
+                f"📈 Успешных ордеров: {successful_orders}/{total_orders}"
+            )
 
     return
 
