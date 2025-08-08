@@ -66,6 +66,9 @@ class TestBotCrud(BaseCrud[TestBot]):
             ),
         ]
 
+        if symbol:
+            select_columns.append(func.array_agg(TestOrder.asset_symbol.distinct()).label("symbol"))
+
         if by_referral_bot_id:
             select_columns[0] = TestOrder.referral_bot_id
 
