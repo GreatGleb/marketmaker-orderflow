@@ -220,7 +220,7 @@ class StartTestBotsCommand(Command):
             if is_it_copy:
                 updating_config_res = (
                     await self.update_config_from_referral_bot(
-                        bot_config=bot_config, bot_crud=bot_crud, redis=redis, is_it_copy_bot_v2=(original_bot_config.copybot_v2_time_in_minutes > 0)
+                        bot_config=bot_config, bot_crud=bot_crud, redis=redis, is_it_copy_bot_v2=(original_bot_config.copybot_v2_time_in_minutes is not None)
                     )
                 )
                 bot_config = updating_config_res['config']
