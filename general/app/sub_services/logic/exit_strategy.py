@@ -110,11 +110,10 @@ class ExitStrategy:
             if less_ma_current < more_ma_current:
                 # print(f"Сигнал на закрытие покупки: Крест смерти на {symbol} в {datetime.now().strftime('%H:%M:%S')}")
                 return True
-            if less_ma_current < more_ma_current:
-                # print(f"Сигнал на закрытие покупки: Крест смерти на {symbol} в {datetime.now().strftime('%H:%M:%S')}")
+            if less_ma_current > updated_price:
                 return True
-            if less_ma_current > updated_price > close_not_lose_price:
-                return True
+            # if less_ma_current > updated_price > close_not_lose_price:
+            #     return True
 
         # Если открыт ордер на ПРОДАЖУ
         elif order_side == TradeType.SELL:
@@ -123,11 +122,10 @@ class ExitStrategy:
             if less_ma_current > more_ma_current:
                 # print(f"Сигнал на закрытие продажи: Золотой крест на {symbol} в {datetime.now().strftime('%H:%M:%S')}")
                 return True
-            if less_ma_current > more_ma_current:
-                # print(f"Сигнал на закрытие продажи: Золотой крест на {symbol} в {datetime.now().strftime('%H:%M:%S')}")
+            if less_ma_current < updated_price:
                 return True
-            if less_ma_current < updated_price < close_not_lose_price:
-                return True
+            # if less_ma_current < updated_price < close_not_lose_price:
+            #     return True
 
         # Если обратного пересечения не было, оставляем ордер открытым
         return False
