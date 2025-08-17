@@ -170,7 +170,7 @@ async def deactivate_not_profit_bots(bot_crud):
 async def create_bots():
     # average_percent_for_1_tick = await get_average_percentage_for_minimum_tick()
 
-    symbol = "BTCUSDT"
+    symbol = "MYXUSDT"
 
     dsm = DatabaseSessionManager.create(settings.DB_URL)
 
@@ -185,22 +185,23 @@ async def create_bots():
                 print(e)
                 return
 
-        if False:
-            start_ticks_values = [10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 70, 80, 100]
-            stop_lose_ticks_values = [40, 45, 50, 55, 60, 70, 80, 90, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]
-            stop_win_ticks_values = [5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+        if 1:
+            # start_ticks_values = [10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 70, 80, 100]
+            # stop_lose_ticks_values = [20, 25, 30, 35, 40, 45, 50, 55, 60, 70, 80, 90, 150, 300, 450, 600, 850, 1000]
+            # stop_win_ticks_values = [5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 150, 300, 450]
+            #
+            # start_percents_values = [x * average_percent_for_1_tick for x in start_ticks_values]
+            # stop_lose_percents_values = [x * average_percent_for_1_tick for x in stop_lose_ticks_values]
+            # stop_win_percents_values = [x * average_percent_for_1_tick for x in stop_win_ticks_values]
 
-            start_percents_values = [x * average_percent_for_1_tick for x in start_ticks_values]
-            stop_lose_percents_values = [x * average_percent_for_1_tick for x in stop_lose_ticks_values]
-            stop_win_percents_values = [x * average_percent_for_1_tick for x in stop_win_ticks_values]
+            start_percents_values = [0.005, 0.0075, 0.01, 0.0125, 0.015, 0.0175, 0.02, 0.0225, 0.025, 0.0275, 0.03, 0.035, 0.04, 0.05]
+            stop_lose_percents_values = [0.01, 0.0125, 0.015, 0.0175, 0.02, 0.0225, 0.025, 0.0275, 0.03, 0.035, 0.04, 0.045, 0.075, 0.15, 0.225, 0.3, 0.425, 0.5]
+            stop_win_percents_values = [0.0025, 0.005, 0.01, 0.015, 0.02, 0.025, 0.03, 0.035, 0.04, 0.045, 0.05, 0.075, 0.15, 0.225]
 
             min_tf_volatility_values = [0.5, 1, 2, 3]
             wait_open_order_values = [0.5]
 
             try:
-                sql_command = "TRUNCATE TABLE test_bots RESTART IDENTITY CASCADE;"
-                await session.execute(text(sql_command))
-
                 for start in start_percents_values:
                     for stop_lose in stop_lose_percents_values:
                         new_bots = []
@@ -225,7 +226,7 @@ async def create_bots():
             except Exception as e:
                 print(e)
 
-        if False:
+        if 1:
             copy_bot_min_time_profitability_min_values = [10, 20, 30, 40, 50, 60, 120, 180, 240, 360, 420, 480, 540,
                                                           600, 660, 720, 1440]
 
@@ -235,7 +236,16 @@ async def create_bots():
                     bot_data = {
                         "symbol": '',
                         "balance": Decimal("1000.0"),
-                        # "copy_bot_min_time_profitability_min": min_time,
+                        "copy_bot_min_time_profitability_min": min_time,
+                        # "consider_ma_for_open_order": True,
+                        # "consider_ma_for_close_order": True,
+                    }
+                    new_bots.append(bot_data)
+
+                for min_time in copy_bot_min_time_profitability_min_values:
+                    bot_data = {
+                        "symbol": '',
+                        "balance": Decimal("1000.0"),
                         "copybot_v2_time_in_minutes": min_time,
                         # "consider_ma_for_open_order": True,
                         # "consider_ma_for_close_order": True,
@@ -248,42 +258,42 @@ async def create_bots():
             except Exception as e:
                 print(e)
 
-        # ma test bots
-
-        await deactivate_not_profit_bots(bot_crud)
-
-        new_symbols = await get_volatile_symbols(session)
-        bot_existing_symbols = await bot_crud.get_bot_symbols()
-        new_symbols = [symbol for symbol in new_symbols if symbol not in bot_existing_symbols]
-        new_symbols = new_symbols[:7 - len(bot_existing_symbols)]
-
-        print(new_symbols)
-        print('Most volatile symbols')
-
-        open_ma_numbers = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100,105,110,115,120,125,130,135,140,145,150]
-        close_ma_numbers = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100,105,110,115,120,125,130,135,140,145,150]
-
-        try:
-            for symbol in new_symbols:
-                new_bots = []
-                for open_ma_number in open_ma_numbers:
-                    for close_ma_number in close_ma_numbers:
-                        bot_data = {
-                            "symbol": symbol,
-                            "balance": Decimal("1000.0"),
-                            "consider_ma_for_open_order": True,
-                            "consider_ma_for_close_order": True,
-                            "ma_number_of_candles_for_open_order": open_ma_number,
-                            "ma_number_of_candles_for_close_order": close_ma_number,
-                            "is_active": True,
-                        }
-                        new_bots.append(bot_data)
-
-                await bot_crud.bulk_create(new_bots)
-                await session.commit()
-                print(f"✅ Успешно создано ботов. {len(new_bots)}")
-        except Exception as e:
-            print(e)
+        # # ma test bots
+        #
+        # await deactivate_not_profit_bots(bot_crud)
+        #
+        # new_symbols = await get_volatile_symbols(session)
+        # bot_existing_symbols = await bot_crud.get_bot_symbols()
+        # new_symbols = [symbol for symbol in new_symbols if symbol not in bot_existing_symbols]
+        # new_symbols = new_symbols[:7 - len(bot_existing_symbols)]
+        #
+        # print(new_symbols)
+        # print('Most volatile symbols')
+        #
+        # open_ma_numbers = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100,105,110,115,120,125,130,135,140,145,150]
+        # close_ma_numbers = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100,105,110,115,120,125,130,135,140,145,150]
+        #
+        # try:
+        #     for symbol in new_symbols:
+        #         new_bots = []
+        #         for open_ma_number in open_ma_numbers:
+        #             for close_ma_number in close_ma_numbers:
+        #                 bot_data = {
+        #                     "symbol": symbol,
+        #                     "balance": Decimal("1000.0"),
+        #                     "consider_ma_for_open_order": True,
+        #                     "consider_ma_for_close_order": True,
+        #                     "ma_number_of_candles_for_open_order": open_ma_number,
+        #                     "ma_number_of_candles_for_close_order": close_ma_number,
+        #                     "is_active": True,
+        #                 }
+        #                 new_bots.append(bot_data)
+        #
+        #         await bot_crud.bulk_create(new_bots)
+        #         await session.commit()
+        #         print(f"✅ Успешно создано ботов. {len(new_bots)}")
+        # except Exception as e:
+        #     print(e)
 
         return
 
