@@ -185,7 +185,7 @@ async def create_bots():
                 print(e)
                 return
 
-        if 1:
+        if False:
             # start_ticks_values = [10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 70, 80, 100]
             # stop_lose_ticks_values = [20, 25, 30, 35, 40, 45, 50, 55, 60, 70, 80, 90, 150, 300, 450, 600, 850, 1000]
             # stop_win_ticks_values = [5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 150, 300, 450]
@@ -242,6 +242,11 @@ async def create_bots():
                     }
                     new_bots.append(bot_data)
 
+                await bot_crud.bulk_create(new_bots)
+                await session.commit()
+                print(f"✅ Успешно создано ботов. {len(new_bots)}")
+
+                new_bots = []
                 for min_time in copy_bot_min_time_profitability_min_values:
                     bot_data = {
                         "symbol": '',
