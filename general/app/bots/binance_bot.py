@@ -164,14 +164,16 @@ class BinanceBot(Command):
             return
 
         if self.is_prod:
-            if refer_bot['consider_ma_for_open_order']:
-                symbol = refer_bot['symbol']
-            else:
-                symbol = await self.redis.get(f"most_volatile_symbol_{refer_bot['min_timeframe_asset_volatility']}")
-                if not symbol:
-                    logging.info(f"❌ Не найдено самую волатильную пару")
-                    await asyncio.sleep(60)
-                    return
+            # if refer_bot['consider_ma_for_open_order']:
+            #     symbol = refer_bot['symbol']
+            # else:
+            #     symbol = await self.redis.get(f"most_volatile_symbol_{refer_bot['min_timeframe_asset_volatility']}")
+            #     if not symbol:
+            #         logging.info(f"❌ Не найдено самую волатильную пару")
+            #         await asyncio.sleep(60)
+            #         return
+
+            symbol = refer_bot['symbol']
 
             bot_config = TestBot(
                 symbol=symbol,

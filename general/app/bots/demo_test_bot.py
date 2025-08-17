@@ -232,12 +232,14 @@ class StartTestBotsCommand(Command):
 
                 logging.info(f'found ref for {bot_id}')
 
-            if bot_config.consider_ma_for_open_order:
-                symbol = bot_config.symbol
-            else:
-                symbol = await redis.get(
-                    f"most_volatile_symbol_{bot_config.min_timeframe_asset_volatility}"
-                )
+            # if bot_config.consider_ma_for_open_order:
+            #     symbol = bot_config.symbol
+            # else:
+            #     symbol = await redis.get(
+            #         f"most_volatile_symbol_{bot_config.min_timeframe_asset_volatility}"
+            #     )
+
+            symbol = bot_config.symbol
 
             if not symbol:
                 logging.info('there no symbol')
