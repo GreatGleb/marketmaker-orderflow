@@ -76,6 +76,7 @@ services:
       - "8000:8000"
     depends_on:
         - db
+        - redis
     networks:
         - orderflow_network
         - redis_network
@@ -141,6 +142,7 @@ services:
       - redis_volume:/data
     networks:
       - redis_network
+    restart: unless-stopped
 
 volumes:
   postgres_data:
