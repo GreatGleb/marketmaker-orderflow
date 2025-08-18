@@ -185,7 +185,7 @@ async def create_bots():
                 print(e)
                 return
 
-        if False:
+        if 1:
             # start_ticks_values = [10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 70, 80, 100]
             # stop_lose_ticks_values = [20, 25, 30, 35, 40, 45, 50, 55, 60, 70, 80, 90, 150, 300, 450, 600, 850, 1000]
             # stop_win_ticks_values = [5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 150, 300, 450]
@@ -198,7 +198,7 @@ async def create_bots():
             stop_lose_percents_values = [0.01, 0.0125, 0.015, 0.0175, 0.02, 0.0225, 0.025, 0.0275, 0.03, 0.035, 0.04, 0.045, 0.075, 0.15, 0.225, 0.3, 0.425, 0.5]
             stop_win_percents_values = [0.0025, 0.005, 0.01, 0.015, 0.02, 0.025, 0.03, 0.035, 0.04, 0.045, 0.05, 0.075, 0.15, 0.225]
 
-            min_tf_volatility_values = [0.5, 1, 2, 3]
+            # min_tf_volatility_values = [0.5, 1, 2, 3]
             wait_open_order_values = [0.5]
 
             try:
@@ -206,19 +206,19 @@ async def create_bots():
                     for stop_lose in stop_lose_percents_values:
                         new_bots = []
                         for stop_win in stop_win_percents_values:
-                            for min_tf in min_tf_volatility_values:
-                                for wait_min in wait_open_order_values:
-                                    bot_data = {
-                                        "symbol": symbol,
-                                        "balance": Decimal("1000.0"),
-                                        "stop_win_percents": stop_win,
-                                        "stop_loss_percents": stop_lose,
-                                        "start_updown_percents": start,
-                                        "min_timeframe_asset_volatility": min_tf,
-                                        "time_to_wait_for_entry_price_to_open_order_in_minutes": wait_min,
-                                        "is_active": True,
-                                    }
-                                    new_bots.append(bot_data)
+                            # for min_tf in min_tf_volatility_values:
+                            for wait_min in wait_open_order_values:
+                                bot_data = {
+                                    "symbol": symbol,
+                                    "balance": Decimal("1000.0"),
+                                    "stop_win_percents": stop_win,
+                                    "stop_loss_percents": stop_lose,
+                                    "start_updown_percents": start,
+                                    # "min_timeframe_asset_volatility": min_tf,
+                                    "time_to_wait_for_entry_price_to_open_order_in_minutes": wait_min,
+                                    "is_active": True,
+                                }
+                                new_bots.append(bot_data)
 
                         await bot_crud.bulk_create(new_bots)
                         await session.commit()
