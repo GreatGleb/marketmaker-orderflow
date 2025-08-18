@@ -177,7 +177,7 @@ async def create_bots():
     async with dsm.get_session() as session:
         bot_crud = TestBotCrud(session)
 
-        if False:
+        if 1:
             try:
                 sql_command = "TRUNCATE TABLE test_bots RESTART IDENTITY CASCADE;"
                 await session.execute(text(sql_command))
