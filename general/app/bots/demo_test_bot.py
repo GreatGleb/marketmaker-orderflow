@@ -75,6 +75,7 @@ class StartTestBotsCommand(Command):
                             original_bot_config=bot_config,
                             shared_data=shared_data,
                             redis=redis,
+                            session=session,
                             stop_event=self.stop_event,
                             price_provider=price_provider,
                             binance_bot=binance_bot,
@@ -105,7 +106,7 @@ class StartTestBotsCommand(Command):
 
     @staticmethod
     async def update_config_from_referral_bot(
-        bot_config: TestBot, bot_crud, redis, is_it_copy_bot_v2 = False
+        bot_config: TestBot, bot_crud, redis, session, is_it_copy_bot_v2 = False,
     ):
         if is_it_copy_bot_v2:
             tf_bot_ids = await ProfitableBotUpdaterCommand.get_profitable_bots_id_by_tf(
@@ -152,6 +153,8 @@ class StartTestBotsCommand(Command):
             ma_number_of_candles_for_close_order=refer_bot['ma_number_of_candles_for_close_order'],
         )
 
+        session.expunge(ref_bot_config)
+
         # for test if copy_bot use right refer_bot
         # tf_bot_ids = (
         #     await ProfitableBotUpdaterCommand.get_profitable_bots_id_by_tf(
@@ -185,6 +188,7 @@ class StartTestBotsCommand(Command):
     async def simulate_bot(
         self,
         redis,
+        session,
         original_bot_config: TestBot,
         shared_data,
         stop_event,
@@ -220,7 +224,9 @@ class StartTestBotsCommand(Command):
             if is_it_copy:
                 updating_config_res = (
                     await self.update_config_from_referral_bot(
-                        bot_config=bot_config, bot_crud=bot_crud, redis=redis, is_it_copy_bot_v2=(original_bot_config.copybot_v2_time_in_minutes is not None)
+                        bot_config=bot_config, bot_crud=bot_crud, redis=redis,
+                        is_it_copy_bot_v2=(original_bot_config.copybot_v2_time_in_minutes is not None),
+                        session=session
                     )
                 )
                 bot_config = updating_config_res['config']
