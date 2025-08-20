@@ -52,8 +52,8 @@ services:
     restart: unless-stopped
     environment:
       STUDIO_PG_META_URL: http://meta:8080
-      SUPABASE_URL: http://general:8000
-      SUPABASE_REST_URL: http://general:8000/rest/v1/
+      SUPABASE_URL: http://meta:8080
+      SUPABASE_REST_URL: http://meta:8080/rest/v1/
       SUPABASE_ANON_KEY: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwiaWF0IjoxNjQxNzY5MjAwLCJleHAiOjE3OTk1MzU2MDAsInJvbGUiOiJhbm9uIn0.dc_X5iR_VP_qT0zsiyj_I_OZ2T9FtRU2BBNWN8Bu4GE
       SUPABASE_SERVICE_KEY: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwiaWF0IjoxNjQxNzY5MjAwLCJleHAiOjE3OTk1MzU2MDAsInJvbGUiOiJzZXJ2aWNlX3JvbGUifQ.M2i_7qxC8YW_YHQb_O_TH_TsnqE9UvwC_A7nfeIwJ7U
     ports:
