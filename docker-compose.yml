@@ -47,7 +47,7 @@ services:
       - orderflow_network
 
   studio:
-    image: supabase/studio:studio-20240501-180766b
+    image: supabase/studio:2025.07.28-sha-578b707_amd64
     container_name: orderflow_studio
     restart: unless-stopped
     environment:
