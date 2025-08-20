@@ -170,7 +170,7 @@ async def deactivate_not_profit_bots(bot_crud):
 async def create_bots():
     # average_percent_for_1_tick = await get_average_percentage_for_minimum_tick()
 
-    symbol = "MYXUSDT"
+    symbol = "ADAUSDT"
 
     dsm = DatabaseSessionManager.create(settings.DB_URL)
 
@@ -194,9 +194,18 @@ async def create_bots():
             # stop_lose_percents_values = [x * average_percent_for_1_tick for x in stop_lose_ticks_values]
             # stop_win_percents_values = [x * average_percent_for_1_tick for x in stop_win_ticks_values]
 
-            start_percents_values = [0.005, 0.0075, 0.01, 0.0125, 0.015, 0.0175, 0.02, 0.0225, 0.025, 0.0275, 0.03, 0.035, 0.04, 0.05]
-            stop_lose_percents_values = [0.01, 0.0125, 0.015, 0.0175, 0.02, 0.0225, 0.025, 0.0275, 0.03, 0.035, 0.04, 0.045, 0.075, 0.15, 0.225, 0.3, 0.425, 0.5]
-            stop_win_percents_values = [0.0025, 0.005, 0.01, 0.015, 0.02, 0.025, 0.03, 0.035, 0.04, 0.045, 0.05, 0.075, 0.15, 0.225]
+            # myx
+            # start_percents_values = [0.005, 0.0075, 0.01, 0.0125, 0.015, 0.0175, 0.02, 0.0225, 0.025, 0.0275, 0.03, 0.035, 0.04, 0.05]
+            # stop_lose_percents_values = [0.01, 0.0125, 0.015, 0.0175, 0.02, 0.0225, 0.025, 0.0275, 0.03, 0.035, 0.04, 0.045, 0.075, 0.15, 0.225, 0.3, 0.425, 0.5]
+            # stop_win_percents_values = [0.0025, 0.005, 0.01, 0.015, 0.02, 0.025, 0.03, 0.035, 0.04, 0.045, 0.05, 0.075, 0.15, 0.225]
+
+            # ada
+            start_percents_values = [0.01, 0.015, 0.02, 0.025, 0.03, 0.035, 0.04, 0.045, 0.05, 0.055, 0.06, 0.07, 0.08,
+                                     0.1]
+            stop_lose_percents_values = [0.02, 0.025, 0.03, 0.035, 0.04, 0.045, 0.05, 0.055, 0.06, 0.07, 0.08, 0.09,
+                                         0.15, 0.3, 0.45, 0.6, 0.85, 1.0]
+            stop_win_percents_values = [0.005, 0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.15, 0.3,
+                                        0.45]
 
             # min_tf_volatility_values = [0.5, 1, 2, 3]
             wait_open_order_values = [0.5]
