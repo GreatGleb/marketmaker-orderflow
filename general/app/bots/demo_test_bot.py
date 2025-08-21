@@ -154,8 +154,6 @@ class StartTestBotsCommand(Command):
             ma_number_of_candles_for_close_order=refer_bot['ma_number_of_candles_for_close_order'],
         )
 
-        session.expunge(ref_bot_config)
-
         # for test if copy_bot use right refer_bot
         # tf_bot_ids = (
         #     await ProfitableBotUpdaterCommand.get_profitable_bots_id_by_tf(
