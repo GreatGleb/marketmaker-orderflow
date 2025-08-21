@@ -22,6 +22,15 @@ async def run():
 
         tf = 60
 
+        bot_config = (
+            await ProfitableBotUpdaterCommand.get_copybot_config(
+                bot_crud=bot_crud,
+                copybot_v2_time_in_minutes=tf
+            )
+        )
+
+    return
+
         time_ago = timedelta(minutes=float(tf))
 
         profits_data = await bot_crud.get_sorted_by_profit(
