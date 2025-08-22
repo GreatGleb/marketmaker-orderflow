@@ -67,9 +67,7 @@ class StartTestBotsCommand(Command):
         )
 
         for bot in active_bots:
-            session.expunge(bot)
-
-            async def _run_loop(bot_config=bot):
+            async def _run_loop(bot_config):
                 while not self.stop_event.is_set():
                     try:
                         await self.simulate_bot(
@@ -101,7 +99,7 @@ class StartTestBotsCommand(Command):
                             )
                         await asyncio.sleep(1)
 
-            tasks.append(asyncio.create_task(_run_loop()))
+            tasks.append(asyncio.create_task(_run_loop(bot)))
 
         await asyncio.gather(*tasks)
 
