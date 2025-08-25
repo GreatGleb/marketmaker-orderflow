@@ -20,6 +20,7 @@ celery = "^5.5.3"
 python-binance = "^1.0.29"
 pandas = "^2.3.1"
 aiohttp = "^3.12.14"
+numpy = "^2.3.2"
 
 
 [tool.poetry.group.dev.dependencies]

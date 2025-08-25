@@ -1,6 +1,8 @@
 import time
 from datetime import timezone, datetime, timedelta
 from decimal import Decimal
+import pandas as pd
+import numpy as np
 
 from sqlalchemy import select, func, text
 
@@ -29,12 +31,14 @@ async def select_volatile_pair():
         for symbol in symbols:
             fees = await binance_bot.fetch_fees_data(symbol)
             klines = await binance_bot.get_monthly_klines(symbol=symbol)
+            vol_5min = calculate_volatility(klines, timeframe='5T')
+
             data.append(fees)
             await asyncio.sleep(1)
             break
 
         print(len(symbols))
-        print(klines)
+        print(vol_5min)
         print(data)
 
 
@@ -131,6 +135,72 @@ async def run():
     #     print(f'history: {history}')
 
 
+def calculate_volatility(klines, timeframe='5T', period=14):
+    """
+    Рассчитывает среднюю волатильность (ATR) за весь период на заданном таймфрейме.
+
+    Args:
+        klines (list): Список списков со свечными данными (OHLC).
+        timeframe (str): Таймфрейм для расчета волатильности.
+                         Примеры: '1T' (1 минута), '5T' (5 минут), '1H' (1 час), '1D' (1 день).
+        period (int): Период для сглаживания индикатора ATR. Стандартное значение - 14.
+
+    Returns:
+        float: Одно число - среднее значение ATR за весь период на указанном таймфрейме.
+               Возвращает None, если входные данные некорректны.
+    """
+    if not klines:
+        print("Ошибка: Список klines пуст.")
+        return None
+
+    # --- Шаг 1: Подготовка и очистка данных ---
+    try:
+        # Создаем DataFrame из "сырых" данных
+        df = pd.DataFrame(klines, columns=[
+            'timestamp', 'open', 'high', 'low', 'close', 'volume',
+            'close_time', 'quote_asset_volume', 'number_of_trades',
+            'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume', 'ignore'
+        ])
+
+        # Выбираем только нужные колонки и устанавливаем правильные типы данных
+        df = df[['timestamp', 'open', 'high', 'low', 'close']]
+        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+        df.set_index('timestamp', inplace=True)
+        for col in ['open', 'high', 'low', 'close']:
+            df[col] = df[col].astype(float)
+
+    except Exception as e:
+        print(f"Ошибка при обработке исходных данных: {e}")
+        return None
+
+    # --- Шаг 2: Преобразование (resampling) в нужный таймфрейм ---
+    aggregation_rules = {
+        'open': 'first',
+        'high': 'max',
+        'low': 'min',
+        'close': 'last'
+    }
+    df_resampled = df.resample(timeframe).agg(aggregation_rules)
+    df_resampled.dropna(inplace=True)  # Удаляем интервалы без данных
+
+    if df_resampled.empty:
+        print(f"Ошибка: После преобразования в таймфрейм '{timeframe}' не осталось данных.")
+        return None
+
+    # --- Шаг 3: Расчет ATR для нового таймфрейма ---
+    high_low = df_resampled['high'] - df_resampled['low']
+    high_prev_close = abs(df_resampled['high'] - df_resampled['close'].shift(1))
+    low_prev_close = abs(df_resampled['low'] - df_resampled['close'].shift(1))
+
+    true_range = pd.concat([high_low, high_prev_close, low_prev_close], axis=1).max(axis=1)
+
+    df_resampled['atr'] = true_range.ewm(alpha=1 / period, adjust=False).mean()
+
+    # --- Шаг 4: Вычисление и возврат итогового среднего значения ---
+    # np.nanmean считает среднее, автоматически игнорируя начальные пустые значения ATR
+    average_volatility = np.nanmean(df_resampled['atr'])
+
+    return average_volatility
 
 
 
