@@ -1611,6 +1611,33 @@ class BinanceBot(Command):
 
         return klines
 
+    async def get_monthly_klines(self, symbol: str):
+        interval = Client.KLINE_INTERVAL_1MINUTE
+        end_time = int(time.time() * 1000)
+        start_time = int((datetime.utcnow() - timedelta(days=30)).timestamp() * 1000)
+
+        all_klines = []
+
+        while start_time < end_time:
+            klines = await self._safe_from_time_err_call_binance(
+                self.binance_client.futures_klines,
+                symbol=symbol,
+                interval=interval,
+                startTime=start_time,
+                endTime=end_time,
+                limit=1500
+            )
+
+            if not klines:
+                break
+
+            all_klines.extend(klines)
+
+            start_time = klines[-1][0] + 1
+            await asyncio.sleep(0.1)
+
+        return all_klines
+
     async def get_ma(self, symbol, ma_number):
         try:
             klines = await self.get_klines(symbol=symbol, limit=ma_number)
