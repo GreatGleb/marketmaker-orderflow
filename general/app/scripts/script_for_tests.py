@@ -1,3 +1,5 @@
+import json
+import os
 import time
 from datetime import timezone, datetime, timedelta
 from decimal import Decimal
@@ -28,25 +30,34 @@ async def select_volatile_pair():
 
         binance_bot = BinanceBot(is_need_prod_for_data=True)
 
+        start_time = time.perf_counter()
+        i = 0
         for symbol in symbols:
-            start_time = time.perf_counter()
-
             fees = await binance_bot.fetch_fees_data(symbol)
             klines = await binance_bot.get_monthly_klines(symbol=symbol)
             vol_5min = calculate_volatility(klines, timeframe='5min')
+            fees['vol_5min'] = vol_5min
 
             data.append(fees)
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.1)
 
-            end_time = time.perf_counter()
-            execution_time = end_time - start_time
+            i = i + 1
+            if i > 9:
+                break
 
-            print(f"Время выполнения: {execution_time} секунд")
-            break
+        end_time = time.perf_counter()
+        execution_time = end_time - start_time
+
+        print(f"Время выполнения: {execution_time} секунд")
 
         print(len(symbols))
         print(vol_5min)
         print(data)
+
+        current_directory = os.path.dirname(os.path.abspath(__file__))
+        file_path = os.path.join(current_directory, 'most_volatile_asset.json')
+        with open(file_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
 
 
 async def run():
