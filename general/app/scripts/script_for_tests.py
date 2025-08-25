@@ -6,6 +6,7 @@ from sqlalchemy import select, func, text
 
 from app.bots.binance_bot import BinanceBot
 from app.crud.asset_history import AssetHistoryCrud
+from app.crud.exchange_pair_spec import AssetExchangeSpecCrud
 from app.db.base import DatabaseSessionManager
 from app.crud.test_bot import TestBotCrud
 from app.config import settings
@@ -15,19 +16,44 @@ from app.dependencies import redis_context
 from app.workers.profitable_bot_updater import ProfitableBotUpdaterCommand
 
 
-async def run():
+async def select_volatile_pair():
     dsm = DatabaseSessionManager.create(settings.DB_URL)
     async with dsm.get_session() as session:
-        bot_crud = TestBotCrud(session)
+        shared_data = {}
+        exchange_crud = AssetExchangeSpecCrud(session)
+        symbols = await exchange_crud.get_all_symbols()
+        symbols = [symbol[0] for symbol in symbols]
 
-        tf = 60
+        binance_bot = BinanceBot(is_need_prod_for_data=True)
+        fees = await binance_bot.fetch_fees_data(symbols[0])
 
-        bot_config = (
-            await ProfitableBotUpdaterCommand.get_copybot_config(
-                bot_crud=bot_crud,
-                copybot_v2_time_in_minutes=tf
+        print(symbols)
+        print(len(symbols))
+        print(fees)
+
+
+async def run():
+    await select_volatile_pair()
+
+    return 0
+    dsm = DatabaseSessionManager.create(settings.DB_URL)
+    async with dsm.get_session() as session:
+        shared_data = {}
+        asset_crud = AssetHistoryCrud(session)
+        exchange_crud = AssetExchangeSpecCrud(session)
+        symbols = await asset_crud.get_all_active_pairs()
+
+        for symbol in symbols:
+            step_sizes = await exchange_crud.get_step_size_by_symbol(
+                symbol
             )
-        )
+            shared_data[symbol] = {
+                "tick_size": (
+                    Decimal(str(step_sizes.get("tick_size")))
+                    if step_sizes
+                    else None
+                )
+            }
 
     return 0
     #

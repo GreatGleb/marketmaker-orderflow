@@ -1706,3 +1706,8 @@ class BinanceBot(Command):
                 result[type_ma]['result'].append(ma_minutes_ago)
 
         return result
+
+    async def fetch_fees_data(self, symbol):
+        fees = self.binance_client.futures_commission_rate(symbol=symbol)
+
+        return fees

@@ -88,6 +88,13 @@ class AssetExchangeSpecCrud(BaseCrud[AssetExchangeSpec]):
 
         return symbols_characteristics
 
+    async def get_all_symbols(self):
+        stmt = select(AssetExchangeSpec.symbol)
+        result = await self.session.execute(stmt)
+        all_exchange_specs = result.all()
+
+        return all_exchange_specs
+
     def transform_filters_list(self, filters_list: list[dict]) -> dict:
         """
         Transforms a list of filter dictionaries into a categorized dictionary,
