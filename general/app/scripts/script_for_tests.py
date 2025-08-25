@@ -31,7 +31,6 @@ async def select_volatile_pair():
         binance_bot = BinanceBot(is_need_prod_for_data=True)
 
         start_time = time.perf_counter()
-        i = 0
         for symbol in symbols:
             fees = await binance_bot.fetch_fees_data(symbol)
             klines = await binance_bot.get_monthly_klines(symbol=symbol)
@@ -40,10 +39,6 @@ async def select_volatile_pair():
 
             data.append(fees)
             await asyncio.sleep(1)
-
-            i = i + 1
-            if i > 9:
-                break
 
         end_time = time.perf_counter()
         execution_time = end_time - start_time
