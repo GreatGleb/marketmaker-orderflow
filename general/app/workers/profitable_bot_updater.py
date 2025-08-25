@@ -10,6 +10,7 @@ from fastapi import Depends
 from redis.asyncio import Redis
 
 from app.crud.test_bot import TestBotCrud
+from app.db.models import TestBot
 from app.dependencies import (
     get_session,
     get_redis,
@@ -125,18 +126,24 @@ class ProfitableBotUpdaterCommand(Command):
 
         price = await price_provider.get_price(symbol=symbol)
 
-        bot_config.stop_success_ticks = round((price * (bot_config.stop_win_percents/100))/tick_size)
-        bot_config.stop_loss_ticks = round((price * (bot_config.stop_loss_percents/100))/tick_size)
-        bot_config.start_updown_ticks = round((price * (bot_config.start_updown_percents/100))/tick_size)
+        stop_success_ticks = round((price * (bot_config.stop_win_percents/100))/tick_size)
+        stop_loss_ticks = round((price * (bot_config.stop_loss_percents/100))/tick_size)
+        start_updown_ticks = round((price * (bot_config.start_updown_percents/100))/tick_size)
 
-        if bot_config.stop_success_ticks < 1:
-            bot_config.stop_success_ticks = 1
-        if bot_config.stop_loss_ticks < 1:
-            bot_config.stop_loss_ticks = 1
-        if bot_config.start_updown_ticks < 1:
-            bot_config.start_updown_ticks = 1
+        if stop_success_ticks < 1:
+            stop_success_ticks = 1
+        if stop_loss_ticks < 1:
+            stop_loss_ticks = 1
+        if start_updown_ticks < 1:
+            start_updown_ticks = 1
 
-        return bot_config
+        ref_bot_config = bot_config.clone()
+
+        ref_bot_config.stop_success_ticks = stop_success_ticks
+        ref_bot_config.stop_loss_ticks = stop_loss_ticks
+        ref_bot_config.start_updown_ticks = start_updown_ticks
+
+        return ref_bot_config
 
     @staticmethod
     async def get_profitable_bots_id_by_tf(

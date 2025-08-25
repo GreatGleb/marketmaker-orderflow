@@ -3,7 +3,7 @@ from typing import Optional
 
 from datetime import datetime
 
-from sqlalchemy import func, types, ForeignKey, Index
+from sqlalchemy import func, types, ForeignKey, Index, inspect
 from sqlalchemy.orm import (
     Mapped,
     mapped_column,
@@ -516,6 +516,13 @@ class TestBot(BaseId):
         nullable=True,
         comment="For copy bot version 2 the time it takes for the copy bot v1 being monitored to be profitable",
     )
+
+    def clone(self):
+        mapper = inspect(self).mapper
+        columns = [c.key for c in mapper.columns]
+
+        data = {c: getattr(self, c) for c in columns}
+        return TestBot(**data)
 
 
 class MarketOrder(BaseId):
