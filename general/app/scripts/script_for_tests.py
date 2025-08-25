@@ -29,12 +29,19 @@ async def select_volatile_pair():
         binance_bot = BinanceBot(is_need_prod_for_data=True)
 
         for symbol in symbols:
+            start_time = time.perf_counter()
+
             fees = await binance_bot.fetch_fees_data(symbol)
             klines = await binance_bot.get_monthly_klines(symbol=symbol)
-            vol_5min = calculate_volatility(klines, timeframe='5T')
+            vol_5min = calculate_volatility(klines, timeframe='5min')
 
             data.append(fees)
             await asyncio.sleep(1)
+
+            end_time = time.perf_counter()
+            execution_time = end_time - start_time
+
+            print(f"Время выполнения: {execution_time} секунд")
             break
 
         print(len(symbols))
@@ -195,10 +202,11 @@ def calculate_volatility(klines, timeframe='5T', period=14):
     true_range = pd.concat([high_low, high_prev_close, low_prev_close], axis=1).max(axis=1)
 
     df_resampled['atr'] = true_range.ewm(alpha=1 / period, adjust=False).mean()
+    df_resampled['atr_percent'] = (df_resampled['atr'] / df_resampled['close']) * 100
 
     # --- Шаг 4: Вычисление и возврат итогового среднего значения ---
     # np.nanmean считает среднее, автоматически игнорируя начальные пустые значения ATR
-    average_volatility = np.nanmean(df_resampled['atr'])
+    average_volatility = np.nanmean(df_resampled['atr_percent'])
 
     return average_volatility
 
