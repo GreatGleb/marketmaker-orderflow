@@ -28,9 +28,15 @@ async def select_volatile_pair():
 
         for symbol in symbols:
             fees = await binance_bot.fetch_fees_data(symbol)
+
+            m1_klines_number = 1600
+            klines = await binance_bot.get_klines(symbol=symbol, limit=m1_klines_number)
             data.append(fees)
+            await asyncio.sleep(1)
+            break
 
         print(len(symbols))
+        print(klines)
         print(data)
 
 
