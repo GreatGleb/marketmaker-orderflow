@@ -19,17 +19,19 @@ from app.workers.profitable_bot_updater import ProfitableBotUpdaterCommand
 async def select_volatile_pair():
     dsm = DatabaseSessionManager.create(settings.DB_URL)
     async with dsm.get_session() as session:
-        shared_data = {}
+        data = []
         exchange_crud = AssetExchangeSpecCrud(session)
         symbols = await exchange_crud.get_all_symbols()
         symbols = [symbol[0] for symbol in symbols]
 
         binance_bot = BinanceBot(is_need_prod_for_data=True)
-        fees = await binance_bot.fetch_fees_data(symbols[0])
 
-        print(symbols)
+        for symbol in symbols:
+            fees = await binance_bot.fetch_fees_data(symbol)
+            data.append(fees)
+
         print(len(symbols))
-        print(fees)
+        print(data)
 
 
 async def run():
