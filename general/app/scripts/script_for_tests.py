@@ -39,7 +39,7 @@ async def select_volatile_pair():
             fees['vol_5min'] = vol_5min
 
             data.append(fees)
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(1)
 
             i = i + 1
             if i > 9:
