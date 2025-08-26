@@ -170,7 +170,7 @@ async def deactivate_not_profit_bots(bot_crud):
 async def create_bots():
     # average_percent_for_1_tick = await get_average_percentage_for_minimum_tick()
 
-    symbol = "ADAUSDT"
+    symbol = "MEMEUSDT"
 
     dsm = DatabaseSessionManager.create(settings.DB_URL)
 
@@ -186,9 +186,9 @@ async def create_bots():
                 return
 
         if 1:
-            # start_ticks_values = [10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 70, 80, 100]
-            # stop_lose_ticks_values = [20, 25, 30, 35, 40, 45, 50, 55, 60, 70, 80, 90, 150, 300, 450, 600, 850, 1000]
-            # stop_win_ticks_values = [5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 150, 300, 450]
+            start_ticks_values = [10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 70, 80, 100]
+            stop_lose_ticks_values = [20, 25, 30, 35, 40, 45, 50, 55, 60, 70, 80, 90, 150, 300, 450, 600, 850, 1000]
+            stop_win_ticks_values = [5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 150, 300, 450]
             #
             # start_percents_values = [x * average_percent_for_1_tick for x in start_ticks_values]
             # stop_lose_percents_values = [x * average_percent_for_1_tick for x in stop_lose_ticks_values]
@@ -200,29 +200,29 @@ async def create_bots():
             # stop_win_percents_values = [0.0025, 0.005, 0.01, 0.015, 0.02, 0.025, 0.03, 0.035, 0.04, 0.045, 0.05, 0.075, 0.15, 0.225]
 
             # ada
-            start_percents_values = [0.01, 0.015, 0.02, 0.025, 0.03, 0.035, 0.04, 0.045, 0.05, 0.055, 0.06, 0.07, 0.08,
-                                     0.1]
-            stop_lose_percents_values = [0.02, 0.025, 0.03, 0.035, 0.04, 0.045, 0.05, 0.055, 0.06, 0.07, 0.08, 0.09,
-                                         0.15, 0.3, 0.45, 0.6, 0.85, 1.0]
-            stop_win_percents_values = [0.005, 0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.15, 0.3,
-                                        0.45]
+            # start_percents_values = [0.01, 0.015, 0.02, 0.025, 0.03, 0.035, 0.04, 0.045, 0.05, 0.055, 0.06, 0.07, 0.08,
+            #                          0.1]
+            # stop_lose_percents_values = [0.02, 0.025, 0.03, 0.035, 0.04, 0.045, 0.05, 0.055, 0.06, 0.07, 0.08, 0.09,
+            #                              0.15, 0.3, 0.45, 0.6, 0.85, 1.0]
+            # stop_win_percents_values = [0.005, 0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.15, 0.3,
+            #                             0.45]
 
             # min_tf_volatility_values = [0.5, 1, 2, 3]
             wait_open_order_values = [0.5]
 
             try:
-                for start in start_percents_values:
-                    for stop_lose in stop_lose_percents_values:
+                for start in start_ticks_values:
+                    for stop_lose in stop_lose_ticks_values:
                         new_bots = []
-                        for stop_win in stop_win_percents_values:
+                        for stop_win in stop_win_ticks_values:
                             # for min_tf in min_tf_volatility_values:
                             for wait_min in wait_open_order_values:
                                 bot_data = {
                                     "symbol": symbol,
                                     "balance": Decimal("1000.0"),
-                                    "stop_win_percents": stop_win,
-                                    "stop_loss_percents": stop_lose,
-                                    "start_updown_percents": start,
+                                    "stop_success_ticks": stop_win,
+                                    "stop_loss_ticks": stop_lose,
+                                    "start_updown_ticks": start,
                                     # "min_timeframe_asset_volatility": min_tf,
                                     "time_to_wait_for_entry_price_to_open_order_in_minutes": wait_min,
                                     "is_active": True,
