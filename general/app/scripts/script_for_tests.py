@@ -34,10 +34,11 @@ async def select_volatile_pair():
         for symbol in symbols:
             fees = await binance_bot.fetch_fees_data(symbol)
             klines = await binance_bot.get_monthly_klines(symbol=symbol)
-            vol_5min = calculate_volatility(klines, timeframe='5min')
-            fees['vol_5min'] = vol_5min
+            if klines:
+                vol_5min = calculate_volatility(klines, timeframe='5min')
+                fees['vol_5min'] = vol_5min
 
-            data.append(fees)
+                data.append(fees)
             await asyncio.sleep(3)
 
         end_time = time.perf_counter()

@@ -1619,14 +1619,20 @@ class BinanceBot(Command):
         all_klines = []
 
         while start_time < end_time:
-            klines = await self._safe_from_time_err_call_binance(
-                self.binance_client.futures_klines,
-                symbol=symbol,
-                interval=interval,
-                startTime=start_time,
-                endTime=end_time,
-                limit=1500
-            )
+            klines = []
+
+            try:
+                klines = await self._safe_from_time_err_call_binance(
+                    self.binance_client.futures_klines,
+                    symbol=symbol,
+                    interval=interval,
+                    startTime=start_time,
+                    endTime=end_time,
+                    limit=1500
+                )
+            except BinanceAPIException as e:
+                if e.code == -1122:
+                    pass
 
             if not klines:
                 break
