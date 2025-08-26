@@ -1614,7 +1614,7 @@ class BinanceBot(Command):
     async def get_monthly_klines(self, symbol: str):
         interval = Client.KLINE_INTERVAL_1MINUTE
         end_time = int(time.time() * 1000)
-        start_time = int((datetime.utcnow() - timedelta(days=30)).timestamp() * 1000)
+        start_time = int((datetime.utcnow() - timedelta(days=5)).timestamp() * 1000)
 
         all_klines = []
 
