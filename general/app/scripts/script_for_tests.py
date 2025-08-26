@@ -19,45 +19,9 @@ import asyncio
 from app.dependencies import redis_context
 from app.workers.profitable_bot_updater import ProfitableBotUpdaterCommand
 
-
-async def select_volatile_pair():
-    dsm = DatabaseSessionManager.create(settings.DB_URL)
-    async with dsm.get_session() as session:
-        data = []
-        exchange_crud = AssetExchangeSpecCrud(session)
-        symbols = await exchange_crud.get_all_symbols()
-        symbols = [symbol[0] for symbol in symbols]
-
-        binance_bot = BinanceBot(is_need_prod_for_data=True)
-
-        start_time = time.perf_counter()
-        for symbol in symbols:
-            fees = await binance_bot.fetch_fees_data(symbol)
-            klines = await binance_bot.get_monthly_klines(symbol=symbol)
-            if klines:
-                vol_5min = calculate_volatility(klines, timeframe='5min')
-                fees['vol_5min'] = vol_5min
-
-                data.append(fees)
-            await asyncio.sleep(3)
-
-        end_time = time.perf_counter()
-        execution_time = end_time - start_time
-
-        print(f"Время выполнения: {execution_time} секунд")
-
-        print(len(symbols))
-        print(vol_5min)
-        print(data)
-
-        current_directory = os.path.dirname(os.path.abspath(__file__))
-        file_path = os.path.join(current_directory, 'most_volatile_asset.json')
-        with open(file_path, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=4)
-
-
 async def run():
-    await select_volatile_pair()
+    # await select_volatile_pair()
+    await select_volatile_pair_from_file()
 
     return 0
     dsm = DatabaseSessionManager.create(settings.DB_URL)
@@ -147,6 +111,62 @@ async def run():
     #     print(f'm: {m}')
     #     print(f'double: {double}')
     #     print(f'history: {history}')
+
+
+async def select_volatile_pair():
+    dsm = DatabaseSessionManager.create(settings.DB_URL)
+    async with dsm.get_session() as session:
+        data = []
+        exchange_crud = AssetExchangeSpecCrud(session)
+        symbols = await exchange_crud.get_all_symbols()
+        symbols = [symbol[0] for symbol in symbols]
+
+        binance_bot = BinanceBot(is_need_prod_for_data=True)
+
+        start_time = time.perf_counter()
+        for symbol in symbols:
+            fees = await binance_bot.fetch_fees_data(symbol)
+            klines = await binance_bot.get_monthly_klines(symbol=symbol)
+            if klines:
+                vol_5min = calculate_volatility(klines, timeframe='5min')
+                fees['vol_5min'] = vol_5min
+
+                data.append(fees)
+            await asyncio.sleep(3)
+
+        end_time = time.perf_counter()
+        execution_time = end_time - start_time
+
+        print(f"Время выполнения: {execution_time} секунд")
+
+        print(len(symbols))
+        print(vol_5min)
+        print(data)
+
+        current_directory = os.path.dirname(os.path.abspath(__file__))
+        file_path = os.path.join(current_directory, 'most_volatile_asset.json')
+        with open(file_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
+
+async def select_volatile_pair_from_file():
+    current_directory = os.path.dirname(os.path.abspath(__file__))
+    file_path = os.path.join(current_directory, 'most_volatile_asset.json')
+
+    # Создаём переменную, в которую будем читать данные
+    read_data = None
+
+    # Проверяем, существует ли файл, чтобы избежать ошибки
+    if os.path.exists(file_path):
+        # Открываем файл для чтения ('r' - read)
+        with open(file_path, 'r', encoding='utf-8') as f:
+            # Загружаем данные из файла в переменную 'read_data'
+            read_data = json.load(f)
+        print("Данные успешно прочитаны из файла!")
+
+        # Теперь 'read_data' содержит массив/объект из файла
+        print(read_data)
+    else:
+        print(f"Файл не найден по пути: {file_path}")
 
 
 def calculate_volatility(klines, timeframe='5T', period=14):
