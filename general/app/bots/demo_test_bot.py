@@ -67,6 +67,8 @@ class StartTestBotsCommand(Command):
             level=logging.INFO
         )
 
+        logging.info(active_bots)
+
         for bot in active_bots:
             async def _run_loop(bot_config):
                 while not self.stop_event.is_set():
