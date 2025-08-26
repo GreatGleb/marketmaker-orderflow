@@ -38,7 +38,7 @@ async def select_volatile_pair():
             fees['vol_5min'] = vol_5min
 
             data.append(fees)
-            await asyncio.sleep(2)
+            await asyncio.sleep(3)
 
         end_time = time.perf_counter()
         execution_time = end_time - start_time
