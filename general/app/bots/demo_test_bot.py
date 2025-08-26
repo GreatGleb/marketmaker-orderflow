@@ -50,8 +50,6 @@ class StartTestBotsCommand(Command):
         redis: Redis = Depends(get_redis),
         bot_crud: TestBotCrud = resolve_crud(TestBotCrud),
     ):
-        shared_data = {}
-
         active_bots = await bot_crud.get_active_bots()
 
         price_provider = PriceProvider(redis=redis)
@@ -59,6 +57,8 @@ class StartTestBotsCommand(Command):
 
         builder = MarketDataBuilder(session)
         shared_data = await builder.build()
+
+        logging.info(shared_data)
 
         tasks = []
 
@@ -252,6 +252,7 @@ class StartTestBotsCommand(Command):
 
                 data = shared_data.get(symbol)
                 if not data:
+                    logging.info(symbol)
                     logging.info('not symbols data')
                     return
                 tick_size = data["tick_size"]
