@@ -67,12 +67,9 @@ class StartTestBotsCommand(Command):
             level=logging.INFO
         )
 
-        symbols = {bot.symbol for bot in active_bots}
-        symbols = list(symbols)
-        logging.info(symbols)
-
-        return
-
+        # symbols = {bot.symbol for bot in active_bots}
+        # symbols = list(symbols)
+        # logging.info(symbols)
 
         for bot in active_bots:
             async def _run_loop(bot_config):
@@ -259,6 +256,10 @@ class StartTestBotsCommand(Command):
 
                 data = shared_data.get(symbol)
                 if not data:
+                    logging.info(original_bot_config.copybot_v2_time_in_minutes)
+                    logging.info('original_bot_config.copybot_v2_time_in_minutes')
+                    logging.info(is_it_copy)
+                    logging.info('is_it_copy')
                     logging.info(symbol)
                     logging.info('not symbols data')
                     return
