@@ -20,8 +20,8 @@ from app.dependencies import redis_context
 from app.workers.profitable_bot_updater import ProfitableBotUpdaterCommand
 
 async def run():
-    await select_volatile_pair()
-    # await select_volatile_pair_from_file()
+    # await select_volatile_pair()
+    await select_volatile_pair_from_file()
 
     return 0
     dsm = DatabaseSessionManager.create(settings.DB_URL)
