@@ -67,7 +67,12 @@ class StartTestBotsCommand(Command):
             level=logging.INFO
         )
 
-        logging.info(active_bots)
+        symbols = {bot.symbol for bot in active_bots}
+        symbols = list(symbols)
+        logging.info(symbols)
+
+        return
+
 
         for bot in active_bots:
             async def _run_loop(bot_config):
