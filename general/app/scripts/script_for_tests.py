@@ -163,6 +163,8 @@ async def select_volatile_pair_from_file():
             read_data = json.load(f)
         print("Данные успешно прочитаны из файла!")
 
+        read_data.sort(key=lambda x: x['vol_5min'])
+
         # Теперь 'read_data' содержит массив/объект из файла
         print(read_data)
     else:
