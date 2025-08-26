@@ -192,9 +192,9 @@ class StartTestBotsCommand(Command):
         binance_bot,
         bot_crud,
     ):
-        dsm = DatabaseSessionManager.create(settings.DB_URL)
-        async with dsm.get_session() as session:
-            while not stop_event.is_set():
+        while not stop_event.is_set():
+            dsm = DatabaseSessionManager.create(settings.DB_URL)
+            async with dsm.get_session() as session:
                 # setattr(bot_config, "referral_bot_from_profit_func", None)
                 referral_bot_id = None
                 bot_id = original_bot_config.id
