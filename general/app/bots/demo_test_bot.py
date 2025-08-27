@@ -67,9 +67,9 @@ class StartTestBotsCommand(Command):
             level=logging.INFO
         )
 
-        # symbols = {bot.symbol for bot in active_bots}
-        # symbols = list(symbols)
-        # logging.info(symbols)
+        bot_ids = {bot.id for bot in active_bots}
+        bot_ids = list(bot_ids)
+        logging.info(bot_ids)
 
         for bot in active_bots:
             async def _run_loop(bot_config):
@@ -323,6 +323,7 @@ class StartTestBotsCommand(Command):
 
                 if is_it_copy:
                     logging.info(f'is_timeout_occurred: {is_timeout_occurred} for {bot_id}')
+                logging.info(f'is_timeout_occurred: {is_timeout_occurred} for {bot_id}')
 
                 if is_timeout_occurred or not trade_type or not entry_price:
                     return False
