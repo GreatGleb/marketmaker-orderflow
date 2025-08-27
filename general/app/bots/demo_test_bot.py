@@ -265,6 +265,9 @@ class StartTestBotsCommand(Command):
                     return
                 tick_size = data["tick_size"]
 
+                if bot_id == 1:
+                    logging.info('bot_id 1 started work')
+
                 bot_config = (
                     await ProfitableBotUpdaterCommand.update_config_for_percentage(
                         bot_config=bot_config,
@@ -288,7 +291,7 @@ class StartTestBotsCommand(Command):
                 trade_type = None
                 entry_price = None
 
-                if is_it_copy:
+                if is_it_copy or bot_id == 1:
                     logging.info(f'waiting for {bot_id}')
 
                 try:
@@ -380,7 +383,7 @@ class StartTestBotsCommand(Command):
                         order_type=trade_type
                     )
 
-                if is_it_copy:
+                if is_it_copy or bot_id == 1:
                     logging.info(f'wait for should_exit for {bot_id}')
 
                 while not stop_event.is_set():
@@ -418,7 +421,7 @@ class StartTestBotsCommand(Command):
 
                     await asyncio.sleep(0.1)
 
-                if is_it_copy:
+                if is_it_copy or bot_id == 1:
                     logging.info(f'end wait for {bot_id}')
 
                 close_price = await price_provider.get_price(symbol=symbol)
