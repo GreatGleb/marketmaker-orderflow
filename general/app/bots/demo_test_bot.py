@@ -324,9 +324,8 @@ class StartTestBotsCommand(Command):
                 except asyncio.TimeoutError:
                     is_timeout_occurred = True
 
-                if is_it_copy:
+                if is_it_copy or bot_id == 1:
                     logging.info(f'is_timeout_occurred: {is_timeout_occurred} for {bot_id}')
-                logging.info(f'is_timeout_occurred: {is_timeout_occurred} for {bot_id}')
 
                 if is_timeout_occurred or not trade_type or not entry_price:
                     return False
