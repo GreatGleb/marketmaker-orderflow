@@ -430,6 +430,7 @@ class StartTestBotsCommand(Command):
                     open_price=open_price,
                     trade_type=trade_type,
                 )
+                logging.info(f'creating order {bot_id}')
                 order_data = {
                     "asset_symbol": symbol,
                     "order_type": trade_type,
@@ -457,3 +458,4 @@ class StartTestBotsCommand(Command):
                     ORDER_QUEUE_KEY,
                     json.dumps(order_data, default=self.json_serializer),
                 )
+                logging.info(f'end {bot_id}')
