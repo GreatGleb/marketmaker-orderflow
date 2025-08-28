@@ -74,6 +74,8 @@ class StartTestBotsCommand(Command):
 
         active_bots = await bot_crud.get_active_bots()
         active_bots_dicts = [bot.__dict__ for bot in active_bots]
+        active_bots_dicts = [{k: v for k, v in bot_dict.items() if k != '_sa_instance_state'} for bot_dict in
+                                   active_bots_dicts]
         logging.info(active_bots_dicts)
 
         for bot in active_bots:
