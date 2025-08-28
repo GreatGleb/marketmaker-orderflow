@@ -274,6 +274,7 @@ class StartTestBotsCommand(Command):
                     logging.info('is_it_copy')
                     logging.info(symbol)
                     logging.info('not symbols data')
+                    await asyncio.sleep(60)
                     return
                 tick_size = data["tick_size"]
 
