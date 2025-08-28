@@ -170,7 +170,7 @@ async def deactivate_not_profit_bots(bot_crud):
 async def create_bots():
     # average_percent_for_1_tick = await get_average_percentage_for_minimum_tick()
 
-    symbol = "MEMEUSDT"
+    symbol = "ADAUSDT"
 
     dsm = DatabaseSessionManager.create(settings.DB_URL)
 
@@ -186,7 +186,7 @@ async def create_bots():
                 return
 
         if 1:
-            start_ticks_values = [10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 70, 80, 100]
+            start_ticks_values = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 70, 80, 100]
             stop_lose_ticks_values = [20, 25, 30, 35, 40, 45, 50, 55, 60, 70, 80, 90, 150, 300, 450, 600, 850, 1000]
             stop_win_ticks_values = [5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 150, 300, 450]
             #
