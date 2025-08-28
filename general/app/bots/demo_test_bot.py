@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import traceback
+from collections import namedtuple
 
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -76,9 +77,12 @@ class StartTestBotsCommand(Command):
         active_bots_dicts = [bot.__dict__ for bot in active_bots]
         active_bots_dicts = [{k: v for k, v in bot_dict.items() if k != '_sa_instance_state'} for bot_dict in
                                    active_bots_dicts]
-        logging.info(active_bots_dicts)
 
-        for bot in active_bots:
+        BotObject = namedtuple('BotObject', active_bots_dicts[0].keys())
+        active_bots_tuples = [BotObject(**bot) for bot in active_bots_dicts]
+        logging.info(active_bots_tuples)
+
+        for bot in active_bots_tuples:
             async def _run_loop(bot_config):
                 while not self.stop_event.is_set():
                     try:
