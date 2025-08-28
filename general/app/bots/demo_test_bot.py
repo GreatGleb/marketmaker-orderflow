@@ -6,7 +6,7 @@ import traceback
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy.orm import asdict
+from sqlalchemy.orm.attributes import asdict
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fastapi import Depends
