@@ -114,7 +114,8 @@ class StartTestBotsCommand(Command):
                             )
                         await asyncio.sleep(1)
 
-            tasks.append(asyncio.create_task(_run_loop(bot)))
+            if bot.id == 1:
+                tasks.append(asyncio.create_task(_run_loop(bot)))
 
         await asyncio.gather(*tasks)
 
