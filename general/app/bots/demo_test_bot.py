@@ -83,39 +83,38 @@ class StartTestBotsCommand(Command):
         logging.info(active_bots_tuples)
 
         for bot in active_bots_tuples:
-            if bot.id == 1:
-                async def _run_loop(bot_config):
-                    while not self.stop_event.is_set():
+            async def _run_loop(bot_config):
+                while not self.stop_event.is_set():
+                    try:
+                        await self.simulate_bot(
+                            original_bot_config=bot_config,
+                            shared_data=shared_data,
+                            redis=redis,
+                            stop_event=self.stop_event,
+                            price_provider=price_provider,
+                            binance_bot=binance_bot,
+                            bot_crud=bot_crud,
+                        )
+                    except Exception as e:
                         try:
-                            await self.simulate_bot(
-                                original_bot_config=bot_config,
-                                shared_data=shared_data,
-                                redis=redis,
-                                stop_event=self.stop_event,
-                                price_provider=price_provider,
-                                binance_bot=binance_bot,
-                                bot_crud=bot_crud,
+                            error_traceback = traceback.format_exc()
+                            logging.info(error_traceback)
+                            telegram_service = (
+                                NotificationServiceFactory.get_telegram_service()
                             )
-                        except Exception as e:
-                            try:
-                                error_traceback = traceback.format_exc()
-                                logging.info(error_traceback)
-                                telegram_service = (
-                                    NotificationServiceFactory.get_telegram_service()
+                            if telegram_service:
+                                await telegram_service.send_bot_error_notification(
+                                    bot_id=bot_config.id,
+                                    error_message=str(e),
+                                    additional_info=f"Полный стек ошибки:\n{error_traceback}",
                                 )
-                                if telegram_service:
-                                    await telegram_service.send_bot_error_notification(
-                                        bot_id=bot_config.id,
-                                        error_message=str(e),
-                                        additional_info=f"Полный стек ошибки:\n{error_traceback}",
-                                    )
-                            except Exception as telegram_error:
-                                logging.info(
-                                    f"❌ Ошибка при отправке уведомления в Telegram: {telegram_error}"
-                                )
-                            await asyncio.sleep(1)
+                        except Exception as telegram_error:
+                            logging.info(
+                                f"❌ Ошибка при отправке уведомления в Telegram: {telegram_error}"
+                            )
+                        await asyncio.sleep(1)
 
-                tasks.append(asyncio.create_task(_run_loop(bot)))
+            tasks.append(asyncio.create_task(_run_loop(bot)))
 
         await asyncio.gather(*tasks)
 
