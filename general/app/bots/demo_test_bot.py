@@ -6,7 +6,6 @@ import traceback
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy.orm.attributes import asdict
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fastapi import Depends
@@ -74,7 +73,7 @@ class StartTestBotsCommand(Command):
 
 
         active_bots = await bot_crud.get_active_bots()
-        active_bots_dicts = [asdict(bot) for bot in active_bots]
+        active_bots_dicts = [bot.__dict__ for bot in active_bots]
         logging.info(active_bots_dicts)
 
         for bot in active_bots:
