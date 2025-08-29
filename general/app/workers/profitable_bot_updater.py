@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 
 from datetime import timedelta
 
@@ -26,6 +27,11 @@ class ProfitableBotUpdaterCommand(Command):
         super().__init__()
         self.stop_event = stop_event
 
+        logging.basicConfig(
+            format='%(asctime)s - %(levelname)s - %(message)s',
+            level=logging.INFO
+        )
+
     @staticmethod
     async def get_copybot_config(
             bot_crud, copybot_v2_time_in_minutes = 60
@@ -51,8 +57,8 @@ class ProfitableBotUpdaterCommand(Command):
                 if copy_bots:
                     copy_bot = copy_bots[0]
         except Exception as e:
-            print('Failed to get copybot data')
-            print(e)
+            logging.info('Failed to get copybot data')
+            logging.info(e)
 
         return copy_bot
 
@@ -210,8 +216,8 @@ class ProfitableBotUpdaterCommand(Command):
                 bot_profitability_timeframes = (
                     await bot_crud.get_unique_copy_bot_min_time_profitability()
                 )
-                print(bot_profitability_timeframes)
-                print('bot_profitability_timeframes')
+                logging.info(bot_profitability_timeframes)
+                logging.info('bot_profitability_timeframes')
 
             tf_bot_ids = await self.get_profitable_bots_id_by_tf(
                 bot_crud=bot_crud,
@@ -226,8 +232,8 @@ class ProfitableBotUpdaterCommand(Command):
                     tf_bot_ids=tf_bot_ids,
                     copy_bot_min_time_profitability_min=bot.copy_bot_min_time_profitability_min,
                 )
-                print(refer_bot_dict)
-                print(f"copy_bot_{bot.id}")
+                logging.info(refer_bot_dict)
+                logging.info(f"copy_bot_{bot.id}")
                 if refer_bot_dict:
                     await redis.set(
                         f"copy_bot_{bot.id}", json.dumps(refer_bot_dict)

@@ -51,8 +51,6 @@ class StartTestBotsCommand(Command):
         redis: Redis = Depends(get_redis),
         bot_crud: TestBotCrud = resolve_crud(TestBotCrud),
     ):
-        active_bots = await bot_crud.get_active_bots()
-
         price_provider = PriceProvider(redis=redis)
         binance_bot = BinanceBot(is_need_prod_for_data=True, redis=redis)
 
@@ -68,11 +66,6 @@ class StartTestBotsCommand(Command):
             level=logging.INFO
         )
 
-        bot_ids = {bot.id for bot in active_bots}
-        bot_ids = list(bot_ids)
-        logging.info(bot_ids)
-
-
         active_bots = await bot_crud.get_active_bots()
         active_bots_dicts = [bot.__dict__ for bot in active_bots]
         active_bots_dicts = [{k: v for k, v in bot_dict.items() if k != '_sa_instance_state'} for bot_dict in
@@ -80,7 +73,6 @@ class StartTestBotsCommand(Command):
 
         BotObject = namedtuple('BotObject', active_bots_dicts[0].keys())
         active_bots_tuples = [BotObject(**bot) for bot in active_bots_dicts]
-        logging.info(active_bots_tuples)
 
         for bot in active_bots_tuples:
             async def _run_loop(bot_config):
@@ -93,7 +85,6 @@ class StartTestBotsCommand(Command):
                             stop_event=self.stop_event,
                             price_provider=price_provider,
                             binance_bot=binance_bot,
-                            bot_crud=bot_crud,
                         )
                     except Exception as e:
                         try:
@@ -205,11 +196,11 @@ class StartTestBotsCommand(Command):
         stop_event,
         price_provider,
         binance_bot,
-        bot_crud,
     ):
         while not stop_event.is_set():
             dsm = DatabaseSessionManager.create(settings.DB_URL)
             async with dsm.get_session() as session:
+                bot_crud = TestBotCrud(session)
                 # setattr(bot_config, "referral_bot_from_profit_func", None)
                 referral_bot_id = None
                 bot_id = original_bot_config.id
@@ -445,7 +436,7 @@ class StartTestBotsCommand(Command):
                     open_price=open_price,
                     trade_type=trade_type,
                 )
-                logging.info(f'creating order {bot_id}')
+
                 order_data = {
                     "asset_symbol": symbol,
                     "order_type": trade_type,
@@ -473,4 +464,3 @@ class StartTestBotsCommand(Command):
                     ORDER_QUEUE_KEY,
                     json.dumps(order_data, default=self.json_serializer),
                 )
-                logging.info(f'end {bot_id}')
