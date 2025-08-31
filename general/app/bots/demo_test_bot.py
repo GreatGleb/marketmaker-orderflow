@@ -198,15 +198,16 @@ class StartTestBotsCommand(Command):
         binance_bot,
     ):
         while not stop_event.is_set():
-            dsm = DatabaseSessionManager.create(settings.DB_URL)
-            async with dsm.get_session() as session:
-                bot_crud = TestBotCrud(session)
-                # setattr(bot_config, "referral_bot_from_profit_func", None)
-                referral_bot_id = None
-                bot_id = original_bot_config.id
-                bot_config = None
+            # setattr(bot_config, "referral_bot_from_profit_func", None)
+            referral_bot_id = None
+            bot_id = original_bot_config.id
+            bot_config = None
 
-                if original_bot_config.copybot_v2_time_in_minutes:
+            if original_bot_config.copybot_v2_time_in_minutes:
+                dsm = DatabaseSessionManager.create(settings.DB_URL)
+                async with dsm.get_session() as session:
+                    bot_crud = TestBotCrud(session)
+
                     copybot_v2_time_in_minutes = original_bot_config.copybot_v2_time_in_minutes
                     bot_config = (
                         await ProfitableBotUpdaterCommand.get_copybot_config(
@@ -215,17 +216,21 @@ class StartTestBotsCommand(Command):
                         )
                     )
 
-                    if not bot_config:
-                        logging.info(f'there no copybot_v2 ref {bot_id}')
-                        await asyncio.sleep(60)
-                        return
-
                 if not bot_config:
-                    bot_config = original_bot_config
+                    logging.info(f'there no copybot_v2 ref {bot_id}')
+                    await asyncio.sleep(60)
+                    return
 
-                is_it_copy = bot_config.copy_bot_min_time_profitability_min
+            if not bot_config:
+                bot_config = original_bot_config
 
-                if is_it_copy:
+            is_it_copy = bot_config.copy_bot_min_time_profitability_min
+
+            if is_it_copy:
+                dsm = DatabaseSessionManager.create(settings.DB_URL)
+                async with dsm.get_session() as session:
+                    bot_crud = TestBotCrud(session)
+
                     updating_config_res = (
                         await self.update_config_from_referral_bot(
                             bot_config=bot_config, bot_crud=bot_crud, redis=redis,
@@ -240,227 +245,227 @@ class StartTestBotsCommand(Command):
                         await asyncio.sleep(60)
                         return
 
-                    logging.info(f'found ref for {bot_id}')
+                logging.info(f'found ref for {bot_id}')
 
-                # if bot_config.consider_ma_for_open_order:
-                #     symbol = bot_config.symbol
-                # else:
-                #     symbol = await redis.get(
-                #         f"most_volatile_symbol_{bot_config.min_timeframe_asset_volatility}"
-                #     )
+            # if bot_config.consider_ma_for_open_order:
+            #     symbol = bot_config.symbol
+            # else:
+            #     symbol = await redis.get(
+            #         f"most_volatile_symbol_{bot_config.min_timeframe_asset_volatility}"
+            #     )
 
-                symbol = bot_config.symbol
+            symbol = bot_config.symbol
 
-                if not symbol:
-                    logging.info('there no symbol')
-                    await asyncio.sleep(60)
-                    return
+            if not symbol:
+                logging.info('there no symbol')
+                await asyncio.sleep(60)
+                return
 
-                data = shared_data.get(symbol)
-                if not data:
-                    logging.info(original_bot_config.copybot_v2_time_in_minutes)
-                    logging.info('original_bot_config.copybot_v2_time_in_minutes')
-                    logging.info(is_it_copy)
-                    logging.info('is_it_copy')
-                    logging.info(symbol)
-                    logging.info('not symbols data')
-                    await asyncio.sleep(60)
-                    return
-                tick_size = data["tick_size"]
+            data = shared_data.get(symbol)
+            if not data:
+                logging.info(original_bot_config.copybot_v2_time_in_minutes)
+                logging.info('original_bot_config.copybot_v2_time_in_minutes')
+                logging.info(is_it_copy)
+                logging.info('is_it_copy')
+                logging.info(symbol)
+                logging.info('not symbols data')
+                await asyncio.sleep(60)
+                return
+            tick_size = data["tick_size"]
 
-                if bot_id == 1:
-                    logging.info('bot_id 1 started work')
+            if bot_id == 1:
+                logging.info('bot_id 1 started work')
 
-                bot_config = (
-                    await ProfitableBotUpdaterCommand.update_config_for_percentage(
-                        bot_config=bot_config,
-                        price_provider=price_provider,
+            bot_config = (
+                await ProfitableBotUpdaterCommand.update_config_for_percentage(
+                    bot_config=bot_config,
+                    price_provider=price_provider,
+                    symbol=symbol,
+                    tick_size=tick_size,
+                )
+            )
+
+            initial_price = await price_provider.get_price(symbol=symbol)
+
+            entry_price_buy = (
+                initial_price + bot_config.start_updown_ticks * tick_size
+            )
+            entry_price_sell = (
+                initial_price - bot_config.start_updown_ticks * tick_size
+            )
+
+            is_timeout_occurred = False
+
+            trade_type = None
+            entry_price = None
+
+            if is_it_copy or bot_id == 1:
+                logging.info(f'waiting for {bot_id}')
+
+            try:
+                wait_minutes = 1
+                if bot_config.consider_ma_for_open_order:
+                    wait_minutes = 12 * 60
+
+                if bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes:
+                    wait_minutes = bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes
+
+                timeout = (
+                    Decimal(
+                        wait_minutes
+                    )
+                    * 60
+                )
+                timeout = int(timeout)
+                price_watcher = PriceWatcher(redis=redis)
+
+                trade_type, entry_price = await asyncio.wait_for(
+                    price_watcher.wait_for_entry_price(
                         symbol=symbol,
-                        tick_size=tick_size,
-                    )
+                        entry_price_buy=entry_price_buy,
+                        entry_price_sell=entry_price_sell,
+                        binance_bot=binance_bot,
+                        bot_config=bot_config,
+                    ),
+                    timeout=timeout,
                 )
+            except asyncio.TimeoutError:
+                is_timeout_occurred = True
 
-                initial_price = await price_provider.get_price(symbol=symbol)
+            if is_it_copy or bot_id == 1:
+                logging.info(f'is_timeout_occurred: {is_timeout_occurred} for {bot_id}')
 
-                entry_price_buy = (
-                    initial_price + bot_config.start_updown_ticks * tick_size
+            if is_timeout_occurred or not trade_type or not entry_price:
+                return False
+
+            open_price = entry_price
+            price_from_previous_step = entry_price
+
+            close_not_lose_price = (
+                PriceCalculator.calculate_close_not_lose_price(
+                    open_price=open_price, trade_type=trade_type
                 )
-                entry_price_sell = (
-                    initial_price - bot_config.start_updown_ticks * tick_size
+            )
+
+            if not bot_config.consider_ma_for_close_order:
+                stop_loss_price = PriceCalculator.calculate_stop_lose_price(
+                    stop_loss_ticks=bot_config.stop_loss_ticks,
+                    tick_size=tick_size,
+                    open_price=open_price,
+                    trade_type=trade_type,
                 )
-
-                is_timeout_occurred = False
-
-                trade_type = None
-                entry_price = None
-
-                if is_it_copy or bot_id == 1:
-                    logging.info(f'waiting for {bot_id}')
-
-                try:
-                    wait_minutes = 1
-                    if bot_config.consider_ma_for_open_order:
-                        wait_minutes = 12 * 60
-
-                    if bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes:
-                        wait_minutes = bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes
-
-                    timeout = (
-                        Decimal(
-                            wait_minutes
-                        )
-                        * 60
-                    )
-                    timeout = int(timeout)
-                    price_watcher = PriceWatcher(redis=redis)
-
-                    trade_type, entry_price = await asyncio.wait_for(
-                        price_watcher.wait_for_entry_price(
-                            symbol=symbol,
-                            entry_price_buy=entry_price_buy,
-                            entry_price_sell=entry_price_sell,
-                            binance_bot=binance_bot,
-                            bot_config=bot_config,
-                        ),
-                        timeout=timeout,
-                    )
-                except asyncio.TimeoutError:
-                    is_timeout_occurred = True
-
-                if is_it_copy or bot_id == 1:
-                    logging.info(f'is_timeout_occurred: {is_timeout_occurred} for {bot_id}')
-
-                if is_timeout_occurred or not trade_type or not entry_price:
-                    return False
-
-                open_price = entry_price
-                price_from_previous_step = entry_price
-
-                close_not_lose_price = (
-                    PriceCalculator.calculate_close_not_lose_price(
-                        open_price=open_price, trade_type=trade_type
-                    )
-                )
-
-                if not bot_config.consider_ma_for_close_order:
-                    stop_loss_price = PriceCalculator.calculate_stop_lose_price(
-                        stop_loss_ticks=bot_config.stop_loss_ticks,
+                original_take_profit_price = (
+                    PriceCalculator.calculate_take_profit_price(
+                        stop_success_ticks=bot_config.stop_success_ticks,
                         tick_size=tick_size,
                         open_price=open_price,
                         trade_type=trade_type,
                     )
-                    original_take_profit_price = (
-                        PriceCalculator.calculate_take_profit_price(
-                            stop_success_ticks=bot_config.stop_success_ticks,
-                            tick_size=tick_size,
-                            open_price=open_price,
-                            trade_type=trade_type,
-                        )
-                    )
-                    take_profit_price = original_take_profit_price
+                )
+                take_profit_price = original_take_profit_price
 
-                    order = TestOrder(
-                        stop_loss_price=Decimal(stop_loss_price),
-                        start_updown_ticks=bot_config.start_updown_ticks,
-                        stop_success_ticks=bot_config.stop_success_ticks,
-                        stop_loss_ticks=bot_config.stop_loss_ticks,
-                        open_price=open_price,
-                        open_time=datetime.now(UTC),
-                        open_fee=(
-                            Decimal(bot_config.balance) * Decimal(COMMISSION_OPEN)
-                        ),
-                        order_type=trade_type
+                order = TestOrder(
+                    stop_loss_price=Decimal(stop_loss_price),
+                    start_updown_ticks=bot_config.start_updown_ticks,
+                    stop_success_ticks=bot_config.stop_success_ticks,
+                    stop_loss_ticks=bot_config.stop_loss_ticks,
+                    open_price=open_price,
+                    open_time=datetime.now(UTC),
+                    open_fee=(
+                        Decimal(bot_config.balance) * Decimal(COMMISSION_OPEN)
+                    ),
+                    order_type=trade_type
+                )
+            else:
+                order = TestOrder(
+                    stop_loss_price=0,
+                    start_updown_ticks=0,
+                    stop_success_ticks=0,
+                    stop_loss_ticks=0,
+                    open_price=open_price,
+                    open_time=datetime.now(UTC),
+                    open_fee=(
+                        Decimal(bot_config.balance) * Decimal(COMMISSION_OPEN)
+                    ),
+                    order_type=trade_type
+                )
+
+            if is_it_copy or bot_id == 1:
+                logging.info(f'wait for should_exit for {bot_id}')
+
+            while not stop_event.is_set():
+                updated_price = await price_provider.get_price(symbol=symbol)
+
+                if bot_config.consider_ma_for_close_order:
+                    should_exit = (
+                        await ExitStrategy.check_exit_ma_conditions(
+                            binance_bot=binance_bot,
+                            bot_config=bot_config,
+                            symbol=symbol,
+                            order_side=order.order_type,
+                            updated_price=updated_price,
+                            close_not_lose_price=close_not_lose_price,
+                        )
                     )
                 else:
-                    order = TestOrder(
-                        stop_loss_price=0,
-                        start_updown_ticks=0,
-                        stop_success_ticks=0,
-                        stop_loss_ticks=0,
-                        open_price=open_price,
-                        open_time=datetime.now(UTC),
-                        open_fee=(
-                            Decimal(bot_config.balance) * Decimal(COMMISSION_OPEN)
-                        ),
-                        order_type=trade_type
+                    should_exit, take_profit_price = (
+                        await ExitStrategy.check_exit_ticks_conditions(
+                            bot_config=bot_config,
+                            price_calculator=PriceCalculator,
+                            tick_size=tick_size,
+                            order=order,
+                            close_not_lose_price=close_not_lose_price,
+                            take_profit_price=take_profit_price,
+                            updated_price=updated_price,
+                            price_from_previous_step=price_from_previous_step,
+                        )
                     )
 
-                if is_it_copy or bot_id == 1:
-                    logging.info(f'wait for should_exit for {bot_id}')
+                if should_exit:
+                    break
 
-                while not stop_event.is_set():
-                    updated_price = await price_provider.get_price(symbol=symbol)
+                price_from_previous_step = updated_price
 
-                    if bot_config.consider_ma_for_close_order:
-                        should_exit = (
-                            await ExitStrategy.check_exit_ma_conditions(
-                                binance_bot=binance_bot,
-                                bot_config=bot_config,
-                                symbol=symbol,
-                                order_side=order.order_type,
-                                updated_price=updated_price,
-                                close_not_lose_price=close_not_lose_price,
-                            )
-                        )
-                    else:
-                        should_exit, take_profit_price = (
-                            await ExitStrategy.check_exit_ticks_conditions(
-                                bot_config=bot_config,
-                                price_calculator=PriceCalculator,
-                                tick_size=tick_size,
-                                order=order,
-                                close_not_lose_price=close_not_lose_price,
-                                take_profit_price=take_profit_price,
-                                updated_price=updated_price,
-                                price_from_previous_step=price_from_previous_step,
-                            )
-                        )
+                await asyncio.sleep(0.1)
 
-                    if should_exit:
-                        break
+            if is_it_copy or bot_id == 1:
+                logging.info(f'end wait for {bot_id}')
 
-                    price_from_previous_step = updated_price
+            close_price = await price_provider.get_price(symbol=symbol)
 
-                    await asyncio.sleep(0.1)
+            balance = bot_config.balance
 
-                if is_it_copy or bot_id == 1:
-                    logging.info(f'end wait for {bot_id}')
+            pnl = PriceCalculator.calculate_pnl(
+                balance=balance,
+                close_price=close_price,
+                open_price=open_price,
+                trade_type=trade_type,
+            )
 
-                close_price = await price_provider.get_price(symbol=symbol)
-
-                balance = bot_config.balance
-
-                pnl = PriceCalculator.calculate_pnl(
-                    balance=balance,
-                    close_price=close_price,
-                    open_price=open_price,
-                    trade_type=trade_type,
-                )
-
-                order_data = {
-                    "asset_symbol": symbol,
-                    "order_type": trade_type,
-                    "balance": str(balance),
-                    "open_price": str(open_price),
-                    "open_time": order.open_time,
-                    "open_fee": str(order.open_fee),
-                    "stop_loss_price": str(order.stop_loss_price),
-                    "bot_id": bot_id,
-                    "close_price": str(close_price),
-                    "close_time": datetime.now(UTC),
-                    "close_fee": str(order.open_price * Decimal(COMMISSION_CLOSE)),
-                    "profit_loss": str(pnl),
-                    "is_active": False,
-                    "start_updown_ticks": int(order.start_updown_ticks),
-                    "stop_loss_ticks": int(order.stop_loss_ticks),
-                    "stop_success_ticks": int(order.stop_success_ticks),
-                    "stop_reason_event": order.stop_reason_event,
-                    "referral_bot_id": referral_bot_id,
-                    # "referral_bot_from_profit_func": bot_config.referral_bot_from_profit_func,
-                    "created_at": datetime.now(UTC),
-                    "updated_at": datetime.now(UTC),
-                }
-                await redis.rpush(
-                    ORDER_QUEUE_KEY,
-                    json.dumps(order_data, default=self.json_serializer),
-                )
+            order_data = {
+                "asset_symbol": symbol,
+                "order_type": trade_type,
+                "balance": str(balance),
+                "open_price": str(open_price),
+                "open_time": order.open_time,
+                "open_fee": str(order.open_fee),
+                "stop_loss_price": str(order.stop_loss_price),
+                "bot_id": bot_id,
+                "close_price": str(close_price),
+                "close_time": datetime.now(UTC),
+                "close_fee": str(order.open_price * Decimal(COMMISSION_CLOSE)),
+                "profit_loss": str(pnl),
+                "is_active": False,
+                "start_updown_ticks": int(order.start_updown_ticks),
+                "stop_loss_ticks": int(order.stop_loss_ticks),
+                "stop_success_ticks": int(order.stop_success_ticks),
+                "stop_reason_event": order.stop_reason_event,
+                "referral_bot_id": referral_bot_id,
+                # "referral_bot_from_profit_func": bot_config.referral_bot_from_profit_func,
+                "created_at": datetime.now(UTC),
+                "updated_at": datetime.now(UTC),
+            }
+            await redis.rpush(
+                ORDER_QUEUE_KEY,
+                json.dumps(order_data, default=self.json_serializer),
+            )
