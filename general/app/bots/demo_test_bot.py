@@ -54,6 +54,8 @@ class StartTestBotsCommand(Command):
         price_provider = PriceProvider(redis=redis)
         binance_bot = BinanceBot(is_need_prod_for_data=True, redis=redis)
 
+        await asyncio.sleep(60)
+
         builder = MarketDataBuilder(session)
         shared_data = await builder.build()
 
