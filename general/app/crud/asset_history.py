@@ -146,16 +146,12 @@ class AssetHistoryCrud(BaseCrud[AssetHistory]):
 
             logging.info(f'getting new prices')
 
-            try:
+            dsm = DatabaseSessionManager.create(settings.DB_URL)
+            async with dsm.get_session() as session:
+                self.session = session
+
                 result = await asyncio.wait_for(self.session.execute(new_prices), timeout=5.0)
                 result = result.scalars().all()
-            except Exception:
-                dsm = DatabaseSessionManager.create(settings.DB_URL)
-                async with dsm.get_session() as session:
-                    self.session = session
-
-                    result = await asyncio.wait_for(self.session.execute(new_prices), timeout=5.0)
-                    result = result.scalars().all()
 
             logging.info(f'result: {result}')
         except Exception as e:
