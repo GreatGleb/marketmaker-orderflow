@@ -142,8 +142,10 @@ class BinanceBot(Command):
             )
             logging.info('finished get_bot_config_by_params')
 
+        logging.info(f'get_all_active_pairs')
         asset_crud = AssetHistoryCrud(self.session)
         active_symbols = await asset_crud.get_all_active_pairs()
+        logging.info(f'active_symbols: {active_symbols}')
 
         if not active_symbols:
             logging.info(f'active_symbols: {active_symbols}')
@@ -151,13 +153,16 @@ class BinanceBot(Command):
             await asyncio.sleep(60)
             return
 
+        logging.info(f'are_bots_currently_active')
         test_order_crud = TestOrderCrud(self.session)
         are_bots_currently_active = await test_order_crud.are_bots_currently_active()
+        logging.info(f'are_bots_currently_active: {are_bots_currently_active}')
         if not are_bots_currently_active:
             logging.info('not are_bots_currently_active')
             await asyncio.sleep(60)
             return
 
+        logging.info(f'refer_bot: {refer_bot}')
         if not refer_bot:
             logging.info('not refer_bot')
             await asyncio.sleep(60)
@@ -175,6 +180,7 @@ class BinanceBot(Command):
 
             symbol = refer_bot['symbol']
 
+            logging.info(f'set bot config')
             bot_config = TestBot(
                 symbol=symbol,
                 stop_success_ticks=refer_bot['stop_success_ticks'],
@@ -188,6 +194,7 @@ class BinanceBot(Command):
                 consider_ma_for_open_order=refer_bot['consider_ma_for_open_order'],
                 consider_ma_for_close_order=refer_bot['consider_ma_for_close_order'],
             )
+            logging.info(f'setted bot config')
         else:
             symbol = 'BTCUSDT'
             bot_config = TestBot(
@@ -202,6 +209,7 @@ class BinanceBot(Command):
             )
 
         try:
+            logging.info(f'set symbol_characteristics')
             symbol_characteristics = self.symbols_characteristics.get(symbol)
             tick_size = symbol_characteristics['price']['tickSize']
             max_price = symbol_characteristics['price']['maxPrice']
@@ -219,6 +227,7 @@ class BinanceBot(Command):
             await asyncio.sleep(60)
             return
 
+        logging.info(f'set bot_config')
         bot_config = await ProfitableBotUpdaterCommand.update_config_for_percentage(
             bot_config=bot_config,
             price_provider=self.price_provider,
