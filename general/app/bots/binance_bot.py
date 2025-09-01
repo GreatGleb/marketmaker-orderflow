@@ -165,8 +165,12 @@ class BinanceBot(Command):
             return
 
         logging.info(f'are_bots_currently_active')
-        test_order_crud = TestOrderCrud(self.session)
-        are_bots_currently_active = await test_order_crud.are_bots_currently_active()
+        are_bots_currently_active = None
+        dsm = DatabaseSessionManager.create(settings.DB_URL)
+        async with dsm.get_session() as session:
+            self.session = session
+            test_order_crud = TestOrderCrud(self.session)
+            are_bots_currently_active = await test_order_crud.are_bots_currently_active()
         logging.info(f'are_bots_currently_active: {are_bots_currently_active}')
         if not are_bots_currently_active:
             logging.info('not are_bots_currently_active')
@@ -287,7 +291,6 @@ class BinanceBot(Command):
         db_order_buy, db_order_sell = await self._create_db_orders(
             bot_config=bot_config,
             symbol=symbol,
-            session=self.session,
         )
 
         exchange_orders = await self.create_orders(
@@ -361,7 +364,7 @@ class BinanceBot(Command):
         )
 
         wait_db_commit_task = asyncio.create_task(
-            self._db_commit(self.session)
+            self._db_commit()
         )
 
         wait_filled = await wait_filled_task
@@ -387,19 +390,21 @@ class BinanceBot(Command):
         await delete_task
         await self.close_all_open_positions()
         self.order_update_listener.stop()
-        await self._db_commit(self.session)
+        await self._db_commit()
 
         return
 
-    async def _db_commit(self, session):
-        try:
-            await session.commit()
-        except Exception as e:
-            logging.info(f"❌ Error DB: {e}")
-            logging.error(f"❌ Error DB: {e}")
+    async def _db_commit(self):
+        dsm = DatabaseSessionManager.create(settings.DB_URL)
+        async with dsm.get_session() as session:
+            try:
+                await session.commit()
+            except Exception as e:
+                logging.info(f"❌ Error DB: {e}")
+                logging.error(f"❌ Error DB: {e}")
         return
 
-    async def _create_db_orders(self, symbol, bot_config, session):
+    async def _create_db_orders(self, symbol, bot_config):
         db_order_buy = MarketOrder(
             symbol=symbol,
             exchange_name='BINANCE',
@@ -428,15 +433,18 @@ class BinanceBot(Command):
             db_order_buy.trailing_stop_win_ticks = bot_config.stop_success_ticks
             db_order_sell.trailing_stop_win_ticks = bot_config.stop_success_ticks
 
-        try:
-            session.add(db_order_buy)
-            session.add(db_order_sell)
-            await session.commit()
-        except Exception as e:
-            await session.rollback()
-            logging.info(f"❌ Error adding market order to DB: {e}")
-            await asyncio.sleep(60)
-            return None, None
+
+        dsm = DatabaseSessionManager.create(settings.DB_URL)
+        async with dsm.get_session() as session:
+            try:
+                session.add(db_order_buy)
+                session.add(db_order_sell)
+                await session.commit()
+            except Exception as e:
+                await session.rollback()
+                logging.info(f"❌ Error adding market order to DB: {e}")
+                await asyncio.sleep(60)
+                return None, None
 
         db_order_buy.client_order_id = f'buy_{db_order_buy.id}'
         db_order_sell.client_order_id = f'sell_{db_order_sell.id}'
@@ -1577,15 +1585,17 @@ class BinanceBot(Command):
             pass
 
         if copy_bot_id_v2:
-            copy_bots_v2 = await self.session.execute(
-                select(TestBot)
-                .where(
-                    TestBot.id == copy_bot_id_v2,
+            dsm = DatabaseSessionManager.create(settings.DB_URL)
+            async with dsm.get_session() as session:
+                copy_bots_v2 = await session.execute(
+                    select(TestBot)
+                    .where(
+                        TestBot.id == copy_bot_id_v2,
+                    )
                 )
-            )
-            copy_bots = copy_bots_v2.scalars().all()
-            if copy_bots:
-                copy_bot_v2 = copy_bots[0]
+                copy_bots = copy_bots_v2.scalars().all()
+                if copy_bots:
+                    copy_bot_v2 = copy_bots[0]
 
         if copy_bot_v2:
             minutes = int(copy_bot_v2.copybot_v2_time_in_minutes)
@@ -1598,15 +1608,17 @@ class BinanceBot(Command):
                 pass
 
             if copy_bot_id:
-                copy_bots = await self.session.execute(
-                    select(TestBot)
-                    .where(
-                        TestBot.id == copy_bot_id,
+                dsm = DatabaseSessionManager.create(settings.DB_URL)
+                async with dsm.get_session() as session:
+                    copy_bots = await session.execute(
+                        select(TestBot)
+                        .where(
+                            TestBot.id == copy_bot_id,
+                        )
                     )
-                )
-                copy_bots = copy_bots.scalars().all()
-                if copy_bots:
-                    copy_bot = copy_bots[0]
+                    copy_bots = copy_bots.scalars().all()
+                    if copy_bots:
+                        copy_bot = copy_bots[0]
 
         return copy_bot
 
