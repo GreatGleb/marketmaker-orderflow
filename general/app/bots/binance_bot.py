@@ -43,7 +43,6 @@ class BinanceBot(Command):
         )
 
         self.redis = redis
-        self.session = None
         self.bot_crud = None
         self.symbols_characteristics = None
         self.stop_event = stop_event
@@ -72,7 +71,6 @@ class BinanceBot(Command):
         logging.info('getting tick_size data')
         dsm = DatabaseSessionManager.create(settings.DB_URL)
         async with dsm.get_session() as session:
-            self.session = session
             exchange_crud = AssetExchangeSpecCrud(session)
             self.symbols_characteristics = await exchange_crud.get_symbols_characteristics_from_active_pairs()
         logging.info(f'symbols_characteristics = {self.symbols_characteristics}')
@@ -93,13 +91,8 @@ class BinanceBot(Command):
         async def _run_loop():
             while not self.stop_event.is_set():
                 # try:
-                dsm = DatabaseSessionManager.create(settings.DB_URL)
-                async with dsm.get_session() as session:
-                    self.session = session
-                    self.bot_crud = TestBotCrud(session)
-
-                    logging.info('before creating orders')
-                    await self.creating_orders_bot()
+                logging.info('before creating orders')
+                await self.creating_orders_bot()
                 # except Exception as e:
                 # logging.info(f"❌ Ошибка в боте: {e}")
                 # await asyncio.sleep(60)
@@ -135,27 +128,35 @@ class BinanceBot(Command):
 
         refer_bot = None
         if copy_bot:
-            tf_bot_ids = await ProfitableBotUpdaterCommand.get_profitable_bots_id_by_tf(
-                bot_crud=self.bot_crud,
-                bot_profitability_timeframes=[copy_bot.copy_bot_min_time_profitability_min],
-                by_referral_bot_id=True,
-            )
+            dsm = DatabaseSessionManager.create(settings.DB_URL)
+            async with dsm.get_session() as session:
+                bot_crud = TestBotCrud(session)
 
-            logging.info(f'profitability_min {copy_bot.copy_bot_min_time_profitability_min}')
-            logging.info(f'tf_bot_ids {tf_bot_ids}')
+                tf_bot_ids = await ProfitableBotUpdaterCommand.get_profitable_bots_id_by_tf(
+                    bot_crud=bot_crud,
+                    bot_profitability_timeframes=[copy_bot.copy_bot_min_time_profitability_min],
+                    by_referral_bot_id=True,
+                )
 
-            logging.info('finished get_profitable_bots_id_by_tf')
-            refer_bot = await ProfitableBotUpdaterCommand.get_bot_config_by_params(
-                bot_crud=self.bot_crud,
-                tf_bot_ids=tf_bot_ids,
-                copy_bot_min_time_profitability_min=copy_bot.copy_bot_min_time_profitability_min
-            )
-            logging.info('finished get_bot_config_by_params')
+                logging.info(f'profitability_min {copy_bot.copy_bot_min_time_profitability_min}')
+                logging.info(f'tf_bot_ids {tf_bot_ids}')
+
+                logging.info('finished get_profitable_bots_id_by_tf')
+                refer_bot = await ProfitableBotUpdaterCommand.get_bot_config_by_params(
+                    bot_crud=bot_crud,
+                    tf_bot_ids=tf_bot_ids,
+                    copy_bot_min_time_profitability_min=copy_bot.copy_bot_min_time_profitability_min
+                )
+                logging.info('finished get_bot_config_by_params')
 
         logging.info(f'get_all_active_pairs')
-        asset_crud = AssetHistoryCrud(self.session)
-        logging.info(f'getting')
-        active_symbols = await asset_crud.get_all_active_pairs()
+
+        active_symbols = []
+        dsm = DatabaseSessionManager.create(settings.DB_URL)
+        async with dsm.get_session() as session:
+            asset_crud = AssetHistoryCrud(session)
+            logging.info(f'getting')
+            active_symbols = await asset_crud.get_all_active_pairs()
         logging.info(f'active_symbols: {active_symbols}')
 
         if not active_symbols:
@@ -168,8 +169,7 @@ class BinanceBot(Command):
         are_bots_currently_active = None
         dsm = DatabaseSessionManager.create(settings.DB_URL)
         async with dsm.get_session() as session:
-            self.session = session
-            test_order_crud = TestOrderCrud(self.session)
+            test_order_crud = TestOrderCrud(session)
             are_bots_currently_active = await test_order_crud.are_bots_currently_active()
         logging.info(f'are_bots_currently_active: {are_bots_currently_active}')
         if not are_bots_currently_active:
@@ -1576,49 +1576,53 @@ class BinanceBot(Command):
         copy_bot = None
         copy_bot_id = None
 
-        profits_data = await self.bot_crud.get_sorted_by_profit(since=timedelta(hours=12), just_copy_bots_v2=True)
-        profits_data_filtered_sorted = sorted([item for item in profits_data if item[1] > 0], key=lambda x: x[1], reverse=True)
+        dsm = DatabaseSessionManager.create(settings.DB_URL)
+        async with dsm.get_session() as session:
+            bot_crud = TestBotCrud(session)
 
-        try:
-            copy_bot_id_v2 = profits_data_filtered_sorted[0][0]
-        except (IndexError, TypeError):
-            pass
-
-        if copy_bot_id_v2:
-            dsm = DatabaseSessionManager.create(settings.DB_URL)
-            async with dsm.get_session() as session:
-                copy_bots_v2 = await session.execute(
-                    select(TestBot)
-                    .where(
-                        TestBot.id == copy_bot_id_v2,
-                    )
-                )
-                copy_bots = copy_bots_v2.scalars().all()
-                if copy_bots:
-                    copy_bot_v2 = copy_bots[0]
-
-        if copy_bot_v2:
-            minutes = int(copy_bot_v2.copybot_v2_time_in_minutes)
-            profits_data = await self.bot_crud.get_sorted_by_profit(since=timedelta(minutes=minutes), just_copy_bots=True)
+            profits_data = await bot_crud.get_sorted_by_profit(since=timedelta(hours=12), just_copy_bots_v2=True)
             profits_data_filtered_sorted = sorted([item for item in profits_data if item[1] > 0], key=lambda x: x[1], reverse=True)
 
             try:
-                copy_bot_id = profits_data_filtered_sorted[0][0]
+                copy_bot_id_v2 = profits_data_filtered_sorted[0][0]
             except (IndexError, TypeError):
                 pass
 
-            if copy_bot_id:
+            if copy_bot_id_v2:
                 dsm = DatabaseSessionManager.create(settings.DB_URL)
                 async with dsm.get_session() as session:
-                    copy_bots = await session.execute(
+                    copy_bots_v2 = await session.execute(
                         select(TestBot)
                         .where(
-                            TestBot.id == copy_bot_id,
+                            TestBot.id == copy_bot_id_v2,
                         )
                     )
-                    copy_bots = copy_bots.scalars().all()
+                    copy_bots = copy_bots_v2.scalars().all()
                     if copy_bots:
-                        copy_bot = copy_bots[0]
+                        copy_bot_v2 = copy_bots[0]
+
+            if copy_bot_v2:
+                minutes = int(copy_bot_v2.copybot_v2_time_in_minutes)
+                profits_data = await bot_crud.get_sorted_by_profit(since=timedelta(minutes=minutes), just_copy_bots=True)
+                profits_data_filtered_sorted = sorted([item for item in profits_data if item[1] > 0], key=lambda x: x[1], reverse=True)
+
+                try:
+                    copy_bot_id = profits_data_filtered_sorted[0][0]
+                except (IndexError, TypeError):
+                    pass
+
+                if copy_bot_id:
+                    dsm = DatabaseSessionManager.create(settings.DB_URL)
+                    async with dsm.get_session() as session:
+                        copy_bots = await session.execute(
+                            select(TestBot)
+                            .where(
+                                TestBot.id == copy_bot_id,
+                            )
+                        )
+                        copy_bots = copy_bots.scalars().all()
+                        if copy_bots:
+                            copy_bot = copy_bots[0]
 
         return copy_bot
 
