@@ -16,10 +16,12 @@ from redis.asyncio import Redis
 from sqlalchemy import distinct, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.crud.asset_history import AssetHistoryCrud
 from app.crud.exchange_pair_spec import AssetExchangeSpecCrud
 from app.crud.test_bot import TestBotCrud
 from app.crud.test_orders import TestOrderCrud
+from app.db.base import DatabaseSessionManager
 from app.db.models import MarketOrder, TestBot, TestOrder
 from app.dependencies import get_redis, get_session, resolve_crud, redis_context
 from app.sub_services.logic.exit_strategy import ExitStrategy
@@ -146,10 +148,14 @@ class BinanceBot(Command):
             logging.info('finished get_bot_config_by_params')
 
         logging.info(f'get_all_active_pairs')
-        asset_crud = AssetHistoryCrud(self.session)
-        logging.info(f'getting')
-        active_symbols = await asset_crud.get_all_active_pairs()
-        logging.info(f'active_symbols: {active_symbols}')
+        active_symbols = None
+
+        dsm = DatabaseSessionManager.create(settings.DB_URL)
+        async with dsm.get_session() as session:
+            asset_crud = AssetHistoryCrud(session)
+            logging.info(f'getting')
+            active_symbols = await asset_crud.get_all_active_pairs()
+            logging.info(f'active_symbols: {active_symbols}')
 
         if not active_symbols:
             logging.info(f'active_symbols: {active_symbols}')
