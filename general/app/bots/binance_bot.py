@@ -66,10 +66,8 @@ class BinanceBot(Command):
         self,
         session: AsyncSession = Depends(get_session),
         redis: Redis = Depends(get_redis),
-        bot_crud: TestBotCrud = resolve_crud(TestBotCrud),
     ):
         self.redis = redis
-        self.bot_crud = bot_crud
         self.price_provider = PriceProvider(redis=self.redis)
 
         logging.info('getting tick_size data')
@@ -96,6 +94,7 @@ class BinanceBot(Command):
                 dsm = DatabaseSessionManager.create(settings.DB_URL)
                 async with dsm.get_session() as session:
                     self.session = session
+                    self.bot_crud = TestBotCrud(session)
 
                     logging.info('before creating orders')
                     await self.creating_orders_bot()
