@@ -1,3 +1,4 @@
+import logging
 from decimal import Decimal
 
 from sqlalchemy import delete, text
@@ -96,34 +97,27 @@ class AssetHistoryCrud(BaseCrud[AssetHistory]):
         return result.scalar_one_or_none()
 
     async def get_all_active_pairs(self, is_need_full_info = False):
-        UTC = timezone.utc
-        now = datetime.now(UTC)
-        five_minutes_ago = now - timedelta(minutes=5)
+        result = []
 
-        since = five_minutes_ago
-        ah_new = aliased(AssetHistory)
+        try:
+            UTC = timezone.utc
+            now = datetime.now(UTC)
+            five_minutes_ago = now - timedelta(minutes=5)
 
-        sub_query_new = (
-            select(
-                ah_new.symbol, func.max(ah_new.event_time).label("max_time")
+            since = five_minutes_ago
+            ah_new = aliased(AssetHistory)
+
+            sub_query_new = (
+                select(
+                    ah_new.symbol, func.max(ah_new.event_time).label("max_time")
+                )
+                .where(ah_new.event_time >= since)
+                .group_by(ah_new.symbol)
+                .subquery()
             )
-            .where(ah_new.event_time >= since)
-            .group_by(ah_new.symbol)
-            .subquery()
-        )
 
-        new_prices = (
-            select(AssetHistory.symbol, AssetHistory.last_price)
-            .join(
-                sub_query_new,
-                (AssetHistory.symbol == sub_query_new.c.symbol)
-                & (AssetHistory.event_time == sub_query_new.c.max_time),
-            )
-        )
-
-        if is_need_full_info:
             new_prices = (
-                select(AssetHistory)
+                select(AssetHistory.symbol, AssetHistory.last_price)
                 .join(
                     sub_query_new,
                     (AssetHistory.symbol == sub_query_new.c.symbol)
@@ -131,5 +125,24 @@ class AssetHistoryCrud(BaseCrud[AssetHistory]):
                 )
             )
 
-        result = await self.session.execute(new_prices)
-        return result.scalars().all()
+            if is_need_full_info:
+                new_prices = (
+                    select(AssetHistory)
+                    .join(
+                        sub_query_new,
+                        (AssetHistory.symbol == sub_query_new.c.symbol)
+                        & (AssetHistory.event_time == sub_query_new.c.max_time),
+                    )
+                )
+
+            result = await self.session.execute(new_prices)
+            result = result.scalars().all()
+        except Exception as e:
+            logging.basicConfig(
+                format='%(asctime)s - %(levelname)s - %(message)s',
+                level=logging.INFO
+            )
+
+            logging.info(e)
+
+        return result
