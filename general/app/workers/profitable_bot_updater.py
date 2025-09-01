@@ -191,6 +191,7 @@ class ProfitableBotUpdaterCommand(Command):
                 profits_data_by_referral = await bot_crud.get_sorted_by_profit(
                     since=time_ago, just_not_copy_bots=True, by_referral_bot_id=True
                 )
+                logging.info(f'profits_data_by_referral: {len(profits_data_by_referral)}')
                 filtered_sorted_by_referral = sorted(
                     [item for item in profits_data_by_referral if item[1] > 0],
                     key=lambda x: x[1],
