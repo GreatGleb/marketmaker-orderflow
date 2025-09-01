@@ -100,7 +100,7 @@ class BinanceBot(Command):
                     await self.creating_orders_bot()
                 # except Exception as e:
                 # logging.info(f"❌ Ошибка в боте: {e}")
-                await asyncio.sleep(60)
+                # await asyncio.sleep(60)
                 # break
 
         tasks.append(asyncio.create_task(_run_loop()))
@@ -323,7 +323,7 @@ class BinanceBot(Command):
             logging.info(f"❌ Один из ордеров не может быть создан, второй ордер был отменён")
             return
         if exchange_orders['order_buy'] is None and exchange_orders['order_sell'] is None:
-            await asyncio.sleep(60)
+            # await asyncio.sleep(60)
             logging.info(f"Both orders was canceled")
             return
 
