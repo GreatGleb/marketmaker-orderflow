@@ -149,6 +149,7 @@ class AssetHistoryCrud(BaseCrud[AssetHistory]):
                 try:
                     result = await asyncio.wait_for(self.session.execute(new_prices), timeout=5.0)
                     result = result.scalars().all()
+                    break
                 except asyncio.TimeoutError:
                     attempt += 1
                     logging.info(f'attempt: {attempt}')
