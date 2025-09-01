@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from decimal import Decimal
 
@@ -143,13 +144,22 @@ class AssetHistoryCrud(BaseCrud[AssetHistory]):
 
             logging.info(f'getting new prices')
 
-            result = await self.session.execute(new_prices)
-            logging.info(f'result: {result}')
-            result = result.scalars().all()
+            attempt = 0
+            while attempt < 10:
+                try:
+                    result = await asyncio.wait_for(self.session.execute(new_prices), timeout=5.0)
+                    result = result.scalars().all()
+                except asyncio.TimeoutError:
+                    attempt += 1
+                    logging.info(f'attempt: {attempt}')
+                    await asyncio.sleep(2)
+                except Exception as e:
+                    raise
+
             logging.info(f'result: {result}')
         except Exception as e:
             logging.info(e)
 
-        logging.info(f'resultt')
+        logging.info(f'result')
 
         return result
