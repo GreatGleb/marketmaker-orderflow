@@ -10,6 +10,8 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import aliased
 from sqlalchemy import select, func
 
+from app.config import settings
+from app.db.base import DatabaseSessionManager
 from app.db.models import AssetHistory
 from app.crud.base import BaseCrud
 
@@ -144,18 +146,16 @@ class AssetHistoryCrud(BaseCrud[AssetHistory]):
 
             logging.info(f'getting new prices')
 
-            attempt = 0
-            while attempt < 10:
-                try:
+            try:
+                result = await asyncio.wait_for(self.session.execute(new_prices), timeout=5.0)
+                result = result.scalars().all()
+            except Exception:
+                dsm = DatabaseSessionManager.create(settings.DB_URL)
+                async with dsm.get_session() as session:
+                    self.session = session
+
                     result = await asyncio.wait_for(self.session.execute(new_prices), timeout=5.0)
                     result = result.scalars().all()
-                    break
-                except asyncio.TimeoutError:
-                    attempt += 1
-                    logging.info(f'attempt: {attempt}')
-                    await asyncio.sleep(2)
-                except Exception as e:
-                    raise
 
             logging.info(f'result: {result}')
         except Exception as e:
