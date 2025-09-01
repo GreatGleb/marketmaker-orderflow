@@ -16,6 +16,12 @@ from app.crud.base import BaseCrud
 class AssetHistoryCrud(BaseCrud[AssetHistory]):
     def __init__(self, session):
         super().__init__(session, AssetHistory)
+        logging.basicConfig(
+            format='%(asctime)s - %(levelname)s - %(message)s',
+            level=logging.INFO
+        )
+
+        logging.info('AssetHistoryCrud init')
 
     async def bulk_create(self, items: list[dict]) -> None:
         if not items:
@@ -138,11 +144,6 @@ class AssetHistoryCrud(BaseCrud[AssetHistory]):
             result = await self.session.execute(new_prices)
             result = result.scalars().all()
         except Exception as e:
-            logging.basicConfig(
-                format='%(asctime)s - %(levelname)s - %(message)s',
-                level=logging.INFO
-            )
-
             logging.info(e)
 
         return result

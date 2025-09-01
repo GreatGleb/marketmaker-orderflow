@@ -147,6 +147,7 @@ class BinanceBot(Command):
 
         logging.info(f'get_all_active_pairs')
         asset_crud = AssetHistoryCrud(self.session)
+        logging.info(f'getting')
         active_symbols = await asset_crud.get_all_active_pairs()
         logging.info(f'active_symbols: {active_symbols}')
 
