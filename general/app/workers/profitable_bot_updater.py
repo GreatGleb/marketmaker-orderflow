@@ -171,21 +171,21 @@ class ProfitableBotUpdaterCommand(Command):
             )
             tf_ids = [item[0] for item in filtered_sorted]
             logging.info(f'profits_data: {len(tf_ids)}')
-            tf_bot_ids[tf] = tf_ids
+            # tf_bot_ids[tf] = tf_ids
 
-            # time_ago_24h = timedelta(hours=float(24))
-            # profits_data_24h = await bot_crud.get_sorted_by_profit(
-            #     since=time_ago_24h, just_not_copy_bots=True
-            # )
-            # filtered_sorted_24h = sorted(
-            #     [item for item in profits_data_24h if item[1] > 0],
-            #     key=lambda x: x[1],
-            #     reverse=True,
-            # )
-            # ids_24h = [item[0] for item in filtered_sorted_24h]
-            # ids_checked_24h = [item for item in tf_ids if item in ids_24h]
-            #
-            # tf_bot_ids[tf] = ids_checked_24h
+            time_ago_24h = timedelta(hours=float(24))
+            profits_data_24h = await bot_crud.get_sorted_by_profit(
+                since=time_ago_24h, just_not_copy_bots=True
+            )
+            filtered_sorted_24h = sorted(
+                [item for item in profits_data_24h if item[1] > 0],
+                key=lambda x: x[1],
+                reverse=True,
+            )
+            ids_24h = [item[0] for item in filtered_sorted_24h]
+            ids_checked_24h = [item for item in tf_ids if item in ids_24h]
+
+            tf_bot_ids[tf] = ids_checked_24h
 
             if by_referral_bot_id:
                 profits_data_by_referral = await bot_crud.get_sorted_by_profit(
