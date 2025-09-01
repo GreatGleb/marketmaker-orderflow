@@ -141,11 +141,15 @@ class AssetHistoryCrud(BaseCrud[AssetHistory]):
                     )
                 )
 
-            logging.info(f'self.session: {self.session}')
+            logging.info(f'getting new prices')
 
             result = await self.session.execute(new_prices)
+            logging.info(f'result: {result}')
             result = result.scalars().all()
+            logging.info(f'result: {result}')
         except Exception as e:
             logging.info(e)
+
+        logging.info(f'resultt')
 
         return result
