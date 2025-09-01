@@ -134,6 +134,9 @@ class BinanceBot(Command):
                 by_referral_bot_id=True,
             )
 
+            logging.info(f'profitability_min {copy_bot.copy_bot_min_time_profitability_min}')
+            logging.info(f'tf_bot_ids {tf_bot_ids}')
+
             logging.info('finished get_profitable_bots_id_by_tf')
             refer_bot = await ProfitableBotUpdaterCommand.get_bot_config_by_params(
                 bot_crud=self.bot_crud,
