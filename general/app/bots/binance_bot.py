@@ -64,15 +64,17 @@ class BinanceBot(Command):
 
     async def command(
         self,
-        session: AsyncSession = Depends(get_session),
         redis: Redis = Depends(get_redis),
     ):
         self.redis = redis
         self.price_provider = PriceProvider(redis=self.redis)
 
         logging.info('getting tick_size data')
-        exchange_crud = AssetExchangeSpecCrud(session)
-        self.symbols_characteristics = await exchange_crud.get_symbols_characteristics_from_active_pairs()
+        dsm = DatabaseSessionManager.create(settings.DB_URL)
+        async with dsm.get_session() as session:
+            self.session = session
+            exchange_crud = AssetExchangeSpecCrud(session)
+            self.symbols_characteristics = await exchange_crud.get_symbols_characteristics_from_active_pairs()
         logging.info(f'symbols_characteristics = {self.symbols_characteristics}')
 
         is_set_dual_mode = await self.check_and_set_dual_mode()
