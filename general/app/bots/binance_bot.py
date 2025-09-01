@@ -68,14 +68,14 @@ class BinanceBot(Command):
         redis: Redis = Depends(get_redis),
         bot_crud: TestBotCrud = resolve_crud(TestBotCrud),
     ):
-        self.session = session
         self.redis = redis
         self.bot_crud = bot_crud
         self.price_provider = PriceProvider(redis=self.redis)
 
         logging.info('getting tick_size data')
-        exchange_crud = AssetExchangeSpecCrud(self.session)
+        exchange_crud = AssetExchangeSpecCrud(session)
         self.symbols_characteristics = await exchange_crud.get_symbols_characteristics_from_active_pairs()
+        logging.info(f'symbols_characteristics = {self.symbols_characteristics}')
 
         is_set_dual_mode = await self.check_and_set_dual_mode()
         if not is_set_dual_mode:
@@ -93,8 +93,12 @@ class BinanceBot(Command):
         async def _run_loop():
             while not self.stop_event.is_set():
                 # try:
-                logging.info('before creating orders')
-                await self.creating_orders_bot()
+                dsm = DatabaseSessionManager.create(settings.DB_URL)
+                async with dsm.get_session() as session:
+                    self.session = session
+
+                    logging.info('before creating orders')
+                    await self.creating_orders_bot()
                 # except Exception as e:
                 # logging.info(f"❌ Ошибка в боте: {e}")
                 await asyncio.sleep(60)
@@ -148,14 +152,10 @@ class BinanceBot(Command):
             logging.info('finished get_bot_config_by_params')
 
         logging.info(f'get_all_active_pairs')
-        active_symbols = None
-
-        dsm = DatabaseSessionManager.create(settings.DB_URL)
-        async with dsm.get_session() as session:
-            asset_crud = AssetHistoryCrud(session)
-            logging.info(f'getting')
-            active_symbols = await asset_crud.get_all_active_pairs()
-            logging.info(f'active_symbols: {active_symbols}')
+        asset_crud = AssetHistoryCrud(self.session)
+        logging.info(f'getting')
+        active_symbols = await asset_crud.get_all_active_pairs()
+        logging.info(f'active_symbols: {active_symbols}')
 
         if not active_symbols:
             logging.info(f'active_symbols: {active_symbols}')
