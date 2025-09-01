@@ -164,6 +164,7 @@ class ProfitableBotUpdaterCommand(Command):
             profits_data = await bot_crud.get_sorted_by_profit(
                 since=time_ago, just_not_copy_bots=True
             )
+            logging.info(f'profits_data: {profits_data}')
             filtered_sorted = sorted(
                 [item for item in profits_data if item[1] > 0],
                 key=lambda x: x[1],
