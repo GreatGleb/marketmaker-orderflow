@@ -557,61 +557,77 @@ class BinanceBot(Command):
                     )
                 )
 
-            tasks = {}
-            if order_buy_create_task:
-                tasks['buy'] = order_buy_create_task
-            if order_sell_create_task:
-                tasks['sell'] = order_sell_create_task
+            if bot_config.consider_ma_for_open_order:
+                tasks = {}
+                if order_buy_create_task:
+                    tasks['buy'] = order_buy_create_task
+                if order_sell_create_task:
+                    tasks['sell'] = order_sell_create_task
 
-            final_result_found = False
+                final_result_found = False
 
-            while tasks:
-                done, pending = await asyncio.wait(
-                    tasks.values(),
-                    return_when=asyncio.FIRST_COMPLETED
-                )
+                while tasks:
+                    done, pending = await asyncio.wait(
+                        tasks.values(),
+                        return_when=asyncio.FIRST_COMPLETED
+                    )
 
-                done_task = done.pop()
+                    done_task = done.pop()
 
-                try:
-                    result = done_task.result()
-                except asyncio.CancelledError:
-                    result = None
+                    try:
+                        result = done_task.result()
+                    except asyncio.CancelledError:
+                        result = None
 
-                if result is not None and not final_result_found:
-                    final_result_found = True
+                    if result is not None and not final_result_found:
+                        final_result_found = True
 
-                    if done_task == order_buy_create_task:
-                        order_buy = result
-                    else:
-                        order_sell = result
+                        if done_task == order_buy_create_task:
+                            order_buy = result
+                        else:
+                            order_sell = result
 
-                    for task in pending:
-                        task.cancel()
+                        for task in pending:
+                            task.cancel()
 
-                for k, v in list(tasks.items()):
-                    if v == done_task:
-                        del tasks[k]
-                        break
+                    for k, v in list(tasks.items()):
+                        if v == done_task:
+                            del tasks[k]
+                            break
 
-            for task in [order_buy_create_task, order_sell_create_task]:
-                if task.done() and not task.cancelled():
-                    continue
+                for task in [order_buy_create_task, order_sell_create_task]:
+                    if task.done() and not task.cancelled():
+                        continue
 
-                if task.cancelled():
-                    if task == order_buy_create_task and order_buy is None:
-                        order_buy = None
-                    elif task == order_sell_create_task and order_sell is None:
-                        order_sell = None
-                    continue
+                    if task.cancelled():
+                        if task == order_buy_create_task and order_buy is None:
+                            order_buy = None
+                        elif task == order_sell_create_task and order_sell is None:
+                            order_sell = None
+                        continue
 
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    if task == order_buy_create_task and order_buy is None:
-                        order_buy = None
-                    elif task == order_sell_create_task and order_sell is None:
-                        order_sell = None
+                    try:
+                        await task
+                    except asyncio.CancelledError:
+                        if task == order_buy_create_task and order_buy is None:
+                            order_buy = None
+                        elif task == order_sell_create_task and order_sell is None:
+                            order_sell = None
+            else:
+                tasks = []
+                if order_buy_create_task:
+                    tasks.append(order_buy_create_task)
+                if order_sell_create_task:
+                    tasks.append(order_sell_create_task)
+
+                if tasks:
+                    results = await asyncio.gather(*tasks)
+
+                    for task, result in zip(tasks, results):
+                        if task == order_buy_create_task:
+                            order_buy = result
+                        elif task == order_sell_create_task:
+                            order_sell = result
 
         logging.info(
             f"order_buy: {order_buy}\n\n"
