@@ -208,7 +208,7 @@ async def create_bots():
             #                             0.45]
 
             # min_tf_volatility_values = [0.5, 1, 2, 3]
-            wait_open_order_values = [0.5]
+            wait_open_order_values = [0.083] #5 сек
 
             try:
                 for start in start_ticks_values:
