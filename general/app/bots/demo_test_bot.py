@@ -287,58 +287,61 @@ class StartTestBotsCommand(Command):
                 )
             )
 
-            initial_price = await price_provider.get_price(symbol=symbol)
+            while True:
+                initial_price = await price_provider.get_price(symbol=symbol)
 
-            entry_price_buy = (
-                initial_price + bot_config.start_updown_ticks * tick_size
-            )
-            entry_price_sell = (
-                initial_price - bot_config.start_updown_ticks * tick_size
-            )
+                entry_price_buy = (
+                    initial_price + bot_config.start_updown_ticks * tick_size
+                )
+                entry_price_sell = (
+                    initial_price - bot_config.start_updown_ticks * tick_size
+                )
 
-            is_timeout_occurred = False
+                is_timeout_occurred = False
 
-            trade_type = None
-            entry_price = None
+                trade_type = None
+                entry_price = None
 
-            if is_it_copy or bot_id == 1:
-                logging.info(f'waiting for {bot_id}')
+                if is_it_copy or bot_id == 1:
+                    logging.info(f'waiting for {bot_id}')
 
-            try:
-                wait_minutes = 1
-                if bot_config.consider_ma_for_open_order:
-                    wait_minutes = 12 * 60
+                try:
+                    wait_minutes = 1
+                    if bot_config.consider_ma_for_open_order:
+                        wait_minutes = 12 * 60
 
-                if bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes:
-                    wait_minutes = bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes
+                    if bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes:
+                        wait_minutes = bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes
 
-                timeout = (
-                    Decimal(
-                        wait_minutes
+                    timeout = (
+                        Decimal(
+                            wait_minutes
+                        )
+                        * 60
                     )
-                    * 60
-                )
-                timeout = int(timeout)
-                price_watcher = PriceWatcher(redis=redis)
+                    timeout = int(timeout)
+                    price_watcher = PriceWatcher(redis=redis)
 
-                trade_type, entry_price = await asyncio.wait_for(
-                    price_watcher.wait_for_entry_price(
-                        symbol=symbol,
-                        entry_price_buy=entry_price_buy,
-                        entry_price_sell=entry_price_sell,
-                        binance_bot=binance_bot,
-                        bot_config=bot_config,
-                    ),
-                    timeout=timeout,
-                )
-            except asyncio.TimeoutError:
-                is_timeout_occurred = True
+                    trade_type, entry_price = await asyncio.wait_for(
+                        price_watcher.wait_for_entry_price(
+                            symbol=symbol,
+                            entry_price_buy=entry_price_buy,
+                            entry_price_sell=entry_price_sell,
+                            binance_bot=binance_bot,
+                            bot_config=bot_config,
+                        ),
+                        timeout=timeout,
+                    )
+                except asyncio.TimeoutError:
+                    is_timeout_occurred = True
 
-            if is_it_copy or bot_id == 1:
-                logging.info(f'is_timeout_occurred: {is_timeout_occurred} for {bot_id}')
+                if is_it_copy or bot_id == 1:
+                    logging.info(f'is_timeout_occurred: {is_timeout_occurred} for {bot_id}')
 
-            if is_timeout_occurred or not trade_type or not entry_price:
-                return False
+                if is_timeout_occurred or not trade_type or not entry_price:
+                    continue
+                else:
+                    break
 
             open_price = entry_price
             price_from_previous_step = entry_price
