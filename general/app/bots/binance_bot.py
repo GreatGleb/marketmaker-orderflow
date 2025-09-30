@@ -293,7 +293,7 @@ class BinanceBot(Command):
             symbol=symbol,
         )
 
-        exchange_orders = await self.create_orders(
+        created_orders = await self.create_orders(
             balanceUSDT=balanceUSDT099,
             bot_config=bot_config,
             symbol=symbol,
@@ -307,60 +307,15 @@ class BinanceBot(Command):
             db_order_sell=db_order_sell,
         )
 
-        if (
-                bot_config.start_updown_ticks and (
-                not exchange_orders['order_buy'] or not exchange_orders['order_sell']
-            )
-        ):
-            if exchange_orders['order_buy'] and 'orderId' in exchange_orders['order_buy']:
-                await self.delete_order(
-                    db_order=db_order_buy,
-                    status='CANCELED',
-                    close_reason=f'Can\'t create sell order, cancel both'
-                )
-            if exchange_orders['order_sell'] and 'orderId' in exchange_orders['order_sell']:
-                await self.delete_order(
-                    db_order=db_order_sell,
-                    status='CANCELED',
-                    close_reason=f'Can\'t create buy order, cancel both'
-                )
-
-            logging.info(f"❌ Один из ордеров не может быть создан, второй ордер был отменён")
-            return
-        if exchange_orders['order_buy'] is None and exchange_orders['order_sell'] is None:
-            # await asyncio.sleep(60)
-            logging.info(f"Both orders was canceled")
-            return
-
-        waiting_orders = [
-            {
-                'db_order': db_order_buy,
-                'exchange_order': exchange_orders['order_buy'],
-            },
-            {
-                'db_order': db_order_sell,
-                'exchange_order': exchange_orders['order_sell'],
-            },
-        ]
-
-        wait_for_order = await self._wait_until_order_activated(bot_config, waiting_orders)
-        if not wait_for_order['timeout_missed']:
-            logging.info(f"A minute has passed, entry conditions have not been met")
-            return
-
-        if wait_for_order['first_order_updating_data']['c'] == db_order_buy.client_order_id:
-            db_order = db_order_buy
-            second_order = db_order_sell
-        else:
-            db_order = db_order_sell
-            second_order = db_order_buy
+        first_order = created_orders['first_order']
+        second_order = created_orders['second_order']
 
         delete_task = asyncio.create_task(
             self.delete_second_order(second_order)
         )
 
         wait_filled_task = asyncio.create_task(
-            self._wait_until_order_filled(bot_config, db_order)
+            self._wait_until_order_filled(bot_config, first_order)
         )
 
         wait_db_commit_task = asyncio.create_task(
@@ -368,22 +323,23 @@ class BinanceBot(Command):
         )
 
         wait_filled = await wait_filled_task
-        if not wait_filled['timeout_missed']:
-            logging.info(f"A minute has passed, order did\'nt fill")
+        if wait_filled['timeout_missed']:
+            logging.info(f"A minute has passed, order didn\'t fill")
             await delete_task
             await wait_db_commit_task
             return
 
-        logging.info(f"✅ Первый ордер получен: {wait_for_order['first_order_updating_data']}")
+        # logging.info(f"✅ Первый ордер получен: {wait_for_order['first_order_updating_data']}")
+        logging.info(f"✅ Первый ордер получен")
 
         if bot_config.consider_ma_for_close_order:
             close_order_by_ma_task = asyncio.create_task(
-                self.close_order_by_ma(bot_config=bot_config, db_order=db_order)
+                self.close_order_by_ma(bot_config=bot_config, db_order=first_order)
             )
             await close_order_by_ma_task
         else:
             setting_sl_sw_to_order_task = asyncio.create_task(
-                self.setting_sl_sw_to_order(db_order, tick_size)
+                self.setting_sl_sw_to_order(first_order, tick_size)
             )
             await setting_sl_sw_to_order_task
 
@@ -465,22 +421,64 @@ class BinanceBot(Command):
         symbol, tick_size, lot_size, max_price, min_price, max_qty, min_qty,
         db_order_buy, db_order_sell
     ):
-        order_buy = None
-        order_sell = None
+        first_order = None
+        second_order = None
 
-        if db_order_buy and db_order_sell:
-            order_buy_create_task = None
-            order_sell_create_task = None
+        while True:
+            order_buy = None
+            order_sell = None
 
-            if bot_config.consider_ma_for_open_order:
-                price_watcher = PriceWatcher(redis=self.redis)
-                trade_type, entry_price = await price_watcher.wait_for_entry_price(
-                    symbol=symbol,
-                    binance_bot=self,
-                    bot_config=bot_config,
-                )
+            if db_order_buy and db_order_sell:
+                order_buy_create_task = None
+                order_sell_create_task = None
 
-                if trade_type == 'BUY':
+                if bot_config.consider_ma_for_open_order:
+                    price_watcher = PriceWatcher(redis=self.redis)
+                    trade_type, entry_price = await price_watcher.wait_for_entry_price(
+                        symbol=symbol,
+                        binance_bot=self,
+                        bot_config=bot_config,
+                    )
+
+                    if trade_type == 'BUY':
+                        order_buy_create_task = asyncio.create_task(
+                            self.create_order(
+                                balanceUSDT=balanceUSDT,
+                                bot_config=bot_config,
+                                symbol=symbol,
+                                tick_size=tick_size,
+                                lot_size=lot_size,
+                                max_price=max_price,
+                                min_price=min_price,
+                                max_qty=max_qty,
+                                min_qty=min_qty,
+                                creating_orders_type='buy',
+                                futures_order_type=FUTURE_ORDER_TYPE_STOP_MARKET,
+                                order_side=SIDE_BUY,
+                                order_position_side="LONG",
+                                db_order=db_order_buy,
+                            )
+                        )
+                    elif trade_type == 'SELL':
+                        order_sell_create_task = asyncio.create_task(
+                            self.create_order(
+                                balanceUSDT=balanceUSDT,
+                                bot_config=bot_config,
+                                symbol=symbol,
+                                tick_size=tick_size,
+                                lot_size=lot_size,
+                                max_price=max_price,
+                                min_price=min_price,
+                                max_qty=max_qty,
+                                min_qty=min_qty,
+                                creating_orders_type='sell',
+                                futures_order_type=FUTURE_ORDER_TYPE_STOP_MARKET,
+                                order_side=SIDE_SELL,
+                                order_position_side="SHORT",
+                                db_order=db_order_sell,
+                            )
+                        )
+                else:
                     order_buy_create_task = asyncio.create_task(
                         self.create_order(
                             balanceUSDT=balanceUSDT,
@@ -499,7 +497,7 @@ class BinanceBot(Command):
                             db_order=db_order_buy,
                         )
                     )
-                elif trade_type == 'SELL':
+
                     order_sell_create_task = asyncio.create_task(
                         self.create_order(
                             balanceUSDT=balanceUSDT,
@@ -518,125 +516,140 @@ class BinanceBot(Command):
                             db_order=db_order_sell,
                         )
                     )
-            else:
-                order_buy_create_task = asyncio.create_task(
-                    self.create_order(
-                        balanceUSDT=balanceUSDT,
-                        bot_config=bot_config,
-                        symbol=symbol,
-                        tick_size=tick_size,
-                        lot_size=lot_size,
-                        max_price=max_price,
-                        min_price=min_price,
-                        max_qty=max_qty,
-                        min_qty=min_qty,
-                        creating_orders_type='buy',
-                        futures_order_type=FUTURE_ORDER_TYPE_STOP_MARKET,
-                        order_side=SIDE_BUY,
-                        order_position_side="LONG",
+
+                if bot_config.consider_ma_for_open_order:
+                    tasks = {}
+                    if order_buy_create_task:
+                        tasks['buy'] = order_buy_create_task
+                    if order_sell_create_task:
+                        tasks['sell'] = order_sell_create_task
+
+                    final_result_found = False
+
+                    while tasks:
+                        done, pending = await asyncio.wait(
+                            tasks.values(),
+                            return_when=asyncio.FIRST_COMPLETED
+                        )
+
+                        done_task = done.pop()
+
+                        try:
+                            result = done_task.result()
+                        except asyncio.CancelledError:
+                            result = None
+
+                        if result is not None and not final_result_found:
+                            final_result_found = True
+
+                            if done_task == order_buy_create_task:
+                                order_buy = result
+                            else:
+                                order_sell = result
+
+                            for task in pending:
+                                task.cancel()
+
+                        for k, v in list(tasks.items()):
+                            if v == done_task:
+                                del tasks[k]
+                                break
+
+                    for task in [order_buy_create_task, order_sell_create_task]:
+                        if task.done() and not task.cancelled():
+                            continue
+
+                        if task.cancelled():
+                            if task == order_buy_create_task and order_buy is None:
+                                order_buy = None
+                            elif task == order_sell_create_task and order_sell is None:
+                                order_sell = None
+                            continue
+
+                        try:
+                            await task
+                        except asyncio.CancelledError:
+                            if task == order_buy_create_task and order_buy is None:
+                                order_buy = None
+                            elif task == order_sell_create_task and order_sell is None:
+                                order_sell = None
+                else:
+                    tasks = []
+                    if order_buy_create_task:
+                        tasks.append(order_buy_create_task)
+                    if order_sell_create_task:
+                        tasks.append(order_sell_create_task)
+
+                    if tasks:
+                        results = await asyncio.gather(*tasks)
+
+                        for task, result in zip(tasks, results):
+                            if task == order_buy_create_task:
+                                order_buy = result
+                            elif task == order_sell_create_task:
+                                order_sell = result
+
+            logging.info(
+                f"order_buy: {order_buy}\n\n"
+                f"order_sell: {order_sell}\n"
+            )
+
+            isNeedToCancelOrders = False
+
+            if (
+                    bot_config.start_updown_ticks and (
+                    not order_buy or not order_sell
+                )
+            ):
+                if order_buy and 'orderId' in order_buy:
+                    await self.delete_order(
                         db_order=db_order_buy,
+                        status='CANCELED',
+                        close_reason=f'Can\'t create sell order, cancel both'
                     )
-                )
-
-                order_sell_create_task = asyncio.create_task(
-                    self.create_order(
-                        balanceUSDT=balanceUSDT,
-                        bot_config=bot_config,
-                        symbol=symbol,
-                        tick_size=tick_size,
-                        lot_size=lot_size,
-                        max_price=max_price,
-                        min_price=min_price,
-                        max_qty=max_qty,
-                        min_qty=min_qty,
-                        creating_orders_type='sell',
-                        futures_order_type=FUTURE_ORDER_TYPE_STOP_MARKET,
-                        order_side=SIDE_SELL,
-                        order_position_side="SHORT",
+                if order_sell and 'orderId' in order_sell:
+                    await self.delete_order(
                         db_order=db_order_sell,
-                    )
-                )
-
-            if bot_config.consider_ma_for_open_order:
-                tasks = {}
-                if order_buy_create_task:
-                    tasks['buy'] = order_buy_create_task
-                if order_sell_create_task:
-                    tasks['sell'] = order_sell_create_task
-
-                final_result_found = False
-
-                while tasks:
-                    done, pending = await asyncio.wait(
-                        tasks.values(),
-                        return_when=asyncio.FIRST_COMPLETED
+                        status='CANCELED',
+                        close_reason=f'Can\'t create buy order, cancel both'
                     )
 
-                    done_task = done.pop()
+                logging.info(f"❌ Один из ордеров не может быть создан, второй ордер был отменён")
+                isNeedToCancelOrders = True
+            if order_buy is None and order_sell is None:
+                # await asyncio.sleep(60)
+                logging.info(f"Both orders was canceled")
+                isNeedToCancelOrders = True
 
-                    try:
-                        result = done_task.result()
-                    except asyncio.CancelledError:
-                        result = None
+            waiting_orders = [
+                {
+                    'db_order': db_order_buy,
+                    'exchange_order': order_buy,
+                },
+                {
+                    'db_order': db_order_sell,
+                    'exchange_order': order_sell,
+                },
+            ]
 
-                    if result is not None and not final_result_found:
-                        final_result_found = True
+            wait_for_order = await self._wait_until_order_activated(bot_config, waiting_orders)
+            if wait_for_order['timeout_missed']:
+                logging.info(f"A minute has passed, entry conditions have not been met")
+                isNeedToCancelOrders = True
 
-                        if done_task == order_buy_create_task:
-                            order_buy = result
-                        else:
-                            order_sell = result
-
-                        for task in pending:
-                            task.cancel()
-
-                    for k, v in list(tasks.items()):
-                        if v == done_task:
-                            del tasks[k]
-                            break
-
-                for task in [order_buy_create_task, order_sell_create_task]:
-                    if task.done() and not task.cancelled():
-                        continue
-
-                    if task.cancelled():
-                        if task == order_buy_create_task and order_buy is None:
-                            order_buy = None
-                        elif task == order_sell_create_task and order_sell is None:
-                            order_sell = None
-                        continue
-
-                    try:
-                        await task
-                    except asyncio.CancelledError:
-                        if task == order_buy_create_task and order_buy is None:
-                            order_buy = None
-                        elif task == order_sell_create_task and order_sell is None:
-                            order_sell = None
+            if wait_for_order['first_order_updating_data']['c'] == db_order_buy.client_order_id:
+                first_order = db_order_buy
+                second_order = db_order_sell
             else:
-                tasks = []
-                if order_buy_create_task:
-                    tasks.append(order_buy_create_task)
-                if order_sell_create_task:
-                    tasks.append(order_sell_create_task)
+                first_order = db_order_sell
+                second_order = db_order_buy
 
-                if tasks:
-                    results = await asyncio.gather(*tasks)
-
-                    for task, result in zip(tasks, results):
-                        if task == order_buy_create_task:
-                            order_buy = result
-                        elif task == order_sell_create_task:
-                            order_sell = result
-
-        logging.info(
-            f"order_buy: {order_buy}\n\n"
-            f"order_sell: {order_sell}\n"
-        )
+            if not isNeedToCancelOrders:
+                break
 
         return {
-            'order_buy': order_buy,
-            'order_sell': order_sell,
+            'first_order': first_order,
+            'second_order': second_order,
         }
 
     async def create_order(
@@ -1509,7 +1522,7 @@ class BinanceBot(Command):
                     raise
 
     async def _wait_until_order_activated(self, bot_config, waiting_orders):
-        timeout_missed = True
+        timeout_missed = False
         first_order_updating_data = None
 
         wait_minutes = 1
@@ -1526,9 +1539,9 @@ class BinanceBot(Command):
                 timeout=timeout
             )
         except asyncio.TimeoutError:
-            timeout_missed = False
+            timeout_missed = True
 
-        if not timeout_missed:
+        if timeout_missed:
             for waiting_order in waiting_orders:
                 db_order = waiting_order['db_order']
                 exchange_order = waiting_order['exchange_order']
@@ -1545,7 +1558,7 @@ class BinanceBot(Command):
         }
 
     async def _wait_until_order_filled(self, bot_config, db_order):
-        timeout_missed = True
+        timeout_missed = False
         first_order_updating_data = None
 
         wait_minutes = 1
@@ -1562,13 +1575,13 @@ class BinanceBot(Command):
                 timeout=timeout
             )
         except asyncio.TimeoutError:
-            timeout_missed = False
+            timeout_missed = True
 
-        if not timeout_missed:
+        if timeout_missed:
             await self.delete_order(
                 db_order=db_order,
                 status='CANCELED',
-                close_reason=f'A minute has passed, order did\'nt fill'
+                close_reason=f'A minute has passed, order didn\'t fill'
             )
 
         return {
