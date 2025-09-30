@@ -308,29 +308,6 @@ class BinanceBot(Command):
         )
 
         first_order = created_orders['first_order']
-        second_order = created_orders['second_order']
-
-        delete_task = asyncio.create_task(
-            self.delete_second_order(second_order)
-        )
-
-        wait_filled_task = asyncio.create_task(
-            self._wait_until_order_filled(bot_config, first_order)
-        )
-
-        wait_db_commit_task = asyncio.create_task(
-            self._db_commit()
-        )
-
-        wait_filled = await wait_filled_task
-        if wait_filled['timeout_missed']:
-            logging.info(f"A minute has passed, order didn\'t fill")
-            await delete_task
-            await wait_db_commit_task
-            return
-
-        # logging.info(f"✅ Первый ордер получен: {wait_for_order['first_order_updating_data']}")
-        logging.info(f"✅ Первый ордер получен")
 
         if bot_config.consider_ma_for_close_order:
             close_order_by_ma_task = asyncio.create_task(
@@ -343,7 +320,6 @@ class BinanceBot(Command):
             )
             await setting_sl_sw_to_order_task
 
-        await delete_task
         await self.close_all_open_positions()
         self.order_update_listener.stop()
         await self._db_commit()
@@ -421,9 +397,6 @@ class BinanceBot(Command):
         symbol, tick_size, lot_size, max_price, min_price, max_qty, min_qty,
         db_order_buy, db_order_sell
     ):
-        first_order = None
-        second_order = None
-
         while True:
             order_buy = None
             order_sell = None
@@ -644,13 +617,31 @@ class BinanceBot(Command):
                 first_order = db_order_sell
                 second_order = db_order_buy
 
+            delete_task = asyncio.create_task(
+                self.delete_second_order(second_order)
+            )
+
+            wait_filled_task = asyncio.create_task(
+                self._wait_until_order_filled(bot_config, first_order)
+            )
+
+            wait_db_commit_task = asyncio.create_task(
+                self._db_commit()
+            )
+
+            wait_filled = await wait_filled_task
+            if wait_filled['timeout_missed']:
+                logging.info(f"A minute has passed, order didn\'t fill")
+                isNeedToCancelOrders = True
+
+            await delete_task
+            await wait_db_commit_task
+
             if not isNeedToCancelOrders:
+                logging.info(f"✅ Первый ордер получен: {wait_for_order['first_order_updating_data']}")
                 break
 
-        return {
-            'first_order': first_order,
-            'second_order': second_order,
-        }
+        return first_order
 
     async def create_order(
         self, balanceUSDT, bot_config,
