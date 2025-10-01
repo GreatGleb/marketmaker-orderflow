@@ -277,8 +277,8 @@ class BinanceBot(Command):
             return
 
         # temporarily
-        if balanceUSDT > 10:
-            balanceUSDT = Decimal(10)
+        # if balanceUSDT > 10:
+        #     balanceUSDT = Decimal(10)
 
         if not self.is_prod:
             balanceUSDT = 100
