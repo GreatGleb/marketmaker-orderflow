@@ -625,6 +625,7 @@ class BinanceBot(Command):
             if wait_for_order['timeout_missed']:
                 logging.info(f"A minute has passed, entry conditions have not been met")
                 isNeedToCancelOrders = True
+            logging.info(f"wait_for_order['first_order_updating_data'] {wait_for_order}")
 
             if wait_for_order['first_order_updating_data']['c'] == db_order_buy.client_order_id:
                 first_order = db_order_buy
