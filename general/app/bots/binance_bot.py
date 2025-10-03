@@ -179,25 +179,25 @@ class BinanceBot(Command):
 
         logging.info(f'refer_bot: {refer_bot}')
         if not refer_bot:
-            # logging.info('not refer_bot')
-            # await asyncio.sleep(60)
-            # return
-            refer_bot = {
-                'id': 130,
-                'symbol': 'ADAUSDT',
-                'stop_success_ticks': 30,
-                'stop_loss_ticks': 70,
-                'start_updown_ticks': 5,
-                'stop_win_percents': '0',
-                'stop_loss_percents': '0',
-                'start_updown_percents': '0',
-                'min_timeframe_asset_volatility': '0',
-                'time_to_wait_for_entry_price_to_open_order_in_minutes': '0.08',
-                'consider_ma_for_open_order': False,
-                'consider_ma_for_close_order': False,
-                'ma_number_of_candles_for_open_order': '0',
-                'ma_number_of_candles_for_close_order': '0'
-            }
+            logging.info('not refer_bot')
+            await asyncio.sleep(60)
+            return
+            # refer_bot = {
+            #     'id': 130,
+            #     'symbol': 'ADAUSDT',
+            #     'stop_success_ticks': 30,
+            #     'stop_loss_ticks': 70,
+            #     'start_updown_ticks': 5,
+            #     'stop_win_percents': '0',
+            #     'stop_loss_percents': '0',
+            #     'start_updown_percents': '0',
+            #     'min_timeframe_asset_volatility': '0',
+            #     'time_to_wait_for_entry_price_to_open_order_in_minutes': '0.08',
+            #     'consider_ma_for_open_order': False,
+            #     'consider_ma_for_close_order': False,
+            #     'ma_number_of_candles_for_open_order': '0',
+            #     'ma_number_of_candles_for_close_order': '0'
+            # }
 
         if self.is_prod:
             # if refer_bot['consider_ma_for_open_order']:
@@ -625,9 +625,10 @@ class BinanceBot(Command):
             if wait_for_order['timeout_missed']:
                 logging.info(f"A minute has passed, entry conditions have not been met")
                 isNeedToCancelOrders = True
-            logging.info(f"wait_for_order['first_order_updating_data'] {wait_for_order}")
 
-            if wait_for_order['first_order_updating_data']['c'] == db_order_buy.client_order_id:
+            first_order_updating_data = wait_for_order.get('first_order_updating_data')
+
+            if first_order_updating_data is not None and first_order_updating_data.get('c') == db_order_buy.client_order_id:
                 first_order = db_order_buy
                 second_order = db_order_sell
             else:
