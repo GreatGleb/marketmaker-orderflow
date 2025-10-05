@@ -179,25 +179,25 @@ class BinanceBot(Command):
 
         logging.info(f'refer_bot: {refer_bot}')
         if not refer_bot:
-            logging.info('not refer_bot')
-            await asyncio.sleep(60)
-            return
-            # refer_bot = {
-            #     'id': 130,
-            #     'symbol': 'ADAUSDT',
-            #     'stop_success_ticks': 30,
-            #     'stop_loss_ticks': 70,
-            #     'start_updown_ticks': 5,
-            #     'stop_win_percents': '0',
-            #     'stop_loss_percents': '0',
-            #     'start_updown_percents': '0',
-            #     'min_timeframe_asset_volatility': '0',
-            #     'time_to_wait_for_entry_price_to_open_order_in_minutes': '0.08',
-            #     'consider_ma_for_open_order': False,
-            #     'consider_ma_for_close_order': False,
-            #     'ma_number_of_candles_for_open_order': '0',
-            #     'ma_number_of_candles_for_close_order': '0'
-            # }
+            # logging.info('not refer_bot')
+            # await asyncio.sleep(60)
+            # return
+            refer_bot = {
+                'id': 130,
+                'symbol': 'ADAUSDT',
+                'stop_success_ticks': 30,
+                'stop_loss_ticks': 70,
+                'start_updown_ticks': 5,
+                'stop_win_percents': '0',
+                'stop_loss_percents': '0',
+                'start_updown_percents': '0',
+                'min_timeframe_asset_volatility': '0',
+                'time_to_wait_for_entry_price_to_open_order_in_minutes': '0.08',
+                'consider_ma_for_open_order': False,
+                'consider_ma_for_close_order': False,
+                'ma_number_of_candles_for_open_order': '0',
+                'ma_number_of_candles_for_close_order': '0'
+            }
 
         if self.is_prod:
             # if refer_bot['consider_ma_for_open_order']:
@@ -309,7 +309,7 @@ class BinanceBot(Command):
             symbol=symbol,
         )
 
-        created_orders = await self.create_orders(
+        first_order = await self.create_orders(
             balanceUSDT=balanceUSDT099,
             bot_config=bot_config,
             symbol=symbol,
@@ -322,8 +322,6 @@ class BinanceBot(Command):
             db_order_buy=db_order_buy,
             db_order_sell=db_order_sell,
         )
-
-        first_order = created_orders['first_order']
 
         if bot_config.consider_ma_for_close_order:
             close_order_by_ma_task = asyncio.create_task(
