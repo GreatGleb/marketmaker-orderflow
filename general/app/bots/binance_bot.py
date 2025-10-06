@@ -766,7 +766,7 @@ class BinanceBot(Command):
                     else:
                         db_order.status = 'CANCELED'
                         db_order.close_reason = f'Binance error while creating order: {e}'
-                        logging.info(f'order quantity={order_quantity}')
+                        logging.info(f'balanceUSDT={(balanceUSDT/Decimal(0.99))}\norder quantity={order_quantity}\norder_stop_price={order_stop_price}')
                         logging.info(f'Binance error while creating order {creating_orders_type}: {e}')
                         break
                 except Exception as e:
