@@ -1669,14 +1669,22 @@ class BinanceBot(Command):
         precision = int(round(-math.log10(tick_size), 0))
         return precision
 
+    def _convert_number_to_string_by_precision(self, number: Decimal, tick_size: Decimal):
+        precision = self._get_precision_by_tick_size(tick_size)
+        rounded_number = f"{number:.{precision}f}"
+        return rounded_number
+
     def _calculate_quantity_for_order(self, amount: Decimal, price: Decimal, lot_size: Decimal):
         raw_quantity = amount / price
-        return self._round_price_for_order(raw_quantity, lot_size)
+        floored_quantity = math.floor(raw_quantity / lot_size) * lot_size
+        return self._convert_number_to_string_by_precision(floored_quantity, lot_size)
 
-    def _round_price_for_order(self, price: Decimal, tick_size: Decimal):
-        precision = self._get_precision_by_tick_size(tick_size)
-        rounded_price = f"{price:.{precision}f}"
-        return rounded_price
+    def _round_price_for_order(self, price: Decimal, tick_size: Decimal, side: str):
+        if side.upper() == "BUY":
+            rounded_price = math.ceil(price / tick_size) * tick_size
+        else:
+            rounded_price = math.floor(price / tick_size) * tick_size
+        return self._convert_number_to_string_by_precision(rounded_price, tick_size)
 
     async def get_klines(self, symbol, limit):
         klines = await self._safe_from_time_err_call_binance(
