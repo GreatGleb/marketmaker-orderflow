@@ -304,11 +304,6 @@ class BinanceBot(Command):
 
         balanceUSDT099 = Decimal(balanceUSDT) * Decimal(0.99)
 
-        db_order_buy, db_order_sell = await self._create_db_orders(
-            bot_config=bot_config,
-            symbol=symbol,
-        )
-
         first_order = await self.create_orders(
             balanceUSDT=balanceUSDT099,
             bot_config=bot_config,
@@ -319,8 +314,6 @@ class BinanceBot(Command):
             min_price=min_price,
             max_qty=max_qty,
             min_qty=min_qty,
-            db_order_buy=db_order_buy,
-            db_order_sell=db_order_sell,
         )
 
         if bot_config.consider_ma_for_close_order:
@@ -409,9 +402,17 @@ class BinanceBot(Command):
     async def create_orders(
         self, balanceUSDT, bot_config,
         symbol, tick_size, lot_size, max_price, min_price, max_qty, min_qty,
-        db_order_buy, db_order_sell
     ):
         while True:
+            logging.info(
+                "started creating orders"
+            )
+
+            db_order_buy, db_order_sell = await self._create_db_orders(
+                bot_config=bot_config,
+                symbol=symbol,
+            )
+
             order_buy = None
             order_sell = None
 
@@ -577,6 +578,7 @@ class BinanceBot(Command):
                                 order_sell = result
 
             logging.info(
+                "created db orders",
                 f"order_buy: {order_buy}\n\n"
                 f"order_sell: {order_sell}\n"
             )
