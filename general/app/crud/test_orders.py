@@ -35,7 +35,7 @@ class TestOrderCrud(BaseCrud[TestOrder]):
         return result.scalar_one_or_none()
 
     async def are_bots_currently_active(self):
-        since_timedelta = timedelta(minutes=5)
+        since_timedelta = timedelta(minutes=60)
 
         now = datetime.now(timezone.utc)
         time_ago = now - since_timedelta
