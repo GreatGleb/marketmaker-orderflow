@@ -609,50 +609,51 @@ class BinanceBot(Command):
                 logging.info(f"Both orders was canceled")
                 isNeedToCancelOrders = True
 
-            waiting_orders = [
-                {
-                    'db_order': db_order_buy,
-                    'exchange_order': order_buy,
-                },
-                {
-                    'db_order': db_order_sell,
-                    'exchange_order': order_sell,
-                },
-            ]
+            if not isNeedToCancelOrders:
+                waiting_orders = [
+                    {
+                        'db_order': db_order_buy,
+                        'exchange_order': order_buy,
+                    },
+                    {
+                        'db_order': db_order_sell,
+                        'exchange_order': order_sell,
+                    },
+                ]
 
-            wait_for_order = await self._wait_until_order_activated(bot_config, waiting_orders)
-            if wait_for_order['timeout_missed']:
-                logging.info(f"A minute has passed, entry conditions have not been met")
-                isNeedToCancelOrders = True
+                wait_for_order = await self._wait_until_order_activated(bot_config, waiting_orders)
+                if wait_for_order['timeout_missed']:
+                    logging.info(f"A minute has passed, entry conditions have not been met")
+                    isNeedToCancelOrders = True
 
-            first_order_updating_data = wait_for_order.get('first_order_updating_data')
+                first_order_updating_data = wait_for_order.get('first_order_updating_data')
 
-            if first_order_updating_data is not None and first_order_updating_data.get('c') == db_order_buy.client_order_id:
-                first_order = db_order_buy
-                second_order = db_order_sell
-            else:
-                first_order = db_order_sell
-                second_order = db_order_buy
+                if first_order_updating_data is not None and first_order_updating_data.get('c') == db_order_buy.client_order_id:
+                    first_order = db_order_buy
+                    second_order = db_order_sell
+                else:
+                    first_order = db_order_sell
+                    second_order = db_order_buy
 
-            delete_task = asyncio.create_task(
-                self.delete_second_order(second_order)
-            )
+                delete_task = asyncio.create_task(
+                    self.delete_second_order(second_order)
+                )
 
-            wait_filled_task = asyncio.create_task(
-                self._wait_until_order_filled(bot_config, first_order)
-            )
+                wait_filled_task = asyncio.create_task(
+                    self._wait_until_order_filled(bot_config, first_order)
+                )
 
-            wait_db_commit_task = asyncio.create_task(
-                self._db_commit()
-            )
+                wait_db_commit_task = asyncio.create_task(
+                    self._db_commit()
+                )
 
-            wait_filled = await wait_filled_task
-            if wait_filled['timeout_missed']:
-                logging.info(f"A minute has passed, order didn\'t fill")
-                isNeedToCancelOrders = True
+                wait_filled = await wait_filled_task
+                if wait_filled['timeout_missed']:
+                    logging.info(f"A minute has passed, order didn\'t fill")
+                    isNeedToCancelOrders = True
 
-            await delete_task
-            await wait_db_commit_task
+                await delete_task
+                await wait_db_commit_task
 
             if not isNeedToCancelOrders:
                 logging.info(f"✅ Первый ордер получен: {wait_for_order['first_order_updating_data']}")
@@ -1468,10 +1469,10 @@ class BinanceBot(Command):
 
         if db_order.start_updown_ticks:
             entry_price_buy = initial_price + db_order.start_updown_ticks * tick_size
-            entry_price_buy_str = self._round_price_for_order(price=entry_price_buy, tick_size=tick_size)
+            entry_price_buy_str = self._round_price_for_order(price=entry_price_buy, tick_size=tick_size, side='BUY')
 
             entry_price_sell = initial_price - db_order.start_updown_ticks * tick_size
-            entry_price_sell_str = self._round_price_for_order(price=entry_price_sell, tick_size=tick_size)
+            entry_price_sell_str = self._round_price_for_order(price=entry_price_sell, tick_size=tick_size, side='SELL')
 
             if any([
                 entry_price_buy > max_price,
