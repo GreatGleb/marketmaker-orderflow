@@ -578,8 +578,7 @@ class BinanceBot(Command):
                                 order_sell = result
 
             logging.info(
-                "created db orders",
-                f"order_buy: {order_buy}\n\n"
+                f"created db orders:\norder_buy: {order_buy}\n\n"
                 f"order_sell: {order_sell}\n"
             )
 
@@ -708,6 +707,7 @@ class BinanceBot(Command):
             except BinanceAPIException as e:
                 db_order.status = 'CANCELED'
                 db_order.close_reason = f'Binance error while creating order: {e}'
+                logging.info(f'order quantity={order_quantity}')
                 logging.info(f'Binance error while creating order {creating_orders_type}: {e}')
             except Exception as e:
                 db_order.status = 'CANCELED'
