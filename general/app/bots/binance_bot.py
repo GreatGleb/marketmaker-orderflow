@@ -183,28 +183,28 @@ class BinanceBot(Command):
             await asyncio.sleep(60)
             return
 
-        refer_bot = {
-            'id': 130,
-            'symbol': 'ADAUSDT',
-            'stop_success_ticks': 10,
-            'stop_loss_ticks': 10,
-            'start_updown_ticks': 5,
-            'stop_win_percents': '0',
-            'stop_loss_percents': '0',
-            'start_updown_percents': '0',
-            'min_timeframe_asset_volatility': '0',
-            # 'time_to_wait_for_entry_price_to_open_order_in_minutes': '0.08',
-            'time_to_wait_for_entry_price_to_open_order_in_minutes': '1',
-            'consider_ma_for_open_order': False,
-            'consider_ma_for_close_order': False,
-            'ma_number_of_candles_for_open_order': '0',
-            'ma_number_of_candles_for_close_order': '0'
-        }
+        # refer_bot = {
+        #     'id': 130,
+        #     'symbol': 'ADAUSDT',
+        #     'stop_success_ticks': 10,
+        #     'stop_loss_ticks': 10,
+        #     'start_updown_ticks': 5,
+        #     'stop_win_percents': '0',
+        #     'stop_loss_percents': '0',
+        #     'start_updown_percents': '0',
+        #     'min_timeframe_asset_volatility': '0',
+        #     # 'time_to_wait_for_entry_price_to_open_order_in_minutes': '0.08',
+        #     'time_to_wait_for_entry_price_to_open_order_in_minutes': '1',
+        #     'consider_ma_for_open_order': False,
+        #     'consider_ma_for_close_order': False,
+        #     'ma_number_of_candles_for_open_order': '0',
+        #     'ma_number_of_candles_for_close_order': '0'
+        # }
         logging.info(f'refer_bot: {refer_bot}')
-        # if not refer_bot:
-            # logging.info('not refer_bot')
-            # await asyncio.sleep(60)
-            # return
+        if not refer_bot:
+            logging.info('not refer_bot')
+            await asyncio.sleep(60)
+            return
 
         if self.is_prod:
             # if refer_bot['consider_ma_for_open_order']:
@@ -1165,10 +1165,10 @@ class BinanceBot(Command):
 
         while db_order.close_time is None:
             updated_price = await self.price_provider.get_price(symbol=db_order.symbol)
-            last_price = float(self.binance_client.futures_symbol_ticker(symbol=db_order.symbol)['price'])
-            mark_price = float(self.binance_client.futures_mark_price(symbol=db_order.symbol)['markPrice'])
-
-            logging.info(f'\nopen_price: {db_order.open_price}, close_not_lose_price: {close_not_lose_price},\nredis price: {updated_price}, last price: {last_price}, mark price: {mark_price}')
+            # last_price = float(self.binance_client.futures_symbol_ticker(symbol=db_order.symbol)['price'])
+            # mark_price = float(self.binance_client.futures_mark_price(symbol=db_order.symbol)['markPrice'])
+            #
+            # logging.info(f'\nopen_price: {db_order.open_price}, close_not_lose_price: {close_not_lose_price},\nredis price: {updated_price}, last price: {last_price}, mark price: {mark_price}')
 
             is_need_so_set_new_sl_sw = False
 

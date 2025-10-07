@@ -92,10 +92,10 @@ class UserDataWebSocketClient:
         logging.info(
             " | ".join(
                 [
-                    f"Символ: {order.get('s')}",
+                    f"Статус: {order.get('X')}",
                     f"ClientOrderID: {order.get('c')}",
                     f"OrderID: {order.get('i')}",
-                    f"Статус: {order.get('X')}",
+                    f"Символ: {order.get('s')}",
                     f"Событие: {order.get('x')}",
                     f"Тип: {order.get('o')}",
                     f"Side: {order.get('S')}",
