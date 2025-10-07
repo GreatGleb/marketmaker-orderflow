@@ -1419,7 +1419,7 @@ class BinanceBot(Command):
                 type=FUTURE_ORDER_TYPE_TRAILING_STOP_MARKET,
                 quantity=db_order.asset_quantity,
                 callbackRate=callback['binance_callback_rate'],
-                stopPrice=activation_price,
+                activationPrice=activation_price,
                 reduceOnly=True,
                 newClientOrderId=trailing_order.client_order_id
             )
@@ -1432,7 +1432,7 @@ class BinanceBot(Command):
                 type=FUTURE_ORDER_TYPE_TRAILING_STOP_MARKET,
                 quantity=db_order.asset_quantity,
                 callbackRate=callback['binance_callback_rate'],
-                stopPrice=activation_price,
+                activationPrice=activation_price,
                 newClientOrderId=trailing_order.client_order_id
             )
 
