@@ -1214,6 +1214,7 @@ class BinanceBot(Command):
                     await self.create_new_sl_sw_order_binance_trailing(
                         db_order=db_order,
                         sl_sw_params=sl_sw_params,
+                        tick_size=tick_size,
                         client_order_id=current_stop_order_name,
                         stop_type=current_stop_type
                     )
@@ -1311,6 +1312,7 @@ class BinanceBot(Command):
                     await self.create_new_sl_sw_order_binance_trailing(
                         db_order=db_order,
                         sl_sw_params=sl_sw_params,
+                        tick_size=tick_size,
                         client_order_id=current_stop_order_name,
                         stop_type=current_stop_type
                     )
@@ -1382,7 +1384,7 @@ class BinanceBot(Command):
                         deleting_order_id=trailing_order.client_order_id
                     )
 
-    async def create_new_sl_sw_order_binance_trailing(self, db_order, sl_sw_params, client_order_id, stop_type):
+    async def create_new_sl_sw_order_binance_trailing(self, db_order, sl_sw_params, tick_size, client_order_id, stop_type):
         trailing_order = MarketOrder(
             symbol=db_order.symbol,
             side=sl_sw_params['side'],
@@ -1399,6 +1401,14 @@ class BinanceBot(Command):
         else:
             callback = sl_sw_params['sl']
 
+        updated_price = await self.price_provider.get_price(symbol=db_order.symbol)
+        if db_order.side == 'BUY':
+            activation_price = Decimal(updated_price * 0.998)
+        else:
+            activation_price = Decimal(updated_price * 1.002)
+
+        activation_price = self._round_price_for_order(activation_price, tick_size, db_order.side)
+
         try:
             await self._safe_from_time_err_call_binance(
                 self.binance_client.futures_create_order,
@@ -1408,6 +1418,7 @@ class BinanceBot(Command):
                 type=FUTURE_ORDER_TYPE_TRAILING_STOP_MARKET,
                 quantity=db_order.asset_quantity,
                 callbackRate=callback['binance_callback_rate'],
+                stopPrice=activation_price,
                 reduceOnly=True,
                 newClientOrderId=trailing_order.client_order_id
             )
@@ -1420,6 +1431,7 @@ class BinanceBot(Command):
                 type=FUTURE_ORDER_TYPE_TRAILING_STOP_MARKET,
                 quantity=db_order.asset_quantity,
                 callbackRate=callback['binance_callback_rate'],
+                stopPrice=activation_price,
                 newClientOrderId=trailing_order.client_order_id
             )
 
