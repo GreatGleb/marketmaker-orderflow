@@ -1403,9 +1403,9 @@ class BinanceBot(Command):
 
         updated_price = await self.price_provider.get_price(symbol=db_order.symbol)
         if db_order.side == 'BUY':
-            activation_price = Decimal(updated_price * 0.998)
+            activation_price = Decimal(updated_price * Decimal(0.998))
         else:
-            activation_price = Decimal(updated_price * 1.002)
+            activation_price = Decimal(updated_price * Decimal(1.002))
 
         activation_price = self._round_price_for_order(activation_price, tick_size, db_order.side)
 
