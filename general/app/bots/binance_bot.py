@@ -1402,13 +1402,13 @@ class BinanceBot(Command):
         else:
             callback = sl_sw_params['sl']
 
-        updated_price = await self.price_provider.get_price(symbol=db_order.symbol)
-        if db_order.side == 'BUY':
-            activation_price = Decimal(updated_price * Decimal(0.998))
-        else:
-            activation_price = Decimal(updated_price * Decimal(1.002))
-
-        activation_price = self._round_price_for_order(activation_price, tick_size, db_order.side)
+        # updated_price = await self.price_provider.get_price(symbol=db_order.symbol)
+        # if db_order.side == 'BUY':
+        #     activation_price = Decimal(updated_price * Decimal(0.998))
+        # else:
+        #     activation_price = Decimal(updated_price * Decimal(1.002))
+        #
+        # activation_price = self._round_price_for_order(activation_price, tick_size, db_order.side)
 
         try:
             await self._safe_from_time_err_call_binance(
@@ -1419,7 +1419,6 @@ class BinanceBot(Command):
                 type=FUTURE_ORDER_TYPE_TRAILING_STOP_MARKET,
                 quantity=db_order.asset_quantity,
                 callbackRate=callback['binance_callback_rate'],
-                activationPrice=activation_price,
                 reduceOnly=True,
                 newClientOrderId=trailing_order.client_order_id
             )
@@ -1432,7 +1431,6 @@ class BinanceBot(Command):
                 type=FUTURE_ORDER_TYPE_TRAILING_STOP_MARKET,
                 quantity=db_order.asset_quantity,
                 callbackRate=callback['binance_callback_rate'],
-                activationPrice=activation_price,
                 newClientOrderId=trailing_order.client_order_id
             )
 
