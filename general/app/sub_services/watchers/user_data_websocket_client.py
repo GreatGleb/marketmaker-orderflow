@@ -89,14 +89,31 @@ class UserDataWebSocketClient:
 
     async def handle_order_update(self, order):
         logging.info("📦 Обновление ордера:")
-        logging.info(f"  order: {order}")
-        logging.info(f"  id: {order['c']}")
-        logging.info(f"  Статус: {order['X']}")
-        logging.info(f"  Тип: {order['o']}")
-        logging.info(f"  Side: {order['S']}")
-        logging.info(f"  Цена активации: {order.get('sp', '—')}")
-        logging.info(f"  Цена последней сделки: {order.get('L', '—')}")
-        logging.info(f"  Triggered: {order.get('ps', '—')}")
+        logging.info(
+            " | ".join(
+                [
+                    f"Символ: {order.get('s')}",
+                    f"ClientOrderID: {order.get('c')}",
+                    f"OrderID: {order.get('i')}",
+                    f"Статус: {order.get('X')}",
+                    f"Событие: {order.get('x')}",
+                    f"Тип: {order.get('o')}",
+                    f"Side: {order.get('S')}",
+                    f"PositionSide: {order.get('ps')}",
+                    f"Кол-во: {order.get('q')}",
+                    f"Цена: {order.get('p')}",
+                    f"StopPrice: {order.get('sp')}",
+                    f"ActivationPrice(AP): {order.get('AP')}",
+                    f"CallbackRate: {order.get('cr')}",
+                    f"LastPrice: {order.get('L')}",
+                    f"reduceOnly: {order.get('R')}",
+                    f"PostOnly: {order.get('pP')}",
+                    f"RealizedProfit: {order.get('rp')}",
+                    f"MarginType: {order.get('pm')}",
+                    f"Time: {order.get('T')}",
+                ]
+            )
+        )
 
         if order['c'] not in self.waiting_orders_id:
             return

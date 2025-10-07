@@ -1164,6 +1164,11 @@ class BinanceBot(Command):
 
         while db_order.close_time is None:
             updated_price = await self.price_provider.get_price(symbol=db_order.symbol)
+            last_price = float(self.binance_client.ticker_price(symbol=db_order.symbol)['price'])
+            mark_price = float(self.binance_client.futures_mark_price(symbol=db_order.symbol)['markPrice'])
+
+            logging.info(f'\nopen_price: {db_order.open_price}, close_not_lose_price: {close_not_lose_price},\nredis price: {updated_price}, last price: {last_price}, mark price: {mark_price}')
+
             is_need_so_set_new_sl_sw = False
 
             if db_order.side == 'BUY':
