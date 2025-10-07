@@ -186,8 +186,8 @@ class BinanceBot(Command):
         refer_bot = {
             'id': 130,
             'symbol': 'ADAUSDT',
-            'stop_success_ticks': 30,
-            'stop_loss_ticks': 70,
+            'stop_success_ticks': 10,
+            'stop_loss_ticks': 10,
             'start_updown_ticks': 5,
             'stop_win_percents': '0',
             'stop_loss_percents': '0',
