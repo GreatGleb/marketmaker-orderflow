@@ -12,7 +12,9 @@ from dotenv import load_dotenv
 UTC = timezone.utc
 
 class UserDataWebSocketClient:
-    def __init__(self, binance_client, waiting_orders):
+    def __init__(self, binance_client, waiting_orders=None):
+        if waiting_orders is None:
+            waiting_orders = []
         self.client = binance_client
         self.listen_key = self.client.futures_stream_get_listen_key()
 
@@ -87,13 +89,14 @@ class UserDataWebSocketClient:
 
     async def handle_order_update(self, order):
         logging.info("📦 Обновление ордера:")
+        logging.info(f"  order: {order}")
         logging.info(f"  id: {order['c']}")
         logging.info(f"  Статус: {order['X']}")
-        # logging.info(f"  Тип: {order['o']}")
-        # logging.info(f"  Side: {order['S']}")
-        # logging.info(f"  Цена активации: {order.get('sp', '—')}")
-        # logging.info(f"  Цена последней сделки: {order.get('L', '—')}")
-        # logging.info(f"  Triggered: {order.get('ps', '—')}")
+        logging.info(f"  Тип: {order['o']}")
+        logging.info(f"  Side: {order['S']}")
+        logging.info(f"  Цена активации: {order.get('sp', '—')}")
+        logging.info(f"  Цена последней сделки: {order.get('L', '—')}")
+        logging.info(f"  Triggered: {order.get('ps', '—')}")
 
         if order['c'] not in self.waiting_orders_id:
             return

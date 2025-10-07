@@ -85,6 +85,12 @@ class BinanceBot(Command):
         # time_sleep = 60*60
         # await asyncio.sleep(time_sleep)
 
+
+        self.order_update_listener = UserDataWebSocketClient(
+            self.binance_client
+        )
+        await self.order_update_listener.start()
+
         tasks = []
         logging.info('tasks')
 
@@ -391,11 +397,8 @@ class BinanceBot(Command):
         logging.info(db_order_buy.client_order_id)
         logging.info(db_order_sell.client_order_id)
 
-        self.order_update_listener = UserDataWebSocketClient(
-            self.binance_client,
-            waiting_orders=[db_order_buy, db_order_sell]
-        )
-        await self.order_update_listener.start()
+        self.order_update_listener.add_waiting_order(db_order_buy)
+        self.order_update_listener.add_waiting_order(db_order_sell)
 
         return db_order_buy, db_order_sell
 
