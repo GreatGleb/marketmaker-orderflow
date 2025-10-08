@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import time
 import traceback
 from collections import namedtuple
 
@@ -25,6 +26,8 @@ from app.dependencies import (
 )
 from app.db.base import DatabaseSessionManager
 from app.constants.commissions import COMMISSION_OPEN, COMMISSION_CLOSE
+from app.enums.event_type import StopReasonEvent
+from app.enums.trade_type import TradeType
 from app.sub_services.logic.market_setup import MarketDataBuilder
 from app.sub_services.logic.price_calculator import PriceCalculator
 from app.sub_services.watchers.price_provider import (
@@ -398,6 +401,8 @@ class StartTestBotsCommand(Command):
             if is_it_copy or bot_id == 1:
                 logging.info(f'wait for should_exit for {bot_id}')
 
+            just30sec_start_time = time.time()
+
             while not stop_event.is_set():
                 updated_price = await price_provider.get_price(symbol=symbol)
 
@@ -425,6 +430,20 @@ class StartTestBotsCommand(Command):
                             price_from_previous_step=price_from_previous_step,
                         )
                     )
+
+                just30sec_current_time = time.time()
+                just30sec_elapsed_time = just30sec_current_time - just30sec_start_time
+
+                if order.order_type == TradeType.BUY:
+                    price_diff_from_cnl = updated_price - close_not_lose_price
+                else:
+                    price_diff_from_cnl = close_not_lose_price - updated_price
+
+                diff_ticks = price_diff_from_cnl * tick_size
+
+                if diff_ticks < 10 and just30sec_elapsed_time >= 30:
+                    order.stop_reason_event = StopReasonEvent.STOP_LONG_LOSE.value
+                    break
 
                 if should_exit:
                     break
