@@ -511,10 +511,15 @@ class TestBot(BaseId):
         nullable=True,
         comment="The number of candles used to calculate the moving average (MA) for the order closing logic",
     )
-    copybot_v2_time_in_minutes: Mapped[Optional[Decimal]] = mapped_column(
+    copybot_v2_time_in_minutes: Mapped[Optional[Decimal]] = mapped_column(#copybot_v2_tracked_time_to_profit_copybot_v1_in_minutes
         types.Numeric,
         nullable=True,
         comment="For copy bot version 2 the time it takes for the copy bot v1 being monitored to be profitable",
+    )
+    use_trailing_stop: Mapped[Optional[bool]] = mapped_column(
+        types.Boolean,
+        nullable=True,
+        comment="True, если используются трейлинг-стопы; False, если используются фиксированные стоп-лоссы."
     )
 
     def clone(self):
