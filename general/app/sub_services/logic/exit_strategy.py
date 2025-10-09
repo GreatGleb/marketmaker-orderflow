@@ -7,7 +7,7 @@ from app.enums.event_type import StopReasonEvent
 class ExitStrategy:
 
     @staticmethod
-    async def check_exit_ticks_conditions(
+    async def check_exit_conditions_trailing(
         bot_config,
         price_calculator,
         tick_size,
@@ -64,6 +64,32 @@ class ExitStrategy:
                 return True, take_profit_price
 
         return False, take_profit_price
+
+    @staticmethod
+    async def check_exit_conditions(
+        order,
+        close_not_lose_price,
+        take_profit_price,
+        updated_price,
+    ):
+        if order.order_type == TradeType.BUY:
+            if updated_price <= order.stop_loss_price:
+                order.stop_reason_event = StopReasonEvent.STOP_LOOSED.value
+                return True
+
+            if close_not_lose_price < updated_price >= take_profit_price:
+                order.stop_reason_event = StopReasonEvent.STOP_WON.value
+                return True
+        else:
+            if updated_price >= order.stop_loss_price:
+                order.stop_reason_event = StopReasonEvent.STOP_LOOSED.value
+                return True
+
+            if close_not_lose_price > updated_price <= take_profit_price:
+                order.stop_reason_event = StopReasonEvent.STOP_WON.value
+                return True
+
+        return False
 
     @staticmethod
     async def check_exit_ma_conditions(

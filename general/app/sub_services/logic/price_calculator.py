@@ -16,14 +16,14 @@ class PriceCalculator:
             commission_open_cost = 1 + COMMISSION_OPEN
             commission_close_cost = 1 - COMMISSION_CLOSE
             base_take_profit = (
-                open_price * commission_open_cost - desired_net_profit_value
+                open_price * commission_open_cost + desired_net_profit_value
             )
             take_profit_price = base_take_profit / commission_close_cost
         else:
             commission_open_cost = 1 - COMMISSION_OPEN
             commission_close_cost = 1 + COMMISSION_CLOSE
             base_take_profit = (
-                open_price * commission_open_cost + desired_net_profit_value
+                open_price * commission_open_cost - desired_net_profit_value
             )
             take_profit_price = base_take_profit / commission_close_cost
 

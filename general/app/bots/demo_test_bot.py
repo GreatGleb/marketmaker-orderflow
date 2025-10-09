@@ -418,18 +418,28 @@ class StartTestBotsCommand(Command):
                         )
                     )
                 else:
-                    should_exit, take_profit_price = (
-                        await ExitStrategy.check_exit_ticks_conditions(
-                            bot_config=bot_config,
-                            price_calculator=PriceCalculator,
-                            tick_size=tick_size,
-                            order=order,
-                            close_not_lose_price=close_not_lose_price,
-                            take_profit_price=take_profit_price,
-                            updated_price=updated_price,
-                            price_from_previous_step=price_from_previous_step,
+                    if bot_config.use_trailing_stop:
+                        should_exit, take_profit_price = (
+                            await ExitStrategy.check_exit_conditions_trailing(
+                                bot_config=bot_config,
+                                price_calculator=PriceCalculator,
+                                tick_size=tick_size,
+                                order=order,
+                                close_not_lose_price=close_not_lose_price,
+                                take_profit_price=take_profit_price,
+                                updated_price=updated_price,
+                                price_from_previous_step=price_from_previous_step,
+                            )
                         )
-                    )
+                    else:
+                        should_exit = (
+                            await ExitStrategy.check_exit_conditions(
+                                order=order,
+                                close_not_lose_price=close_not_lose_price,
+                                take_profit_price=take_profit_price,
+                                updated_price=updated_price,
+                            )
+                        )
 
                 just30sec_current_time = time.time()
                 just30sec_elapsed_time = just30sec_current_time - just30sec_start_time
