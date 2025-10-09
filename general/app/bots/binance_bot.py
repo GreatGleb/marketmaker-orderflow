@@ -193,8 +193,8 @@ class BinanceBot(Command):
         #     'stop_loss_percents': '0',
         #     'start_updown_percents': '0',
         #     'min_timeframe_asset_volatility': '0',
-        #     # 'time_to_wait_for_entry_price_to_open_order_in_minutes': '0.08',
-        #     'time_to_wait_for_entry_price_to_open_order_in_minutes': '1',
+        #     # 'time_to_wait_for_entry_price_to_open_order_in_seconds': '1',
+        #     'time_to_wait_for_entry_price_to_open_order_in_seconds': '60',
         #     'consider_ma_for_open_order': False,
         #     'consider_ma_for_close_order': False,
         #     'ma_number_of_candles_for_open_order': '0',
@@ -228,7 +228,7 @@ class BinanceBot(Command):
                 stop_loss_percents = Decimal(refer_bot['stop_loss_percents']),
                 start_updown_percents = Decimal(refer_bot['start_updown_percents']),
                 min_timeframe_asset_volatility = refer_bot['min_timeframe_asset_volatility'],
-                time_to_wait_for_entry_price_to_open_order_in_minutes = refer_bot['time_to_wait_for_entry_price_to_open_order_in_minutes'],
+                time_to_wait_for_entry_price_to_open_order_in_seconds = refer_bot['time_to_wait_for_entry_price_to_open_order_in_seconds'],
                 consider_ma_for_open_order=refer_bot['consider_ma_for_open_order'],
                 consider_ma_for_close_order=refer_bot['consider_ma_for_close_order'],
             )
@@ -241,7 +241,7 @@ class BinanceBot(Command):
                 # stop_loss_ticks = 20,
                 # start_updown_ticks = 50,
                 # min_timeframe_asset_volatility = 3,
-                # time_to_wait_for_entry_price_to_open_order_in_minutes = 0.5,
+                # time_to_wait_for_entry_price_to_open_order_in_seconds = 0.5,
                 consider_ma_for_open_order=True,
                 consider_ma_for_close_order=True,
             )
@@ -1555,14 +1555,13 @@ class BinanceBot(Command):
         timeout_missed = False
         first_order_updating_data = None
 
-        wait_minutes = 1
+        wait_seconds = 1
 
-        if bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes:
-            wait_minutes = bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes
+        if bot_config.time_to_wait_for_entry_price_to_open_order_in_seconds:
+            wait_seconds = bot_config.time_to_wait_for_entry_price_to_open_order_in_seconds
 
         try:
-            timeout = Decimal(wait_minutes)
-            timeout = int(timeout * 60)
+            timeout = int(wait_seconds)
 
             first_order_updating_data = await asyncio.wait_for(
                 self._wait_activating_of_order(),
@@ -1591,14 +1590,13 @@ class BinanceBot(Command):
         timeout_missed = False
         first_order_updating_data = None
 
-        wait_minutes = 1
+        wait_seconds = 1
 
-        if bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes:
-            wait_minutes = bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes
+        if bot_config.wait_seconds:
+            wait_seconds = bot_config.time_to_wait_for_entry_price_to_open_order_in_seconds
 
         try:
-            timeout = Decimal(wait_minutes)
-            timeout = int(timeout * 60)
+            timeout = int(wait_seconds)
 
             first_order_updating_data = await asyncio.wait_for(
                 self._wait_filling_of_order(),

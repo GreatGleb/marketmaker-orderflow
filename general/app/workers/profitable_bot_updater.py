@@ -103,8 +103,8 @@ class ProfitableBotUpdaterCommand(Command):
                     "min_timeframe_asset_volatility": str(
                         refer_bot.min_timeframe_asset_volatility
                     ),
-                    "time_to_wait_for_entry_price_to_open_order_in_minutes": str(
-                        refer_bot.time_to_wait_for_entry_price_to_open_order_in_minutes
+                    "time_to_wait_for_entry_price_to_open_order_in_seconds": str(
+                        refer_bot.time_to_wait_for_entry_price_to_open_order_in_seconds
                         or 0
                     ),
                     "consider_ma_for_open_order": refer_bot.consider_ma_for_open_order,

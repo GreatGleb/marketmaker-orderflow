@@ -154,8 +154,8 @@ class StartTestBotsCommand(Command):
             stop_loss_percents=Decimal(refer_bot['stop_loss_percents']),
             start_updown_percents=Decimal(refer_bot['start_updown_percents']),
             min_timeframe_asset_volatility=refer_bot['min_timeframe_asset_volatility'],
-            time_to_wait_for_entry_price_to_open_order_in_minutes=Decimal(refer_bot[
-                'time_to_wait_for_entry_price_to_open_order_in_minutes'
+            time_to_wait_for_entry_price_to_open_order_in_seconds=Decimal(refer_bot[
+                'time_to_wait_for_entry_price_to_open_order_in_seconds'
             ]),
             consider_ma_for_open_order=bool(refer_bot['consider_ma_for_open_order']),
             consider_ma_for_close_order=bool(refer_bot['consider_ma_for_close_order']),
@@ -309,20 +309,14 @@ class StartTestBotsCommand(Command):
                     logging.info(f'waiting for {bot_id}')
 
                 try:
-                    wait_minutes = 1
+                    wait_seconds = 1
                     if bot_config.consider_ma_for_open_order:
-                        wait_minutes = 12 * 60
+                        wait_seconds = 12 * 60 * 60
 
-                    if bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes:
-                        wait_minutes = bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes
+                    if bot_config.time_to_wait_for_entry_price_to_open_order_in_seconds:
+                        wait_seconds = bot_config.time_to_wait_for_entry_price_to_open_order_in_seconds
 
-                    timeout = (
-                        Decimal(
-                            wait_minutes
-                        )
-                        * 60
-                    )
-                    timeout = int(timeout)
+                    timeout = int(wait_seconds)
                     price_watcher = PriceWatcher(redis=redis)
 
                     trade_type, entry_price = await asyncio.wait_for(
