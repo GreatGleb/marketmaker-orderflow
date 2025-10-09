@@ -189,6 +189,7 @@ async def create_bots():
             start_ticks_values = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 70, 80, 100]
             stop_lose_ticks_values = [20, 25, 30, 35, 40, 45, 50, 55, 60, 70, 80, 90, 150, 300, 450, 600, 850, 1000]
             stop_win_ticks_values = [5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 150, 300, 450]
+            use_trailing_values = [False, True]
             #
             # start_percents_values = [x * average_percent_for_1_tick for x in start_ticks_values]
             # stop_lose_percents_values = [x * average_percent_for_1_tick for x in stop_lose_ticks_values]
@@ -216,18 +217,20 @@ async def create_bots():
                         new_bots = []
                         for stop_win in stop_win_ticks_values:
                             # for min_tf in min_tf_volatility_values:
-                            for wait_min in wait_open_order_values:
-                                bot_data = {
-                                    "symbol": symbol,
-                                    "balance": Decimal("1000.0"),
-                                    "stop_success_ticks": stop_win,
-                                    "stop_loss_ticks": stop_lose,
-                                    "start_updown_ticks": start,
-                                    # "min_timeframe_asset_volatility": min_tf,
-                                    "time_to_wait_for_entry_price_to_open_order_in_minutes": wait_min,
-                                    "is_active": True,
-                                }
-                                new_bots.append(bot_data)
+                            for use_traling in use_trailing_values:
+                                for wait_min in wait_open_order_values:
+                                    bot_data = {
+                                        "symbol": symbol,
+                                        "balance": Decimal("1000.0"),
+                                        "stop_success_ticks": stop_win,
+                                        "stop_loss_ticks": stop_lose,
+                                        "start_updown_ticks": start,
+                                        # "min_timeframe_asset_volatility": min_tf,
+                                        "time_to_wait_for_entry_price_to_open_order_in_minutes": wait_min,
+                                        "use_trailing_stop": use_traling,
+                                        "is_active": True,
+                                    }
+                                    new_bots.append(bot_data)
 
                         await bot_crud.bulk_create(new_bots)
                         await session.commit()
