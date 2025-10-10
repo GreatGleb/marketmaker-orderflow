@@ -23,12 +23,12 @@ class ExitStrategy:
             open_price=updated_price,
             trade_type=order.order_type,
         )
-        new_sl_p = price_calculator.calculate_stop_lose_price(
-            stop_loss_ticks=bot_config.stop_loss_ticks,
-            tick_size=tick_size,
-            trade_type=order.order_type,
-            open_price=updated_price,
-        )
+        # new_sl_p = price_calculator.calculate_stop_lose_price(
+        #     stop_loss_ticks=bot_config.stop_loss_ticks,
+        #     tick_size=tick_size,
+        #     trade_type=order.order_type,
+        #     open_price=updated_price,
+        # )
 
         if order.order_type == TradeType.BUY:
             if (
@@ -36,8 +36,8 @@ class ExitStrategy:
                 and new_tk_p > take_profit_price
             ):
                 take_profit_price = new_tk_p
-            elif new_sl_p > order.stop_loss_price:
-                order.stop_loss_price = new_sl_p
+            # elif new_sl_p > order.stop_loss_price:
+            #     order.stop_loss_price = new_sl_p
 
             if updated_price <= order.stop_loss_price:
                 order.stop_reason_event = StopReasonEvent.STOP_LOOSED.value
@@ -52,8 +52,8 @@ class ExitStrategy:
                 and new_tk_p < take_profit_price
             ):
                 take_profit_price = new_tk_p
-            elif new_sl_p < order.stop_loss_price:
-                order.stop_loss_price = new_sl_p
+            # elif new_sl_p < order.stop_loss_price:
+            #     order.stop_loss_price = new_sl_p
 
             if updated_price >= order.stop_loss_price:
                 order.stop_reason_event = StopReasonEvent.STOP_LOOSED.value
