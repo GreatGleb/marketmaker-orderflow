@@ -64,13 +64,11 @@ class ProfitableBotUpdaterCommand(Command):
 
     @staticmethod
     async def get_bot_config_by_params(
-        bot_crud, tf_bot_ids, copy_bot_min_time_profitability_min
+        bot_crud, bot_ids
     ):
-        min_bot_ids = tf_bot_ids[copy_bot_min_time_profitability_min]
-
-        if min_bot_ids:
+        if bot_ids:
             refer_bot = await bot_crud.get_bot_by_id(
-                bot_id=min_bot_ids[0]
+                bot_id=bot_ids[0]
             )
 
             if refer_bot:
@@ -152,27 +150,61 @@ class ProfitableBotUpdaterCommand(Command):
         return ref_bot_config
 
     @staticmethod
-    async def get_profitable_bots_id_by_tf(
+    async def get_profitable_bots_id_by_timeframes(
         bot_crud, bot_profitability_timeframes,
+        check_24h_profitability=False,
         by_referral_bot_id=False,
     ):
         tf_bot_ids = {}
 
         for tf in bot_profitability_timeframes:
-            time_ago = timedelta(minutes=float(tf))
-
-            profits_data = await bot_crud.get_sorted_by_profit(
-                since=time_ago, just_not_copy_bots=True
+            tf_bot_ids[tf] = ProfitableBotUpdaterCommand.filter_profitable_bots_id(
+                bot_crud=bot_crud,
+                timeframe=tf,
+                check_24h_profitability=check_24h_profitability,
+                by_referral_bot_id=by_referral_bot_id,
             )
-            filtered_sorted = sorted(
-                [item for item in profits_data if item[1] > 0],
-                key=lambda x: x[1],
-                reverse=True,
-            )
-            tf_ids = [item[0] for item in filtered_sorted]
-            logging.info(f'profits_data: {len(tf_ids)}')
-            # tf_bot_ids[tf] = tf_ids
 
+        return tf_bot_ids
+
+    @staticmethod
+    async def get_profitable_bots_id_by_individual_params(
+        bot_crud,
+        bot_profitability_parameters,
+    ):
+        tf_bot_ids = {}
+
+        for bot_id, parameters in bot_profitability_parameters.items():
+            tf_bot_ids[bot_id] = ProfitableBotUpdaterCommand.filter_profitable_bots_id(
+                bot_crud=bot_crud,
+                timeframe=parameters["tf"],
+                check_24h_profitability=parameters["24h"],
+                by_referral_bot_id=parameters["by_ref"],
+            )
+
+        return tf_bot_ids
+
+    @staticmethod
+    async def filter_profitable_bots_id(
+        bot_crud,
+        timeframe,
+        check_24h_profitability=False,
+        by_referral_bot_id=False,
+    ):
+        time_ago = timedelta(minutes=float(timeframe))
+
+        profits_data = await bot_crud.get_sorted_by_profit(
+            since=time_ago, just_not_copy_bots=True
+        )
+        filtered_sorted = sorted(
+            [item for item in profits_data if item[1] > 0],
+            key=lambda x: x[1],
+            reverse=True,
+        )
+        tf_ids = [item[0] for item in filtered_sorted]
+        logging.info(f'profits_data: {len(tf_ids)}')
+
+        if check_24h_profitability:
             time_ago_24h = timedelta(hours=float(24))
             profits_data_24h = await bot_crud.get_sorted_by_profit(
                 since=time_ago_24h, just_not_copy_bots=True
@@ -184,25 +216,24 @@ class ProfitableBotUpdaterCommand(Command):
             )
             ids_24h = [item[0] for item in filtered_sorted_24h]
             ids_checked_24h = [item for item in tf_ids if item in ids_24h]
+            tf_ids = ids_checked_24h
 
-            tf_bot_ids[tf] = ids_checked_24h
+        if by_referral_bot_id:
+            profits_data_by_referral = await bot_crud.get_sorted_by_profit(
+                since=time_ago, just_not_copy_bots=True, by_referral_bot_id=True
+            )
+            logging.info(f'profits_data_by_referral: {len(profits_data_by_referral)}')
+            filtered_sorted_by_referral = sorted(
+                [item for item in profits_data_by_referral if item[1] > 0],
+                key=lambda x: x[1],
+                reverse=True,
+            )
+            tf_ids_by_referral = [item[0] for item in filtered_sorted_by_referral]
+            logging.info(f'tf_ids_by_referral: {len(tf_ids_by_referral)}')
+            ids_checked_by_referral = [item for item in tf_ids if item in tf_ids_by_referral]
+            tf_ids = ids_checked_by_referral
 
-            if by_referral_bot_id:
-                profits_data_by_referral = await bot_crud.get_sorted_by_profit(
-                    since=time_ago, just_not_copy_bots=True, by_referral_bot_id=True
-                )
-                logging.info(f'profits_data_by_referral: {len(profits_data_by_referral)}')
-                filtered_sorted_by_referral = sorted(
-                    [item for item in profits_data_by_referral if item[1] > 0],
-                    key=lambda x: x[1],
-                    reverse=True,
-                )
-                tf_ids_by_referral = [item[0] for item in filtered_sorted_by_referral]
-                logging.info(f'tf_ids_by_referral: {len(tf_ids_by_referral)}')
-                ids_checked_by_referral = [item for item in tf_bot_ids[tf] if item in tf_ids_by_referral]
-                tf_bot_ids[tf] = ids_checked_by_referral
-
-        return tf_bot_ids
+        return tf_ids
 
     async def command(
         self,
@@ -211,30 +242,34 @@ class ProfitableBotUpdaterCommand(Command):
         bot_crud: TestBotCrud = resolve_crud(TestBotCrud),
     ):
         first_run_completed = False
-        bot_profitability_timeframes = []
+        bot_profitability_params = {}
 
         while not self.stop_event.is_set():
+            bots = await bot_crud.get_copybots()
+
             if not first_run_completed:
                 first_run_completed = True
 
-                bot_profitability_timeframes = (
-                    await bot_crud.get_unique_copy_bot_min_time_profitability()
-                )
-                logging.info(bot_profitability_timeframes)
-                logging.info('bot_profitability_timeframes')
+                for bot in bots:
+                    params = {
+                        'tf': bot.copy_bot_min_time_profitability_min,
+                        '24h': bot.copybot_v1_check_for_24h_profitability,
+                        'by_ref': bot.copybot_v1_check_for_referral_bot_profitability
+                    }
+                    bot_profitability_params[bot.id] = params
 
-            tf_bot_ids = await self.get_profitable_bots_id_by_tf(
+                logging.info(bot_profitability_params)
+                logging.info('bot_profitability_params')
+
+            tf_bot_ids = await self.get_profitable_bots_id_by_individual_params(
                 bot_crud=bot_crud,
-                bot_profitability_timeframes=bot_profitability_timeframes,
+                bot_profitability_parameters=bot_profitability_params,
             )
-
-            bots = await bot_crud.get_bots_with_profitability_time()
 
             for bot in bots:
                 refer_bot_dict = await self.get_bot_config_by_params(
                     bot_crud=bot_crud,
-                    tf_bot_ids=tf_bot_ids,
-                    copy_bot_min_time_profitability_min=bot.copy_bot_min_time_profitability_min,
+                    bot_ids=tf_bot_ids[bot.id]
                 )
                 logging.info(refer_bot_dict)
                 logging.info(f"copy_bot_{bot.id}")

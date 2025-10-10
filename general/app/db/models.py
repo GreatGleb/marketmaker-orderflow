@@ -521,6 +521,16 @@ class TestBot(BaseId):
         nullable=True,
         comment="True, если используются трейлинг-стопы; False, если используются фиксированные стоп-лоссы."
     )
+    copybot_v1_check_for_24h_profitability: Mapped[bool] = mapped_column(
+        types.Boolean,
+        default=False,
+        comment="Checks whether bots are profitable over the last 24 hours",
+    )
+    copybot_v1_check_for_referral_bot_profitability: Mapped[bool] = mapped_column(
+        types.Boolean,
+        default=False,
+        comment="Checks whether bots are profitable when working from copybots",
+    )
 
     def clone(self):
         mapper = inspect(self).mapper

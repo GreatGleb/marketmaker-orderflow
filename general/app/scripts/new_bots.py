@@ -241,18 +241,24 @@ async def create_bots():
         if 1:
             copy_bot_min_time_profitability_min_values = [10, 20, 30, 40, 50, 60, 120, 180, 240, 360, 420, 480, 540,
                                                           600, 660, 720, 1440]
+            copy_bot_filter_24h_values = [False, True]
+            copy_bot_filter_referrals_values = [False, True]
 
             try:
                 new_bots = []
                 for min_time in copy_bot_min_time_profitability_min_values:
-                    bot_data = {
-                        "symbol": '',
-                        "balance": Decimal("1000.0"),
-                        "copy_bot_min_time_profitability_min": min_time,
-                        # "consider_ma_for_open_order": True,
-                        # "consider_ma_for_close_order": True,
-                    }
-                    new_bots.append(bot_data)
+                    for filter_24h in copy_bot_filter_24h_values:
+                        for filter_ref in copy_bot_filter_referrals_values:
+                            bot_data = {
+                                "symbol": '',
+                                "balance": Decimal("1000.0"),
+                                "copy_bot_min_time_profitability_min": min_time,
+                                "copybot_v1_check_for_24h_profitability": filter_24h,
+                                "copybot_v1_check_for_referral_bot_profitability": filter_ref,
+                                # "consider_ma_for_open_order": True,
+                                # "consider_ma_for_close_order": True,
+                            }
+                            new_bots.append(bot_data)
 
                 await bot_crud.bulk_create(new_bots)
                 await session.commit()

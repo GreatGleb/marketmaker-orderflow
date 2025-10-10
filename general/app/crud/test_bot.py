@@ -101,7 +101,7 @@ class TestBotCrud(BaseCrud[TestBot]):
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
-    async def get_bots_with_profitability_time(self):
+    async def get_copybots(self):
         stmt = select(TestBot).where(
             TestBot.copy_bot_min_time_profitability_min.is_not(None)
         )

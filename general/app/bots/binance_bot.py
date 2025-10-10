@@ -138,20 +138,20 @@ class BinanceBot(Command):
             async with dsm.get_session() as session:
                 bot_crud = TestBotCrud(session)
 
-                tf_bot_ids = await ProfitableBotUpdaterCommand.get_profitable_bots_id_by_tf(
+                tf_bot_ids = await ProfitableBotUpdaterCommand.get_profitable_bots_id_by_timeframes(
                     bot_crud=bot_crud,
                     bot_profitability_timeframes=[copy_bot.copy_bot_min_time_profitability_min],
-                    by_referral_bot_id=True,
+                    check_24h_profitability=copy_bot.copybot_v1_check_for_24h_profitability,
+                    by_referral_bot_id=copy_bot.copybot_v1_check_for_referral_bot_profitability,
                 )
 
                 logging.info(f'profitability_min {copy_bot.copy_bot_min_time_profitability_min}')
                 logging.info(f'tf_bot_ids {tf_bot_ids}')
 
-                logging.info('finished get_profitable_bots_id_by_tf')
+                logging.info('finished get_profitable_bots_id_by_timeframes')
                 refer_bot = await ProfitableBotUpdaterCommand.get_bot_config_by_params(
                     bot_crud=bot_crud,
-                    tf_bot_ids=tf_bot_ids,
-                    copy_bot_min_time_profitability_min=copy_bot.copy_bot_min_time_profitability_min
+                    bot_ids=tf_bot_ids[copy_bot.copy_bot_min_time_profitability_min]
                 )
                 logging.info('finished get_bot_config_by_params')
 

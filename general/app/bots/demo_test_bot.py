@@ -116,20 +116,20 @@ class StartTestBotsCommand(Command):
 
     @staticmethod
     async def update_config_from_referral_bot(
-        bot_config: TestBot, bot_crud, redis, session, is_it_copy_bot_v2 = False,
+        bot_config: TestBot, original_bot_config, bot_crud, redis, session,
     ):
-        if is_it_copy_bot_v2:
-            tf_bot_ids = await ProfitableBotUpdaterCommand.get_profitable_bots_id_by_tf(
+        if original_bot_config.copybot_v2_time_in_minutes is not None:
+            tf_bot_ids = await ProfitableBotUpdaterCommand.get_profitable_bots_id_by_timeframes(
                 bot_crud=bot_crud,
                 bot_profitability_timeframes=[bot_config.copy_bot_min_time_profitability_min],
-                by_referral_bot_id=True,
+                check_24h_profitability=bot_config.copybot_v1_check_for_24h_profitability,
+                by_referral_bot_id=bot_config.copybot_v1_check_for_referral_bot_profitability,
             )
 
-            logging.info('finished get_profitable_bots_id_by_tf')
+            logging.info('finished get_profitable_bots_id_by_timeframes')
             refer_bot = await ProfitableBotUpdaterCommand.get_bot_config_by_params(
                 bot_crud=bot_crud,
-                tf_bot_ids=tf_bot_ids,
-                copy_bot_min_time_profitability_min=bot_config.copy_bot_min_time_profitability_min
+                bot_ids=tf_bot_ids[tf_bot_ids.copy_bot_min_time_profitability_min],
             )
         else:
             refer_bot_js = await redis.get(f"copy_bot_{bot_config.id}")
@@ -165,7 +165,7 @@ class StartTestBotsCommand(Command):
 
         # for test if copy_bot use right refer_bot
         # tf_bot_ids = (
-        #     await ProfitableBotUpdaterCommand.get_profitable_bots_id_by_tf(
+        #     await ProfitableBotUpdaterCommand.get_profitable_bots_id_by_timeframes(
         #         bot_crud=bot_crud,
         #         bot_profitability_timeframes=[
         #             bot_config.copy_bot_min_time_profitability_min
@@ -238,8 +238,10 @@ class StartTestBotsCommand(Command):
 
                     updating_config_res = (
                         await self.update_config_from_referral_bot(
-                            bot_config=bot_config, bot_crud=bot_crud, redis=redis,
-                            is_it_copy_bot_v2=(original_bot_config.copybot_v2_time_in_minutes is not None),
+                            bot_config=bot_config,
+                            original_bot_config=original_bot_config,
+                            bot_crud=bot_crud,
+                            redis=redis,
                             session=session
                         )
                     )
