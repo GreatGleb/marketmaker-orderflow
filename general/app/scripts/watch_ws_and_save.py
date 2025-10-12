@@ -50,7 +50,10 @@ async def save_filtered_assets(session: AsyncSession, redis, data: list[dict], i
             if not symbol.endswith("USDT"):
                 continue
 
-        asset_exchange_id = symbol_to_id[symbol]
+        try:
+            asset_exchange_id = symbol_to_id[symbol]
+        except:
+            print(f"error with {symbol}")
         last_price = item.get("c")
 
         record_data = {
