@@ -67,9 +67,13 @@ class ProfitableBotUpdaterCommand(Command):
         bot_crud, bot_ids
     ):
         if bot_ids:
-            refer_bot = await bot_crud.get_bot_by_id(
-                bot_id=bot_ids[0]
-            )
+            refer_bot = None
+            try:
+                refer_bot = await bot_crud.get_bot_by_id(
+                    bot_id=bot_ids[0]
+                )
+            except:
+                logging.info(bot_ids)
 
             if refer_bot:
                 refer_bot = refer_bot[0]
