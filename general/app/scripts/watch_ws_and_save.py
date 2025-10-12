@@ -40,7 +40,7 @@ async def save_filtered_assets(session: AsyncSession, redis, data: list[dict], i
         else:
             symbol_to_id = await asset_crud.get_all_symbols_with_id_map()
             symbols_set = set(symbol_to_id.keys())
-            print(f"symbol_to_id: {symbol_to_id} symbols_set: {symbols_set}")
+            # print(f"symbol_to_id: {symbol_to_id} symbols_set: {symbols_set}")
 
     except Exception as e:
         await session.rollback()
@@ -127,24 +127,24 @@ async def run_websocket_listener():
                     target_datetime = datetime(2025, 10, 13, 19, 0, 0)
 
                     last_check_time = time.time()
-                    interval = 5
+                    interval = 15
                     is_need_to_use_just_waiting_list_of_assets = False
 
                     while True:
-                        # current_time = time.time()
-                        # if current_time - last_check_time >= interval:
-                        #     print(f"\nПрошло {interval} секунд. Выполняем проверку...")
-                        #
-                        #     current_actual_datetime = datetime.now()
-                        #     if current_actual_datetime >= target_datetime:
-                        #         print(
-                        #             f"Текущее время: {current_actual_datetime}. Уже {target_datetime.strftime('%d.%m.%Y %H:%M')} или позже.")
-                        #     else:
-                        #         is_need_to_use_just_waiting_list_of_assets = True
-                        #         print(
-                        #             f"Текущее время: {current_actual_datetime}. Ещё не наступило {target_datetime.strftime('%d.%m.%Y %H:%M')}.")
-                        #
-                        #     last_check_time = current_time
+                        current_time = time.time()
+                        if current_time - last_check_time >= interval:
+                            print(f"\nПрошло {interval} секунд. Выполняем проверку...")
+
+                            current_actual_datetime = datetime.now()
+                            if current_actual_datetime >= target_datetime:
+                                print(
+                                    f"Текущее время: {current_actual_datetime}. Уже {target_datetime.strftime('%d.%m.%Y %H:%M')} или позже.")
+                            else:
+                                is_need_to_use_just_waiting_list_of_assets = True
+                                print(
+                                    f"Текущее время: {current_actual_datetime}. Ещё не наступило {target_datetime.strftime('%d.%m.%Y %H:%M')}.")
+
+                            last_check_time = current_time
 
                         async with redis_context() as redis:
                             message = await websocket.recv()
