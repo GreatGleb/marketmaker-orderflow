@@ -181,7 +181,7 @@ class ProfitableBotUpdaterCommand(Command):
         tf_bot_ids = {}
 
         for bot_id, parameters in bot_profitability_parameters.items():
-            tf_bot_ids[bot_id] = ProfitableBotUpdaterCommand.filter_profitable_bots_id(
+            tf_bot_ids[bot_id] = await ProfitableBotUpdaterCommand.filter_profitable_bots_id(
                 bot_crud=bot_crud,
                 timeframe=parameters["tf"],
                 check_24h_profitability=parameters["24h"],
