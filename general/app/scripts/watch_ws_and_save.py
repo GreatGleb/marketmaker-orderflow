@@ -12,6 +12,7 @@ from app.crud.asset_history import AssetHistoryCrud
 from app.crud.watched_pair import WatchedPairCrud
 from app.crud.exchange_pair_spec import AssetExchangeSpecCrud
 from app.dependencies import redis_context
+from app.scripts.seed_binance_data import seed_binance_data
 
 WS_URL = "wss://fstream.binance.com/ws/!ticker@arr"
 
@@ -62,7 +63,16 @@ async def save_filtered_assets(session: AsyncSession, redis, data: list[dict], i
             asset_exchange_id = symbol_to_id[symbol]
         except:
             print(f"error with {symbol}")
-            continue
+            await seed_binance_data()
+
+            if is_need_to_use_just_waiting_list_of_assets:
+                symbol_to_id = await watched_crud.get_symbol_to_id_map()
+                symbols_set = set(symbol_to_id.keys())
+            else:
+                symbol_to_id = await asset_crud.get_all_symbols_with_id_map()
+                symbols_set = set(symbol_to_id.keys())
+
+            asset_exchange_id = symbol_to_id[symbol]
         last_price = item.get("c")
 
         record_data = {
