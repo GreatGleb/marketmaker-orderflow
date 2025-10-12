@@ -10,6 +10,7 @@ from app.config import settings
 from app.db.base import DatabaseSessionManager
 from app.crud.asset_history import AssetHistoryCrud
 from app.crud.watched_pair import WatchedPairCrud
+from app.crud.exchange_pair_spec import AssetExchangeSpecCrud
 from app.dependencies import redis_context
 
 WS_URL = "wss://fstream.binance.com/ws/!ticker@arr"
@@ -30,9 +31,16 @@ async def save_filtered_assets(session: AsyncSession, redis, data: list[dict], i
     try:
         history_crud = AssetHistoryCrud(session)
         watched_crud = WatchedPairCrud(session)
+        asset_crud = AssetExchangeSpecCrud(session)
 
-        symbol_to_id = await watched_crud.get_symbol_to_id_map()
-        symbols_set = set(symbol_to_id.keys())
+        if is_need_to_use_just_waiting_list_of_assets:
+            symbol_to_id = await watched_crud.get_symbol_to_id_map()
+            symbols_set = set(symbol_to_id.keys())
+        else:
+            symbol_to_id = await asset_crud.get_all_symbols_with_id_map()
+            symbols_set = set(symbol_to_id.keys())
+            print(f"symbol_to_id: {symbol_to_id} symbols_set: {symbols_set}")
+
     except Exception as e:
         await session.rollback()
         print(f"❌ Error DB: {e}")
@@ -54,6 +62,7 @@ async def save_filtered_assets(session: AsyncSession, redis, data: list[dict], i
             asset_exchange_id = symbol_to_id[symbol]
         except:
             print(f"error with {symbol}")
+            continue
         last_price = item.get("c")
 
         record_data = {
