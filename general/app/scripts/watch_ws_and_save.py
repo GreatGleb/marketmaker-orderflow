@@ -127,7 +127,7 @@ async def run_websocket_listener():
                     target_datetime = datetime(2025, 10, 13, 19, 0, 0)
 
                     last_check_time = time.time()
-                    interval = 15
+                    interval = 60
                     is_need_to_use_just_waiting_list_of_assets = False
 
                     while True:
@@ -137,10 +137,10 @@ async def run_websocket_listener():
 
                             current_actual_datetime = datetime.now()
                             if current_actual_datetime >= target_datetime:
+                                is_need_to_use_just_waiting_list_of_assets = True
                                 print(
                                     f"Текущее время: {current_actual_datetime}. Уже {target_datetime.strftime('%d.%m.%Y %H:%M')} или позже.")
                             else:
-                                is_need_to_use_just_waiting_list_of_assets = True
                                 print(
                                     f"Текущее время: {current_actual_datetime}. Ещё не наступило {target_datetime.strftime('%d.%m.%Y %H:%M')}.")
 
