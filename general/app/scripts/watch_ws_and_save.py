@@ -124,7 +124,7 @@ async def run_websocket_listener():
                     websocket = ws
                     print("✅ WebSocket connected.")
 
-                    target_datetime = datetime(2025, 10, 13, 19, 0, 0)
+                    target_datetime = datetime(2025, 10, 13, 20, 0, 0)
 
                     last_check_time = time.time()
                     interval = 60
