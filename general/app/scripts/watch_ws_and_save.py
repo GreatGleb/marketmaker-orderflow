@@ -40,6 +40,9 @@ async def save_filtered_assets(session: AsyncSession, redis, data: list[dict]):
 
     for item in data:
         symbol = item.get("s")
+        print(item)
+        print(symbol)
+        print('watch and ws')
 
         if symbol not in symbols_set:
             continue
