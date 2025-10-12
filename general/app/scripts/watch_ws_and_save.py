@@ -1,5 +1,7 @@
 import asyncio
 import json
+import time
+
 import websockets
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,7 +26,7 @@ async def _wait_when_db_table_will_free(redis):
     return True
 
 
-async def save_filtered_assets(session: AsyncSession, redis, data: list[dict]):
+async def save_filtered_assets(session: AsyncSession, redis, data: list[dict], is_need_to_use_just_waiting_list_of_assets):
     try:
         history_crud = AssetHistoryCrud(session)
         watched_crud = WatchedPairCrud(session)
@@ -40,12 +42,13 @@ async def save_filtered_assets(session: AsyncSession, redis, data: list[dict]):
 
     for item in data:
         symbol = item.get("s")
-        print(item)
-        print(symbol)
-        print('watch and ws')
 
-        if symbol not in symbols_set:
-            continue
+        if is_need_to_use_just_waiting_list_of_assets:
+            if symbol not in symbols_set:
+                continue
+        else:
+            if not symbol.endswith("USDT"):
+                continue
 
         asset_exchange_id = symbol_to_id[symbol]
         last_price = item.get("c")
@@ -99,7 +102,28 @@ async def run_websocket_listener():
                     websocket = ws
                     print("✅ WebSocket connected.")
 
+                    target_datetime = datetime(2025, 10, 13, 19, 0, 0)
+
+                    last_check_time = time.time()
+                    interval = 5
+                    is_need_to_use_just_waiting_list_of_assets = False
+
                     while True:
+                        current_time = time.time()
+                        if current_time - last_check_time >= interval:
+                            print(f"\nПрошло {interval} секунд. Выполняем проверку...")
+
+                            current_actual_datetime = datetime.now()
+                            if current_actual_datetime >= target_datetime:
+                                print(
+                                    f"Текущее время: {current_actual_datetime}. Уже {target_datetime.strftime('%d.%m.%Y %H:%M')} или позже.")
+                            else:
+                                is_need_to_use_just_waiting_list_of_assets = True
+                                print(
+                                    f"Текущее время: {current_actual_datetime}. Ещё не наступило {target_datetime.strftime('%d.%m.%Y %H:%M')}.")
+
+                            last_check_time = current_time
+
                         async with redis_context() as redis:
                             message = await websocket.recv()
                             data = json.loads(message)
@@ -108,6 +132,7 @@ async def run_websocket_listener():
                                     session,
                                     redis,
                                     data,
+                                    is_need_to_use_just_waiting_list_of_assets
                                 )
             except websockets.exceptions.ConnectionClosedOK:
                 print("⚠️ WebSocket connection closed gracefully. Reconnecting...")
