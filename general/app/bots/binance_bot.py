@@ -1035,6 +1035,156 @@ class BinanceBot(Command):
 
         return params
 
+    async def create_stop_lose_order(self, db_order, current_stop_type, tick_size, sl_sw_params, current_custom_stop_order_name):
+        max_price = db_order.activation_price
+        min_price = db_order.activation_price
+
+        order_stop_price = await self._get_order_stop_price_for_custom_trailing(
+            db_order=db_order,
+            stop_type=current_stop_type,
+            prices={'max': max_price, 'min': min_price},
+            tick_size=tick_size
+        )
+
+        await self.create_new_sl_sw_order_custom_trailing(
+            db_order=db_order,
+            sl_sw_params=sl_sw_params,
+            client_order_id=current_custom_stop_order_name,
+            order_stop_price=order_stop_price
+        )
+
+    async def creating_original_custom_trailing(self, db_order, tick_size, sl_sw_params, base_order_name=None):
+        close_not_lose_price = (
+            PriceCalculator.calculate_close_not_lose_price(
+                open_price=db_order.open_price, trade_type=db_order.side
+            )
+        )
+
+        current_stop_type = None
+        last_custom_stop_order_name = None
+        current_stop_client_order_id_number = 1
+
+        if not base_order_name:
+            base_order_name = db_order.client_order_id + f'_stop_lose'
+
+        current_custom_stop_order_name = f'{base_order_name}_custom_{current_stop_client_order_id_number}'
+        await self.create_stop_lose_order(db_order, 'stop_lose', tick_size, sl_sw_params, current_custom_stop_order_name)
+
+        is_need_to_stop_order = await self._check_if_price_less_then_stops(
+            close_not_lose_price=close_not_lose_price,
+            tick_size=tick_size,
+            db_order=db_order
+        )
+        if is_need_to_stop_order:
+            logging.info(
+                f'custom trailing: When was process of changing stop lose/win - after adding stop lose - price came to stop levels'
+            )
+            await self.delete_order(
+                db_order=db_order,
+                status='CLOSED',
+                close_reason=f'When was process of changing stop lose/win - after deleting stop lose - price came to stop levels',
+                deleting_order_id=current_custom_stop_order_name
+            )
+
+        max_price = await self.price_provider.get_price(symbol=db_order.symbol)
+        min_price = await self.price_provider.get_price(symbol=db_order.symbol)
+
+        while db_order.close_time is None:
+            is_need_so_set_new_sl_sw = False
+            updated_price = await self.price_provider.get_price(symbol=db_order.symbol)
+
+            if db_order.side == 'BUY':
+                if updated_price > close_not_lose_price:
+                    if updated_price > max_price or current_stop_type != 'stop_win':
+                        current_stop_client_order_id_number += 1
+                        current_stop_type = 'stop_win'
+                        is_need_so_set_new_sl_sw = True
+                    if updated_price > max_price:
+                        max_price = updated_price
+                else:
+                    if updated_price > max_price or current_stop_type != 'stop_lose':
+                        current_stop_client_order_id_number += 1
+                        current_stop_type = 'stop_lose'
+                        is_need_so_set_new_sl_sw = True
+                    if updated_price > max_price:
+                        max_price = updated_price
+            else:
+                if updated_price < close_not_lose_price:
+                    if updated_price < min_price or current_stop_type != 'stop_win':
+                        current_stop_client_order_id_number += 1
+                        current_stop_type = 'stop_win'
+                        is_need_so_set_new_sl_sw = True
+                    if updated_price < min_price:
+                        min_price = updated_price
+                else:
+                    if updated_price < min_price or current_stop_type != 'stop_lose':
+                        current_stop_client_order_id_number += 1
+                        current_stop_type = 'stop_lose'
+                        is_need_so_set_new_sl_sw = True
+                    if updated_price < min_price:
+                        min_price = updated_price
+
+            if not base_order_name:
+                base_order_name = db_order.client_order_id + f'_{current_stop_type}'
+
+            current_custom_stop_order_name = f'{base_order_name}_custom_{current_stop_client_order_id_number}'
+
+            if is_need_so_set_new_sl_sw and current_stop_type == 'stop_win':
+                logging.info(f'custom trailing: is need to set new sl sw')
+                if last_custom_stop_order_name:
+                    logging.info(f'custom trailing: deleting old sl sw')
+                    await self.delete_old_sl_sw(
+                        db_order=db_order,
+                        old_stop_order_id=last_custom_stop_order_name,
+                        sl_sw_params=sl_sw_params
+                    )
+                    last_custom_stop_order_name = None
+
+                is_need_to_stop_order = await self._check_if_price_less_then_stops(
+                    close_not_lose_price=close_not_lose_price,
+                    tick_size=tick_size,
+                    db_order=db_order
+                )
+
+                if not is_need_to_stop_order:
+                    logging.info(f'custom trailing: creating new sl sw')
+                    order_stop_price = await self._get_order_stop_price_for_custom_trailing(
+                        db_order=db_order,
+                        stop_type=current_stop_type,
+                        prices={'max': max_price, 'min': min_price},
+                        tick_size=tick_size
+                    )
+
+                    await self.create_new_sl_sw_order_custom_trailing(
+                        db_order=db_order,
+                        sl_sw_params=sl_sw_params,
+                        client_order_id=current_custom_stop_order_name,
+                        order_stop_price=order_stop_price
+                    )
+
+                    last_custom_stop_order_name = current_custom_stop_order_name
+                else:
+                    logging.info(f'custom trailing: When was process of changing stop lose/win - after deleting stop lose/win - price came to stop levels')
+                    await self.delete_order(
+                        db_order=db_order,
+                        status='CLOSED',
+                        close_reason=f'When was process of changing stop lose/win - after deleting stop lose/win - price came to stop levels',
+                        deleting_order_id=current_custom_stop_order_name
+                    )
+            elif is_need_so_set_new_sl_sw:
+                logging.info(f'custom trailing: is need to cancel stop win trailing order')
+                if last_custom_stop_order_name:
+                    logging.info(f'custom trailing: deleting old sl sw')
+                    await self.delete_old_sl_sw(
+                        db_order=db_order,
+                        old_stop_order_id=last_custom_stop_order_name,
+                        sl_sw_params=sl_sw_params
+                    )
+
+        logging.info(f'custom trailing: stopped custom trailing')
+
+        return
+
     async def creating_custom_trailing(self, db_order, tick_size, sl_sw_params, base_order_name=None):
         close_not_lose_price = (
             PriceCalculator.calculate_close_not_lose_price(
