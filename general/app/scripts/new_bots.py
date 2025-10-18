@@ -190,6 +190,7 @@ async def create_bots():
             stop_lose_ticks_values = [20, 25, 30, 35, 40, 45, 50, 55, 60, 70, 80, 90, 150, 300, 450, 600, 850, 1000]
             stop_win_ticks_values = [5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 150, 300, 450]
             use_trailing_values = [False, True]
+            wait_open_order_values = [1, 4]
             #
             # start_percents_values = [x * average_percent_for_1_tick for x in start_ticks_values]
             # stop_lose_percents_values = [x * average_percent_for_1_tick for x in stop_lose_ticks_values]
@@ -209,7 +210,6 @@ async def create_bots():
             #                             0.45]
 
             # min_tf_volatility_values = [0.5, 1, 2, 3]
-            wait_open_order_values = [1, 4]
 
             try:
                 for start in start_ticks_values:
