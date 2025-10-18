@@ -2,7 +2,7 @@ import asyncio
 import logging
 from decimal import Decimal
 
-from sqlalchemy import delete, text
+from sqlalchemy import delete, text, distinct
 from sqlalchemy.dialects.postgresql import insert
 
 from datetime import datetime, timedelta, timezone
@@ -105,7 +105,7 @@ class AssetHistoryCrud(BaseCrud[AssetHistory]):
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def get_all_active_pairs(self, is_need_full_info = False, since = None):
+    async def get_all_active_pairs(self, is_need_full_info = False, since = None, only_symbols_in_period=False):
         result = []
 
         try:
@@ -116,29 +116,26 @@ class AssetHistoryCrud(BaseCrud[AssetHistory]):
                 five_minutes_ago = now - timedelta(minutes=5)
 
                 since = five_minutes_ago
-            ah_new = aliased(AssetHistory)
 
-            sub_query_new = (
-                select(
-                    ah_new.symbol, func.max(ah_new.event_time).label("max_time")
+            query_to_execute = None
+
+            if only_symbols_in_period:
+                logging.info(f'Getting only unique symbols active since: {since}')
+                query_to_execute = select(distinct(AssetHistory.symbol)).where(AssetHistory.event_time >= since)
+            else:
+                ah_new = aliased(AssetHistory)
+
+                sub_query_new = (
+                    select(
+                        ah_new.symbol, func.max(ah_new.event_time).label("max_time")
+                    )
+                    .where(ah_new.event_time >= since)
+                    .group_by(ah_new.symbol)
+                    .subquery()
                 )
-                .where(ah_new.event_time >= since)
-                .group_by(ah_new.symbol)
-                .subquery()
-            )
 
-            new_prices = (
-                select(AssetHistory.symbol, AssetHistory.last_price)
-                .join(
-                    sub_query_new,
-                    (AssetHistory.symbol == sub_query_new.c.symbol)
-                    & (AssetHistory.event_time == sub_query_new.c.max_time),
-                )
-            )
-
-            if is_need_full_info:
-                new_prices = (
-                    select(AssetHistory)
+                query_to_execute = (
+                    select(AssetHistory.symbol, AssetHistory.last_price)
                     .join(
                         sub_query_new,
                         (AssetHistory.symbol == sub_query_new.c.symbol)
@@ -146,13 +143,27 @@ class AssetHistoryCrud(BaseCrud[AssetHistory]):
                     )
                 )
 
+                if is_need_full_info:
+                    query_to_execute = (
+                        select(AssetHistory)
+                        .join(
+                            sub_query_new,
+                            (AssetHistory.symbol == sub_query_new.c.symbol)
+                            & (AssetHistory.event_time == sub_query_new.c.max_time),
+                        )
+                    )
+
+            if query_to_execute is None:
+                logging.error("No query was constructed. This should not happen.")
+                return []
+
             logging.info(f'getting new prices')
 
             dsm = DatabaseSessionManager.create(settings.DB_URL)
             async with dsm.get_session() as session:
                 self.session = session
 
-                result = await asyncio.wait_for(self.session.execute(new_prices), timeout=5.0)
+                result = await asyncio.wait_for(self.session.execute(query_to_execute), timeout=5.0)
                 result = result.scalars().all()
 
             logging.info(f'result: {result}')
