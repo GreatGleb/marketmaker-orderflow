@@ -126,22 +126,11 @@ class StartTestBotsCommand(Command):
                 by_referral_bot_id=bot_config.copybot_v1_check_for_referral_bot_profitability,
             )
 
-            refer_bot = None
-
-            try:
-                logging.info('finished get_profitable_bots_id_by_timeframes')
-                refer_bot = await ProfitableBotUpdaterCommand.get_bot_config_by_params(
-                    bot_crud=bot_crud,
-                    bot_ids=tf_bot_ids[tf_bot_ids.copy_bot_min_time_profitability_min],
-                )
-            except:
-                logging.info(
-                    f"❌❌❌ tf_bot_ids: {tf_bot_ids}"
-                )
-
-                logging.info(
-                    f"❌❌❌ bot_config.copy_bot_min_time_profitability_min: {bot_config.copy_bot_min_time_profitability_min}"
-                )
+            logging.info('finished get_profitable_bots_id_by_timeframes')
+            refer_bot = await ProfitableBotUpdaterCommand.get_bot_config_by_params(
+                bot_crud=bot_crud,
+                bot_ids=tf_bot_ids[bot_config.copy_bot_min_time_profitability_min],
+            )
         else:
             refer_bot_js = await redis.get(f"copy_bot_{bot_config.id}")
             refer_bot = json.loads(refer_bot_js) if refer_bot_js else None
