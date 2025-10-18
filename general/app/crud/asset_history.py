@@ -167,8 +167,11 @@ class AssetHistoryCrud(BaseCrud[AssetHistory]):
                 result = result.scalars().all()
 
             logging.info(f'result: {result}')
+        except asyncio.TimeoutError:
+            logging.error(
+                f"Database query timed out after 5 seconds for query type: {'only_symbols' if only_symbols_in_period else ('full_info' if is_need_full_info else 'symbol_price')}. Please check database performance or increase timeout.")
         except Exception as e:
-            logging.info(e)
+            logging.error(f"An unexpected error occurred during database query: {e}", exc_info=True)
 
         logging.info(f'result')
 
