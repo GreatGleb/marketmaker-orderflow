@@ -163,7 +163,7 @@ class AssetHistoryCrud(BaseCrud[AssetHistory]):
             async with dsm.get_session() as session:
                 self.session = session
 
-                result = await asyncio.wait_for(self.session.execute(query_to_execute))#, timeout=5.0
+                result = await asyncio.wait_for(self.session.execute(query_to_execute), timeout=None) #, timeout=5.0
                 result = result.scalars().all()
 
             logging.info(f'result: {result}')
