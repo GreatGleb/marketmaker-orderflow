@@ -105,15 +105,17 @@ class AssetHistoryCrud(BaseCrud[AssetHistory]):
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def get_all_active_pairs(self, is_need_full_info = False):
+    async def get_all_active_pairs(self, is_need_full_info = False, since = None):
         result = []
 
         try:
             UTC = timezone.utc
             now = datetime.now(UTC)
-            five_minutes_ago = now - timedelta(minutes=5)
 
-            since = five_minutes_ago
+            if not since:
+                five_minutes_ago = now - timedelta(minutes=5)
+
+                since = five_minutes_ago
             ah_new = aliased(AssetHistory)
 
             sub_query_new = (

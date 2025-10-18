@@ -21,7 +21,15 @@ async def get_average_percentage_for_minimum_tick():
     dsm = DatabaseSessionManager.create(settings.DB_URL)
     async with (dsm.get_session() as session):
         asset_crud = AssetHistoryCrud(session)
-        active_symbols = await asset_crud.get_all_active_pairs()
+
+        UTC = timezone.utc
+        now = datetime.now(UTC)
+        days7_ago = now - timedelta(days=7)
+        since = days7_ago
+        active_symbols = await asset_crud.get_all_active_pairs(since=since)
+
+        print(active_symbols)
+        return 0
 
         if not active_symbols:
             return average_percent
@@ -168,7 +176,8 @@ async def deactivate_not_profit_bots(bot_crud):
 
 
 async def create_bots():
-    # average_percent_for_1_tick = await get_average_percentage_for_minimum_tick()
+    average_percent_for_1_tick = await get_average_percentage_for_minimum_tick()
+    return
 
     symbol = "ADAUSDT"
 
