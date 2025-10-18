@@ -32,7 +32,7 @@ async def get_average_percentage_for_minimum_tick():
         now = datetime.now(UTC)
         days7_ago = now - timedelta(days=7)
         since = days7_ago
-        active_symbols = await asset_crud.get_all_active_pairs(since=since)
+        active_symbols = await asset_crud.get_all_active_pairs(since=since, only_symbols_in_period=True)
 
         print(active_symbols)
         logging.info(f'finished getting')
