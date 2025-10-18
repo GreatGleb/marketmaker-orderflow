@@ -1,3 +1,4 @@
+import logging
 import time
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -12,8 +13,13 @@ import asyncio
 
 from app.db.models import AssetExchangeSpec, AssetHistory
 
+logging.basicConfig(
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
 
 async def get_average_percentage_for_minimum_tick():
+    logging.info(f'started getting')
     start_time = time.time()
 
     average_percent = 0.01
@@ -29,6 +35,7 @@ async def get_average_percentage_for_minimum_tick():
         active_symbols = await asset_crud.get_all_active_pairs(since=since)
 
         print(active_symbols)
+        logging.info(f'finished getting')
         return 0
 
         if not active_symbols:
