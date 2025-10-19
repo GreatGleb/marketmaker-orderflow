@@ -122,75 +122,38 @@ async def get_most_volatile_symbol():
             logging.info(f'error not active_symbols')
             return result
 
-        stmt_active_symbols = (
-            select(AssetExchangeSpec.symbol)
-            .where(AssetExchangeSpec.symbol.in_(active_symbols))
-        )
-        result_symbols = await session.execute(stmt_active_symbols)
-        actual_active_symbols = {s[0] for s in result_symbols.all()}
-
-        print(actual_active_symbols)
+        # stmt_active_symbols = (
+        #     select(AssetExchangeSpec.symbol)
+        #     .where(AssetExchangeSpec.symbol.in_(active_symbols))
+        # )
+        # result_symbols = await session.execute(stmt_active_symbols)
+        # actual_active_symbols = {s[0] for s in result_symbols.all()}
+        #
+        # print(actual_active_symbols)
         print(len(active_symbols))
-        print(len(actual_active_symbols))
+        # print(len(actual_active_symbols))
 
-        subquery_ranked_prices = (
-            select(
-                AssetHistory.id,
-                AssetHistory.symbol,
-                AssetHistory.created_at,
-                AssetHistory.last_price,
-                func.row_number()
-                .over(
-                    partition_by=AssetHistory.symbol,
-                    order_by=AssetHistory.created_at.desc()
+        i = 0
+        for target_symbol in active_symbols:
+            logging.info(f'started get history_records for {target_symbol}')
+            stmt_single_symbol_history = (
+                select(
+                    AssetHistory.symbol,
+                    AssetHistory.created_at,
+                    AssetHistory.last_price
                 )
-                .label("rn")
+                .where(AssetHistory.symbol == target_symbol)
+                .order_by(AssetHistory.created_at.asc())
             )
-            .cte("ranked_prices")
-        )
 
-        stmt_latest_prices = (
-            select(
-                AssetHistory.symbol,
-                AssetExchangeSpec.filters,
-                subquery_ranked_prices.c.last_price,
-            )
-            .join(AssetHistory, AssetHistory.id == subquery_ranked_prices.c.id)
-            .join(AssetExchangeSpec, AssetExchangeSpec.symbol == AssetHistory.symbol)
-            .where(subquery_ranked_prices.c.rn == 1)
-            .where(AssetExchangeSpec.symbol.in_(actual_active_symbols))
-        )
+            result = await session.execute(stmt_single_symbol_history)
+            history_records = result.all()
+            logging.info(f'history_records: {history_records}')
+            logging.info(f'history_records for {target_symbol}: {len(history_records)}')
+            i += 1
+            print(f'got {i} from {len(active_symbols)}')
 
-        result_latest_prices = await session.execute(stmt_latest_prices)
-        all_latest_prices_for_active_symbols = result_latest_prices.all()
-
-        percents = []
-        symbols_characteristics = {}
-        for symbol, filters, last_price in all_latest_prices_for_active_symbols:
-            if not filters:
-                continue
-
-            tick_size = Decimal(filters[0]['tickSize'])
-
-            percent = (1/(last_price/tick_size)) * 100
-            percents.append(percent)
-
-            symbols_characteristics[symbol] = [tick_size, last_price]
-
-        sum_of_percents = sum(percents)
-        average_percent = sum_of_percents / len(percents)
-
-        end_time = time.time()
-        elapsed_time = end_time - start_time
-
-        minutes = int(elapsed_time // 60)
-        seconds = elapsed_time % 60
-
-        print(f"Время, чтобы узнать средний процент по 1 тику: {minutes} минут и {seconds:.2f} секунд")
-
-        print(f'average_percent: {average_percent}')
-
-    return average_percent
+    return result
 
 async def get_volatile_symbols(session):
     asset_crud = AssetHistoryCrud(session)
