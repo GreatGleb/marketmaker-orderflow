@@ -150,7 +150,7 @@ async def get_most_volatile_symbol():
             result = await session.execute(stmt_single_symbol_history)
             history_records = result.all()
 
-            JUMP_THRESHOLD = Decimal('0.23')
+            JUMP_THRESHOLD = Decimal('0.5')
 
             all_candidate_jumps = []
             left = 0
@@ -216,9 +216,10 @@ async def get_most_volatile_symbol():
                 jumps_sum_by_symbol[symbol] = jumps_sum_by_symbol.get(symbol, Decimal('0')) + percentage
 
             # logging.info("\n--- Analysis Complete ---")
-            # logging.info(f'history_records 1 item:')
-            # logging.info(f'{history_records[0]}')
-            # logging.info(f'{history_records[-1]}')
+            if i == 0:
+                logging.info(f'history_records 1 item:')
+                logging.info(f'{history_records[0]}')
+                logging.info(f'{history_records[-1]}')
             # logging.info(f'history_records for {target_symbol}: {len(history_records)}')
             i += 1
             logging.info(f'got {i} from {len(active_symbols)}')
