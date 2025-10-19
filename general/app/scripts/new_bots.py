@@ -148,6 +148,70 @@ async def get_most_volatile_symbol():
 
             result = await session.execute(stmt_single_symbol_history)
             history_records = result.all()
+
+            current_symbol_final_jumps = []
+            JUMP_THRESHOLD = Decimal('0.23')
+
+            all_candidate_jumps = []
+            left = 0
+
+            for right in range(len(history_records)):
+                while (history_records[right][1] - history_records[left][1]).total_seconds() > 1.0:
+                    left += 1
+
+                window_records = history_records[left: right + 1]
+                if not window_records:
+                    continue
+
+                prices_in_window = [rec[2] for rec in window_records]
+                min_price = min(prices_in_window)
+                max_price = max(prices_in_window)
+
+                if min_price > 0:
+                    jump = max_price - min_price
+                    percentage_jump = (jump / min_price) * 100
+
+                    if percentage_jump > JUMP_THRESHOLD:
+                        candidate = {
+                            "symbol": target_symbol,
+                            "start_time": window_records[0][1],
+                            "end_time": window_records[-1][1],
+                            "min_price": min_price,
+                            "max_price": max_price,
+                            "percentage_jump": percentage_jump
+                        }
+                        all_candidate_jumps.append(candidate)
+
+            if not all_candidate_jumps:
+                logging.info(f"No significant jumps found for {target_symbol}.")
+                i += 1
+                print(f'got {i} from {len(active_symbols)}')
+                continue
+
+            logging.info(f"Found {len(all_candidate_jumps)} candidate jumps for {target_symbol}. Filtering...")
+
+            sorted_candidates = sorted(all_candidate_jumps, key=lambda x: x['start_time'])
+
+            final_jumps = []
+            current_best_event = sorted_candidates[0]
+
+            for j in range(1, len(sorted_candidates)):
+                next_jump = sorted_candidates[j]
+
+                if next_jump['start_time'] <= current_best_event['end_time']:
+                    if next_jump['percentage_jump'] > current_best_event['percentage_jump']:
+                        current_best_event = next_jump
+                else:
+                    final_jumps.append(current_best_event)
+                    current_best_event = next_jump
+
+            final_jumps.append(current_best_event)
+
+            logging.info(f"Filtered down to {len(final_jumps)} unique jumps for {target_symbol}.")
+            current_symbol_final_jumps.extend(final_jumps)
+
+            logging.info("\n--- Analysis Complete ---")
+
             logging.info(f'history_records 1 item:')
             logging.info(f'{history_records[0]}')
             logging.info(f'{history_records[-1]}')
