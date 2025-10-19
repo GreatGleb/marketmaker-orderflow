@@ -184,6 +184,10 @@ async def get_most_volatile_symbol():
 
             if not all_candidate_jumps:
                 # logging.info(f"No significant jumps found for {target_symbol}.")
+                if i == 0:
+                    logging.info(f'history_records 1 item:')
+                    logging.info(f'{history_records[0]}')
+                    logging.info(f'{history_records[-1]}')
                 i += 1
                 print(f'got {i} from {len(active_symbols)}')
                 continue
