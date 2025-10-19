@@ -132,10 +132,11 @@ async def get_most_volatile_symbol():
         # print(actual_active_symbols)
         print(len(active_symbols))
         # print(len(actual_active_symbols))
+        jumps_sum_by_symbol = {}
 
         i = 0
         for target_symbol in active_symbols:
-            logging.info(f'started get history_records for {target_symbol}')
+            # logging.info(f'started get history_records for {target_symbol}')
             stmt_single_symbol_history = (
                 select(
                     AssetHistory.symbol,
@@ -149,7 +150,6 @@ async def get_most_volatile_symbol():
             result = await session.execute(stmt_single_symbol_history)
             history_records = result.all()
 
-            current_symbol_final_jumps = []
             JUMP_THRESHOLD = Decimal('0.23')
 
             all_candidate_jumps = []
@@ -183,12 +183,12 @@ async def get_most_volatile_symbol():
                         all_candidate_jumps.append(candidate)
 
             if not all_candidate_jumps:
-                logging.info(f"No significant jumps found for {target_symbol}.")
+                # logging.info(f"No significant jumps found for {target_symbol}.")
                 i += 1
                 print(f'got {i} from {len(active_symbols)}')
                 continue
 
-            logging.info(f"Found {len(all_candidate_jumps)} candidate jumps for {target_symbol}. Filtering...")
+            # logging.info(f"Found {len(all_candidate_jumps)} candidate jumps for {target_symbol}. Filtering...")
 
             sorted_candidates = sorted(all_candidate_jumps, key=lambda x: x['start_time'])
 
@@ -207,17 +207,26 @@ async def get_most_volatile_symbol():
 
             final_jumps.append(current_best_event)
 
-            logging.info(f"Filtered down to {len(final_jumps)} unique jumps for {target_symbol}.")
-            current_symbol_final_jumps.extend(final_jumps)
+            # logging.info(f"Filtered down to {len(final_jumps)} unique jumps for {target_symbol}.")
 
-            logging.info("\n--- Analysis Complete ---")
+            for jump in final_jumps:
+                symbol = jump['symbol']
+                percentage = jump['percentage_jump']
 
-            logging.info(f'history_records 1 item:')
-            logging.info(f'{history_records[0]}')
-            logging.info(f'{history_records[-1]}')
-            logging.info(f'history_records for {target_symbol}: {len(history_records)}')
+                jumps_sum_by_symbol[symbol] = jumps_sum_by_symbol.get(symbol, Decimal('0')) + percentage
+
+            # logging.info("\n--- Analysis Complete ---")
+            # logging.info(f'history_records 1 item:')
+            # logging.info(f'{history_records[0]}')
+            # logging.info(f'{history_records[-1]}')
+            # logging.info(f'history_records for {target_symbol}: {len(history_records)}')
             i += 1
-            print(f'got {i} from {len(active_symbols)}')
+            logging.info(f'got {i} from {len(active_symbols)}')
+
+    sorted_jumps_sum = sorted(jumps_sum_by_symbol.items(), key=lambda item: item[1], reverse=True)
+
+    logging.info("\nSorted sums (Array of tuples):")
+    logging.info(sorted_jumps_sum)
 
     return result
 
