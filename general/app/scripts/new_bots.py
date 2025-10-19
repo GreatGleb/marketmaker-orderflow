@@ -132,7 +132,7 @@ async def get_most_volatile_symbol():
         # print(actual_active_symbols)
         # print(len(actual_active_symbols))
         jumps_sum_by_symbol = {}
-        JUMP_THRESHOLD = Decimal('0.23')
+        JUMP_THRESHOLD = Decimal('0.5')
 
         i = 0
         for target_symbol in active_symbols:
@@ -154,7 +154,7 @@ async def get_most_volatile_symbol():
             left = 0
 
             for right in range(len(history_records)):
-                while (history_records[right][1] - history_records[left][1]).total_seconds() > 4.0:
+                while (history_records[right][1] - history_records[left][1]).total_seconds() > 1.0:
                     left += 1
 
                 window_records = history_records[left: right + 1]
