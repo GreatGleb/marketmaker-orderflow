@@ -148,7 +148,7 @@ async def get_most_volatile_symbol():
 
             result = await session.execute(stmt_single_symbol_history)
             history_records = result.all()
-            logging.info(f'history_records: {history_records}')
+            logging.info(f'history_records 1 item: {history_records[0]}')
             logging.info(f'history_records for {target_symbol}: {len(history_records)}')
             i += 1
             print(f'got {i} from {len(active_symbols)}')
