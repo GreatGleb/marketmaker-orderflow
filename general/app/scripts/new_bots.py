@@ -103,7 +103,7 @@ async def get_most_volatile_symbol():
     logging.info(f'started getting')
     start_time = time.time()
 
-    average_percent = 0.01
+    result = None
 
     dsm = DatabaseSessionManager.create(settings.DB_URL)
     async with (dsm.get_session() as session):
@@ -120,7 +120,7 @@ async def get_most_volatile_symbol():
 
         if not active_symbols:
             logging.info(f'error not active_symbols')
-            return None
+            return result
 
         stmt_active_symbols = (
             select(AssetExchangeSpec.symbol)
@@ -191,7 +191,6 @@ async def get_most_volatile_symbol():
         print(f'average_percent: {average_percent}')
 
     return average_percent
-
 
 async def get_volatile_symbols(session):
     asset_crud = AssetHistoryCrud(session)
@@ -267,7 +266,7 @@ async def deactivate_not_profit_bots(bot_crud):
 
 
 async def create_bots():
-    average_percent_for_1_tick = await get_average_percentage_for_minimum_tick()
+    average_percent_for_1_tick = await get_most_volatile_symbol()
     return
 
     symbol = "ADAUSDT"
