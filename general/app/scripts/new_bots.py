@@ -19,6 +19,87 @@ logging.basicConfig(
 )
 
 async def get_average_percentage_for_minimum_tick():
+    start_time = time.time()
+
+    average_percent = 0.01
+
+    dsm = DatabaseSessionManager.create(settings.DB_URL)
+    async with (dsm.get_session() as session):
+        asset_crud = AssetHistoryCrud(session)
+
+        active_symbols = await asset_crud.get_all_active_pairs(only_symbols_in_period=True)
+
+        if not active_symbols:
+            return average_percent
+
+        stmt_active_symbols = (
+            select(AssetExchangeSpec.symbol)
+            .where(AssetExchangeSpec.symbol.in_(active_symbols))
+        )
+        result_symbols = await session.execute(stmt_active_symbols)
+
+        actual_active_symbols = {s[0] for s in result_symbols.all()}
+
+        subquery_ranked_prices = (
+            select(
+                AssetHistory.id,
+                AssetHistory.symbol,
+                AssetHistory.created_at,
+                AssetHistory.last_price,
+                func.row_number()
+                .over(
+                    partition_by=AssetHistory.symbol,
+                    order_by=AssetHistory.created_at.desc()
+                )
+                .label("rn")
+            )
+            .cte("ranked_prices")
+        )
+
+        stmt_latest_prices = (
+            select(
+                AssetHistory.symbol,
+                AssetExchangeSpec.filters,
+                subquery_ranked_prices.c.last_price,
+            )
+            .join(AssetHistory, AssetHistory.id == subquery_ranked_prices.c.id)
+            .join(AssetExchangeSpec, AssetExchangeSpec.symbol == AssetHistory.symbol)
+            .where(subquery_ranked_prices.c.rn == 1)
+            .where(AssetExchangeSpec.symbol.in_(actual_active_symbols))
+        )
+
+        result_latest_prices = await session.execute(stmt_latest_prices)
+        all_latest_prices_for_active_symbols = result_latest_prices.all()
+
+        percents = []
+        symbols_characteristics = {}
+        for symbol, filters, last_price in all_latest_prices_for_active_symbols:
+            if not filters:
+                continue
+
+            tick_size = Decimal(filters[0]['tickSize'])
+
+            percent = (1/(last_price/tick_size)) * 100
+            percents.append(percent)
+
+            symbols_characteristics[symbol] = [tick_size, last_price]
+
+        sum_of_percents = sum(percents)
+        average_percent = sum_of_percents / len(percents)
+
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+
+        minutes = int(elapsed_time // 60)
+        seconds = elapsed_time % 60
+
+        print(f"Время, чтобы узнать средний процент по 1 тику: {minutes} минут и {seconds:.2f} секунд")
+
+        print(f'average_percent: {average_percent}')
+
+    return average_percent
+
+async def get_most_volatile_symbol():
     logging.info(f'started getting')
     start_time = time.time()
 
@@ -36,18 +117,21 @@ async def get_average_percentage_for_minimum_tick():
 
         print(active_symbols)
         logging.info(f'finished getting')
-        return 0
 
         if not active_symbols:
-            return average_percent
+            logging.info(f'error not active_symbols')
+            return None
 
         stmt_active_symbols = (
             select(AssetExchangeSpec.symbol)
             .where(AssetExchangeSpec.symbol.in_(active_symbols))
         )
         result_symbols = await session.execute(stmt_active_symbols)
-
         actual_active_symbols = {s[0] for s in result_symbols.all()}
+
+        print(actual_active_symbols)
+        print(len(active_symbols))
+        print(len(actual_active_symbols))
 
         subquery_ranked_prices = (
             select(
