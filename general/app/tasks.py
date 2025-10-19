@@ -18,10 +18,10 @@ app.conf.beat_schedule = {
         "task": "app.tasks.order_book_cleanup_collector",
         "schedule": crontab(minute=0, hour=0),  # Every day at 00:00 UTC
     },
-    "clear-old-assets-history-every-day": {
-        "task": "app.tasks.clear_old_assets_history",
-        "schedule": crontab(minute=0, hour=1),  # 01:00 UTC
-    },
+    # "clear-old-assets-history-every-day": {
+    #     "task": "app.tasks.clear_old_assets_history",
+    #     "schedule": crontab(minute=0, hour=1),  # 01:00 UTC
+    # },
 }
 
 
