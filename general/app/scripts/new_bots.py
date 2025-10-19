@@ -115,8 +115,8 @@ async def get_most_volatile_symbol():
         since = days7_ago
         active_symbols = await asset_crud.get_all_active_pairs(since=since, only_symbols_in_period=True)
 
-        print(active_symbols)
         logging.info(f'finished getting')
+        print(len(active_symbols))
 
         if not active_symbols:
             logging.info(f'error not active_symbols')
@@ -130,7 +130,6 @@ async def get_most_volatile_symbol():
         # actual_active_symbols = {s[0] for s in result_symbols.all()}
         #
         # print(actual_active_symbols)
-        print(len(active_symbols))
         # print(len(actual_active_symbols))
         jumps_sum_by_symbol = {}
 
@@ -150,7 +149,7 @@ async def get_most_volatile_symbol():
             result = await session.execute(stmt_single_symbol_history)
             history_records = result.all()
 
-            JUMP_THRESHOLD = Decimal('0.5')
+            JUMP_THRESHOLD = Decimal('0.23')
 
             all_candidate_jumps = []
             left = 0
