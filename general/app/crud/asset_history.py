@@ -117,8 +117,6 @@ class AssetHistoryCrud(BaseCrud[AssetHistory]):
 
                 since = five_minutes_ago
 
-            query_to_execute = None
-
             if only_symbols_in_period:
                 logging.info(f'Getting only unique symbols active since: {since}')
                 query_to_execute = select(distinct(AssetHistory.symbol)).where(AssetHistory.event_time >= since)
@@ -157,22 +155,16 @@ class AssetHistoryCrud(BaseCrud[AssetHistory]):
                 logging.error("No query was constructed. This should not happen.")
                 return []
 
-            logging.info(f'getting new prices')
-
             dsm = DatabaseSessionManager.create(settings.DB_URL)
             async with dsm.get_session() as session:
                 self.session = session
 
                 result = await asyncio.wait_for(self.session.execute(query_to_execute), timeout=None) #, timeout=5.0
                 result = result.scalars().all()
-
-            logging.info(f'result: {result}')
         except asyncio.TimeoutError:
             logging.error(
                 f"Database query timed out after 5 seconds for query type: {'only_symbols' if only_symbols_in_period else ('full_info' if is_need_full_info else 'symbol_price')}. Please check database performance or increase timeout.")
         except Exception as e:
             logging.error(f"An unexpected error occurred during database query: {e}", exc_info=True)
-
-        logging.info(f'result')
 
         return result
