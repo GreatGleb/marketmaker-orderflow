@@ -132,6 +132,7 @@ async def get_most_volatile_symbol():
         # print(actual_active_symbols)
         # print(len(actual_active_symbols))
         jumps_sum_by_symbol = {}
+        JUMP_THRESHOLD = Decimal('0.23')
 
         i = 0
         for target_symbol in active_symbols:
@@ -149,13 +150,11 @@ async def get_most_volatile_symbol():
             result = await session.execute(stmt_single_symbol_history)
             history_records = result.all()
 
-            JUMP_THRESHOLD = Decimal('0.23')
-
             all_candidate_jumps = []
             left = 0
 
             for right in range(len(history_records)):
-                while (history_records[right][1] - history_records[left][1]).total_seconds() > 1.0:
+                while (history_records[right][1] - history_records[left][1]).total_seconds() > 4.0:
                     left += 1
 
                 window_records = history_records[left: right + 1]
@@ -310,7 +309,7 @@ async def deactivate_not_profit_bots(bot_crud):
 
 
 async def create_bots():
-    average_percent_for_1_tick = await get_most_volatile_symbol()
+    await get_most_volatile_symbol()
     return
 
     symbol = "ADAUSDT"
