@@ -105,7 +105,7 @@ class AssetHistoryCrud(BaseCrud[AssetHistory]):
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def get_all_active_pairs(self, is_need_full_info = False, since = None, only_symbols_in_period=False):
+    async def get_all_active_pairs(self, is_need_full_info=False, since=None, only_symbols_in_period=False, timeout=5.0):
         result = []
 
         try:
@@ -159,7 +159,7 @@ class AssetHistoryCrud(BaseCrud[AssetHistory]):
             async with dsm.get_session() as session:
                 self.session = session
 
-                result = await asyncio.wait_for(self.session.execute(query_to_execute), timeout=None) #, timeout=5.0
+                result = await asyncio.wait_for(self.session.execute(query_to_execute), timeout=timeout)
                 result = result.scalars().all()
         except asyncio.TimeoutError:
             logging.error(

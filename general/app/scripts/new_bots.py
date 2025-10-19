@@ -113,7 +113,7 @@ async def get_most_volatile_symbol():
         now = datetime.now(UTC)
         days7_ago = now - timedelta(days=7)
         since = days7_ago
-        active_symbols = await asset_crud.get_all_active_pairs(since=since, only_symbols_in_period=True)
+        active_symbols = await asset_crud.get_all_active_pairs(since=since, only_symbols_in_period=True, timeout=None)
 
         logging.info(f'finished getting')
         print(len(active_symbols))
