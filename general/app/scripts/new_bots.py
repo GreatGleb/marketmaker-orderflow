@@ -227,7 +227,9 @@ async def get_most_volatile_symbol():
     sorted_jumps_sum = sorted(jumps_sum_by_symbol.items(), key=lambda item: item[1], reverse=True)
 
     logging.info("\nSorted sums (Array of tuples):")
-    logging.info(sorted_jumps_sum)
+    for index, (symbol, total_jump) in enumerate(sorted_jumps_sum, start=1):
+        log_message = f"{index}. {symbol}: {total_jump:.2f}%"
+        print(log_message)
 
     return result
 
