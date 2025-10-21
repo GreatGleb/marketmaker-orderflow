@@ -76,7 +76,7 @@ async def update_bot_profits(hours: int = None, minutes: int = None, just_copy_b
                 'success_percentage': success_percentage
             })
 
-        if True:
+        if False:
             BATCH_SIZE = 100
             for i in range(0, len(update_data), BATCH_SIZE):
                 batch = update_data[i:i + BATCH_SIZE]
