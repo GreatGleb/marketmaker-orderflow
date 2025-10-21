@@ -101,7 +101,6 @@ async def get_average_percentage_for_minimum_tick():
 
 async def get_most_volatile_symbol():
     logging.info(f'started getting')
-    start_time = time.time()
 
     result = None
 
@@ -309,8 +308,8 @@ async def deactivate_not_profit_bots(bot_crud):
 
 
 async def create_bots():
-    # await get_most_volatile_symbol()
-    # return
+    await get_most_volatile_symbol()
+    return
 
     symbol = "COAIUSDT"
 

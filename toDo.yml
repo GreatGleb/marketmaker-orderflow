@@ -36,5 +36,6 @@
     - .
     - stop lose order - trailing stop win - создать одновременно
     - понять нужно ли в demo_test_bot update_config_from_referral_bot - if original_bot_config.copybot_v2_time_in_minutes is not None
+    - fix seed_binance_data - без повторяющихся символов
 
 
