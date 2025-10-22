@@ -26,6 +26,8 @@ async def seed_binance_data():
         data = await fetch_binance_data()
         symbols = data.get("symbols", [])
 
+        newly_added_count = 0
+
         for s in symbols:
             base_asset = s["baseAsset"]
             quote_asset = s["quoteAsset"]
@@ -71,10 +73,12 @@ async def seed_binance_data():
                 "market_take_bound": s.get("marketTakeBound"),
             }
 
-            await spec_crud.create(spec_data)
+            _, created = await spec_crud.get_or_create(spec_data)
+            if created:
+                newly_added_count += 1
 
         await session.commit()
-        print(f"✅ Seeded {len(symbols)} pairs from Binance.")
+        print(f"✅ Seeded {newly_added_count} pairs from Binance.")
 
 
 if __name__ == "__main__":

@@ -11,13 +11,13 @@ async def seed_usdt_watched_pairs():
     async with dsm.get_session() as session:
         # Шаг 1: Найти пары, где base_asset или quote_asset равен "usdt"
         asset_pair_stmt = select(AssetPair.id).where(
-            or_(
-                func.lower(AssetPair.base_asset) == "usdt",
-                func.lower(AssetPair.quote_asset) == "usdt",
-            )
+            # func.lower(AssetPair.base_asset) == "btc",
+            func.lower(AssetPair.quote_asset) == "usdt"
         )
         asset_pair_ids_result = await session.execute(asset_pair_stmt)
-        asset_pair_ids = [row[0] for row in asset_pair_ids_result.fetchall()]
+        asset_pair_ids_result = asset_pair_ids_result.fetchall()
+        # asset_pair_ids_result = [asset_pair_ids_result[0]]
+        asset_pair_ids = [row[0] for row in asset_pair_ids_result]
 
         if not asset_pair_ids:
             print("🚫 No pairs with USDT in asset_pairs")

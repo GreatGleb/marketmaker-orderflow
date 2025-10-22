@@ -15,6 +15,21 @@ class AssetExchangeSpecCrud(BaseCrud[AssetExchangeSpec]):
         self.session.add(spec)
         return spec
 
+    async def get_or_create(self, spec_data: dict) -> tuple[AssetExchangeSpec, bool]:
+        stmt = select(AssetExchangeSpec).where(
+            AssetExchangeSpec.asset_pairs_id == spec_data["asset_pairs_id"]
+        )
+        result = await self.session.execute(stmt)
+        spec = result.scalars().first()
+        # spec = result.scalar_one_or_none()
+
+        if spec:
+            return spec, False
+
+        spec = AssetExchangeSpec(**spec_data)
+        self.session.add(spec)
+        return spec, True
+
     async def get_step_size_by_symbol(
         self, symbol: str
     ) -> dict[str, float] | None:
