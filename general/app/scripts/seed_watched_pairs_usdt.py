@@ -11,7 +11,7 @@ async def seed_usdt_watched_pairs():
     async with dsm.get_session() as session:
         # Шаг 1: Найти пары, где base_asset или quote_asset равен "usdt"
         asset_pair_stmt = select(AssetPair.id).where(
-            # func.lower(AssetPair.base_asset) == "btc",
+            func.lower(AssetPair.base_asset) == "COAIUSDT",
             func.lower(AssetPair.quote_asset) == "usdt"
         )
         asset_pair_ids_result = await session.execute(asset_pair_stmt)
