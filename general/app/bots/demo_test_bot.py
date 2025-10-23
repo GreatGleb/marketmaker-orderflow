@@ -426,13 +426,7 @@ class StartTestBotsCommand(Command):
                     )
                 else:
                     if bot_config.use_trailing_stop:
-                        peak_favorable_price = await PriceCalculator.get_peak_favorable_price(
-                            current_peak_favorable_price=peak_favorable_price,
-                            current_price=updated_price,
-                            trade_type=order.order_type
-                        )
-
-                        should_exit, take_profit_price = (
+                        should_exit, take_profit_price, peak_favorable_price = (
                             await ExitStrategy.check_exit_conditions_trailing(
                                 price_calculator=PriceCalculator,
                                 tick_size=tick_size,

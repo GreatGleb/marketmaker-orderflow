@@ -22,6 +22,12 @@ class ExitStrategy:
                 price_from_previous_step < updated_price
                 and updated_price > peak_favorable_price
             ):
+                peak_favorable_price = await price_calculator.get_peak_favorable_price(
+                    current_peak_favorable_price=peak_favorable_price,
+                    current_price=updated_price,
+                    trade_type=order.order_type
+                )
+
                 take_profit_price = price_calculator.calculate_trailing_take_profit_price(
                     peak_favorable_price=peak_favorable_price,
                     stop_success_ticks=order.stop_success_ticks,
@@ -33,16 +39,22 @@ class ExitStrategy:
 
             if updated_price <= order.stop_loss_price:
                 order.stop_reason_event = StopReasonEvent.STOP_LOOSED.value
-                return True, take_profit_price
+                return True, take_profit_price, peak_favorable_price
 
             if take_profit_price > close_not_lose_price and updated_price <= take_profit_price and updated_price > close_not_lose_price:
                 order.stop_reason_event = StopReasonEvent.STOP_WON.value
-                return True, take_profit_price
+                return True, take_profit_price, peak_favorable_price
         else:
             if (
                 price_from_previous_step > updated_price
                 and updated_price < peak_favorable_price
             ):
+                peak_favorable_price = await price_calculator.get_peak_favorable_price(
+                    current_peak_favorable_price=peak_favorable_price,
+                    current_price=updated_price,
+                    trade_type=order.order_type
+                )
+
                 take_profit_price = price_calculator.calculate_trailing_take_profit_price(
                     peak_favorable_price=peak_favorable_price,
                     stop_success_ticks=order.stop_success_ticks,
@@ -54,13 +66,13 @@ class ExitStrategy:
 
             if updated_price >= order.stop_loss_price:
                 order.stop_reason_event = StopReasonEvent.STOP_LOOSED.value
-                return True, take_profit_price
+                return True, take_profit_price, peak_favorable_price
 
             if take_profit_price < close_not_lose_price and updated_price >= take_profit_price and updated_price < close_not_lose_price:
                 order.stop_reason_event = StopReasonEvent.STOP_WON.value
-                return True, take_profit_price
+                return True, take_profit_price, peak_favorable_price
 
-        return False, take_profit_price
+        return False, take_profit_price, peak_favorable_price
 
     @staticmethod
     async def check_exit_conditions(
