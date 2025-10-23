@@ -8,7 +8,6 @@ class ExitStrategy:
 
     @staticmethod
     async def check_exit_conditions_trailing(
-        bot_config,
         price_calculator,
         tick_size,
         order,
@@ -16,26 +15,19 @@ class ExitStrategy:
         take_profit_price,
         updated_price,
         price_from_previous_step,
+        peak_favorable_price
     ):
-        new_tk_p = price_calculator.calculate_take_profit_price(
-            stop_success_ticks=bot_config.stop_success_ticks,
-            tick_size=tick_size,
-            open_price=updated_price,
-            trade_type=order.order_type,
-        )
-        # new_sl_p = price_calculator.calculate_stop_lose_price(
-        #     stop_loss_ticks=bot_config.stop_loss_ticks,
-        #     tick_size=tick_size,
-        #     trade_type=order.order_type,
-        #     open_price=updated_price,
-        # )
-
         if order.order_type == TradeType.BUY:
             if (
                 price_from_previous_step < updated_price
-                and new_tk_p > take_profit_price
+                and updated_price > peak_favorable_price
             ):
-                take_profit_price = new_tk_p
+                take_profit_price = price_calculator.calculate_trailing_take_profit_price(
+                    peak_favorable_price=peak_favorable_price,
+                    stop_success_ticks=order.stop_success_ticks,
+                    tick_size=tick_size,
+                    trade_type=order.order_type
+                )
             # elif new_sl_p > order.stop_loss_price:
             #     order.stop_loss_price = new_sl_p
 
@@ -43,15 +35,20 @@ class ExitStrategy:
                 order.stop_reason_event = StopReasonEvent.STOP_LOOSED.value
                 return True, take_profit_price
 
-            if close_not_lose_price < updated_price <= take_profit_price:
+            if take_profit_price > close_not_lose_price and updated_price <= take_profit_price and updated_price > close_not_lose_price:
                 order.stop_reason_event = StopReasonEvent.STOP_WON.value
                 return True, take_profit_price
         else:
             if (
                 price_from_previous_step > updated_price
-                and new_tk_p < take_profit_price
+                and updated_price < peak_favorable_price
             ):
-                take_profit_price = new_tk_p
+                take_profit_price = price_calculator.calculate_trailing_take_profit_price(
+                    peak_favorable_price=peak_favorable_price,
+                    stop_success_ticks=order.stop_success_ticks,
+                    tick_size=tick_size,
+                    trade_type=order.order_type
+                )
             # elif new_sl_p < order.stop_loss_price:
             #     order.stop_loss_price = new_sl_p
 
@@ -59,7 +56,7 @@ class ExitStrategy:
                 order.stop_reason_event = StopReasonEvent.STOP_LOOSED.value
                 return True, take_profit_price
 
-            if take_profit_price <= updated_price < close_not_lose_price:
+            if take_profit_price < close_not_lose_price and updated_price >= take_profit_price and updated_price < close_not_lose_price:
                 order.stop_reason_event = StopReasonEvent.STOP_WON.value
                 return True, take_profit_price
 

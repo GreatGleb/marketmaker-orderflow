@@ -34,6 +34,27 @@ class PriceCalculator:
         return take_profit_price
 
     @staticmethod
+    def calculate_trailing_take_profit_price(
+        peak_favorable_price,
+        stop_success_ticks,
+        tick_size,
+        trade_type
+    ):
+        trail_value = Decimal(stop_success_ticks) * tick_size
+        peak_price = Decimal(str(peak_favorable_price))
+
+        if trade_type == TradeType.BUY:
+            take_profit_price = peak_price - trail_value
+        else:
+            take_profit_price = peak_price + trail_value
+
+        take_profit_price = take_profit_price.quantize(
+            tick_size, rounding=ROUND_HALF_UP
+        )
+
+        return take_profit_price
+
+    @staticmethod
     def calculate_stop_lose_price(
         stop_loss_ticks, tick_size, open_price, trade_type
     ):
@@ -83,3 +104,19 @@ class PriceCalculator:
             )
 
         return pnl
+
+    @staticmethod
+    def get_peak_favorable_price(
+        current_peak_favorable_price,
+        current_price,
+        trade_type
+    ):
+        peak_favorable_price = current_peak_favorable_price
+        if trade_type == TradeType.BUY:
+            if current_price > current_peak_favorable_price:
+                peak_favorable_price = current_peak_favorable_price
+        else:
+            if current_price < current_peak_favorable_price:
+                peak_favorable_price = current_peak_favorable_price
+
+        return peak_favorable_price

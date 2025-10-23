@@ -344,6 +344,7 @@ class StartTestBotsCommand(Command):
 
             open_price = entry_price
             price_from_previous_step = entry_price
+            peak_favorable_price = entry_price
 
             close_not_lose_price = (
                 PriceCalculator.calculate_close_not_lose_price(
@@ -358,14 +359,24 @@ class StartTestBotsCommand(Command):
                     open_price=open_price,
                     trade_type=trade_type,
                 )
-                original_take_profit_price = (
-                    PriceCalculator.calculate_take_profit_price(
-                        stop_success_ticks=bot_config.stop_success_ticks,
-                        tick_size=tick_size,
-                        open_price=open_price,
-                        trade_type=trade_type,
+                if bot_config.use_trailing_stop:
+                    original_take_profit_price = (
+                        PriceCalculator.calculate_trailing_take_profit_price(
+                            peak_favorable_price=open_price,
+                            stop_success_ticks=bot_config.stop_success_ticks,
+                            tick_size=tick_size,
+                            trade_type=trade_type,
+                        )
                     )
-                )
+                else:
+                    original_take_profit_price = (
+                        PriceCalculator.calculate_take_profit_price(
+                            stop_success_ticks=bot_config.stop_success_ticks,
+                            tick_size=tick_size,
+                            open_price=open_price,
+                            trade_type=trade_type,
+                        )
+                    )
                 take_profit_price = original_take_profit_price
 
                 order = TestOrder(
@@ -415,9 +426,14 @@ class StartTestBotsCommand(Command):
                     )
                 else:
                     if bot_config.use_trailing_stop:
+                        peak_favorable_price = await PriceCalculator.get_peak_favorable_price(
+                            current_peak_favorable_price=peak_favorable_price,
+                            current_price=updated_price,
+                            trade_type=order.order_type
+                        )
+
                         should_exit, take_profit_price = (
                             await ExitStrategy.check_exit_conditions_trailing(
-                                bot_config=bot_config,
                                 price_calculator=PriceCalculator,
                                 tick_size=tick_size,
                                 order=order,
@@ -425,6 +441,7 @@ class StartTestBotsCommand(Command):
                                 take_profit_price=take_profit_price,
                                 updated_price=updated_price,
                                 price_from_previous_step=price_from_previous_step,
+                                peak_favorable_price=peak_favorable_price
                             )
                         )
                     else:
