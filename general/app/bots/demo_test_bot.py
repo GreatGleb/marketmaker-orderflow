@@ -54,6 +54,11 @@ class StartTestBotsCommand(Command):
         redis: Redis = Depends(get_redis),
         bot_crud: TestBotCrud = resolve_crud(TestBotCrud),
     ):
+        logging.basicConfig(
+            format='%(asctime)s - %(levelname)s - %(message)s',
+            level=logging.INFO
+        )
+
         price_provider = PriceProvider(redis=redis)
         binance_bot = BinanceBot(is_need_prod_for_data=True, redis=redis)
 
@@ -65,11 +70,6 @@ class StartTestBotsCommand(Command):
         logging.info(shared_data)
 
         tasks = []
-
-        logging.basicConfig(
-            format='%(asctime)s - %(levelname)s - %(message)s',
-            level=logging.INFO
-        )
 
         active_bots = await bot_crud.get_active_bots()
         active_bots_dicts = [bot.__dict__ for bot in active_bots]

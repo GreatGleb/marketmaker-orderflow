@@ -1,6 +1,7 @@
 import asyncio
 import json
 import time
+import logging
 
 import websockets
 from datetime import datetime
@@ -16,6 +17,10 @@ from app.scripts.seed_binance_data import seed_binance_data
 
 WS_URL = "wss://fstream.binance.com/ws/!ticker@arr"
 
+logging.basicConfig(
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
 
 async def _wait_when_db_table_will_free(redis):
     while True:
@@ -37,14 +42,15 @@ async def save_filtered_assets(session: AsyncSession, redis, data: list[dict], i
         if is_need_to_use_just_waiting_list_of_assets:
             symbol_to_id = await watched_crud.get_symbol_to_id_map()
             symbols_set = set(symbol_to_id.keys())
+            logging.info(f"symbols_set: {symbols_set}")
         else:
             symbol_to_id = await asset_crud.get_all_symbols_with_id_map()
             symbols_set = set(symbol_to_id.keys())
-            # print(f"symbol_to_id: {symbol_to_id} symbols_set: {symbols_set}")
+            # logging.info(f"symbol_to_id: {symbol_to_id} symbols_set: {symbols_set}")
 
     except Exception as e:
         await session.rollback()
-        print(f"❌ Error DB: {e}")
+        logging.info(f"❌ Error DB: {e}")
         return
 
     records = []
@@ -62,7 +68,7 @@ async def save_filtered_assets(session: AsyncSession, redis, data: list[dict], i
         try:
             asset_exchange_id = symbol_to_id[symbol]
         except:
-            print(f"error with {symbol}")
+            logging.info(f"error with {symbol}")
             await seed_binance_data()
 
             if is_need_to_use_just_waiting_list_of_assets:
@@ -101,16 +107,16 @@ async def save_filtered_assets(session: AsyncSession, redis, data: list[dict], i
 
     is_stopped = await redis.get(f"asset_history:stop")
     if is_stopped:
-        print(f'It is stopped')
+        logging.info(f'It is stopped')
         await _wait_when_db_table_will_free(redis)
 
     try:
         await history_crud.bulk_create(records)
         await session.commit()
-        print(f"✅ Saved {len(records)} asset history records.")
+        logging.info(f"✅ Saved {len(records)} asset history records.")
     except Exception as e:
         await session.rollback()
-        print(f"❌ Error DB: {e}")
+        logging.info(f"❌ Error DB: {e}")
         return
 
 
@@ -119,10 +125,10 @@ async def run_websocket_listener():
     async with dsm.get_session() as session:
         while True:
             try:
-                print("Attempting to connect to WebSocket...")
+                logging.info("Attempting to connect to WebSocket...")
                 async with websockets.connect(WS_URL) as ws:
                     websocket = ws
-                    print("✅ WebSocket connected.")
+                    logging.info("✅ WebSocket connected.")
 
                     target_datetime = datetime(2025, 10, 20, 20, 0, 0)
 
@@ -133,15 +139,15 @@ async def run_websocket_listener():
                     while True:
                         current_time = time.time()
                         if current_time - last_check_time >= interval:
-                            print(f"\nПрошло {interval} секунд. Выполняем проверку...")
+                            logging.info(f"\nПрошло {interval} секунд. Выполняем проверку...")
 
                             current_actual_datetime = datetime.now()
                             if current_actual_datetime >= target_datetime:
                                 is_need_to_use_just_waiting_list_of_assets = True
-                                print(
+                                logging.info(
                                     f"Текущее время: {current_actual_datetime}. Уже {target_datetime.strftime('%d.%m.%Y %H:%M')} или позже.")
                             else:
-                                print(
+                                logging.info(
                                     f"Текущее время: {current_actual_datetime}. Ещё не наступило {target_datetime.strftime('%d.%m.%Y %H:%M')}.")
 
                             last_check_time = current_time
@@ -157,11 +163,11 @@ async def run_websocket_listener():
                                     is_need_to_use_just_waiting_list_of_assets
                                 )
             except websockets.exceptions.ConnectionClosedOK:
-                print("⚠️ WebSocket connection closed gracefully. Reconnecting...")
+                logging.info("⚠️ WebSocket connection closed gracefully. Reconnecting...")
             except websockets.exceptions.ConnectionClosedError as e:
-                print(f"❌ WebSocket connection closed with error: {e}. Reconnecting...")
+                logging.info(f"❌ WebSocket connection closed with error: {e}. Reconnecting...")
             except Exception as e:
-                print(f"❌ General error: {e}. Reconnecting...")
+                logging.info(f"❌ General error: {e}. Reconnecting...")
             finally:
                 await asyncio.sleep(3)
 
