@@ -22,7 +22,7 @@ class ExitStrategy:
                 price_from_previous_step < updated_price
                 and updated_price > peak_favorable_price
             ):
-                peak_favorable_price = await price_calculator.get_peak_favorable_price(
+                peak_favorable_price = price_calculator.get_peak_favorable_price(
                     current_peak_favorable_price=peak_favorable_price,
                     current_price=updated_price,
                     trade_type=order.order_type
@@ -49,7 +49,7 @@ class ExitStrategy:
                 price_from_previous_step > updated_price
                 and updated_price < peak_favorable_price
             ):
-                peak_favorable_price = await price_calculator.get_peak_favorable_price(
+                peak_favorable_price = price_calculator.get_peak_favorable_price(
                     current_peak_favorable_price=peak_favorable_price,
                     current_price=updated_price,
                     trade_type=order.order_type
