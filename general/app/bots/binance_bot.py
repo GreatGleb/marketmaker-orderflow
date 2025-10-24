@@ -1465,7 +1465,7 @@ class BinanceBot(Command):
 
         wait_seconds = 1
 
-        if bot_config.wait_seconds:
+        if bot_config.time_to_wait_for_entry_price_to_open_order_in_minutes:
             wait_seconds = bot_config.time_to_wait_for_entry_price_to_open_order_in_seconds
 
         try:
