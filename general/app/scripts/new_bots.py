@@ -311,7 +311,7 @@ async def create_bots():
     await get_most_volatile_symbol()
     return
 
-    symbol = "COAIUSDT"
+    symbol = "BIOUSDT"
 
     dsm = DatabaseSessionManager.create(settings.DB_URL)
 
@@ -381,7 +381,7 @@ async def create_bots():
 
         if 1:
             copy_bot_min_time_profitability_min_values = [10, 20, 30, 40, 50, 60, 120, 180, 240, 360, 420, 480, 540,
-                                                          600, 660, 720, 1440]
+                                                          600, 660, 720, 1440, 1920, 2400, 2880]
             copy_bot_filter_24h_values = [False, True]
             copy_bot_filter_referrals_values = [False, True]
 
