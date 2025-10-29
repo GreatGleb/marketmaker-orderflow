@@ -308,8 +308,7 @@ async def deactivate_not_profit_bots(bot_crud):
 
 
 async def create_bots():
-    await get_most_volatile_symbol()
-    return
+    # await get_most_volatile_symbol()
 
     symbol = "BIOUSDT"
 
