@@ -169,6 +169,18 @@ class AssetExchangeSpec(BaseId):
         types.Numeric, nullable=True, comment="Market take bound"
     )
 
+    maker_commission_rate: Mapped[Optional[Decimal]] = mapped_column(
+        types.Numeric,
+        nullable=True,
+        comment="Maker commission rate for this symbol (0.0002 = 0.02%)",
+    )
+
+    taker_commission_rate: Mapped[Optional[Decimal]] = mapped_column(
+        types.Numeric,
+        nullable=True,
+        comment="Taker commission rate for this symbol (0.0004 = 0.04%)",
+    )
+
 
 class AssetHistory(BaseId):
     __tablename__ = "asset_history"

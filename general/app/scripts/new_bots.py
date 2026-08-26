@@ -290,10 +290,28 @@ async def deactivate_not_profit_bots(bot_crud):
             symbol=symbol
         )
 
-        sorted_data = sorted(profits_data, key=lambda x: x[1], reverse=True)
-        if sorted_data[0][1] < 100:
+        # Боты без сделок и сделки с пустым profit_loss дают строки с None:
+        # без отсева sorted() падает на сравнении None с числом.
+        rows_with_profit = [
+            row for row in profits_data if row[1] is not None
+        ]
+        sorted_data = sorted(
+            rows_with_profit, key=lambda x: x[1], reverse=True
+        )
+
+        if not sorted_data:
+            # Нет сделок за 12 часов — это не то же самое, что убыточная пара.
+            # Отключать по молчанию нельзя: пару могли только что завести или
+            # симулятор стоял. Пропускаем.
+            print(f'Symbol: {symbol}, за 12 часов нет сделок — пропускаю')
+            continue
+
+        max_profit = sorted_data[0][1]
+
+        if max_profit < 100:
             need_to_deactivate_bots.append(symbol)
-        print(f'Symbol: {symbol}, max profit for 12 hours: {sorted_data[0][1]}')
+
+        print(f'Symbol: {symbol}, max profit for 12 hours: {max_profit}')
 
     print('deactivating bots...')
 

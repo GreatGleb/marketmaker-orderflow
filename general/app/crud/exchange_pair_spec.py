@@ -1,4 +1,4 @@
-from sqlalchemy import select, distinct
+from sqlalchemy import select, distinct, update
 from decimal import Decimal
 import json
 
@@ -30,19 +30,15 @@ class AssetExchangeSpecCrud(BaseCrud[AssetExchangeSpec]):
         self.session.add(spec)
         return spec, True
 
-    async def get_step_size_by_symbol(
-        self, symbol: str
-    ) -> dict[str, float] | None:
-        stmt = (
-            select(AssetExchangeSpec.filters)
-            .where(AssetExchangeSpec.symbol == symbol)
-            .limit(1)
-        )
-        result = await self.session.execute(stmt)
-        filters = result.scalar_one_or_none()
-
+    @staticmethod
+    def extract_step_sizes(filters) -> dict[str, float | None]:
+        """Шаги цены и лота из JSON-фильтров Binance."""
         if not filters:
-            return None
+            return {
+                "tick_size": None,
+                "step_size": None,
+                "market_step_size": None,
+            }
 
         price_filter = next(
             (f for f in filters if f.get("filterType") == "PRICE_FILTER"), None
@@ -69,6 +65,76 @@ class AssetExchangeSpecCrud(BaseCrud[AssetExchangeSpec]):
                 else None
             ),
         }
+
+    async def get_step_size_by_symbol(
+        self, symbol: str
+    ) -> dict[str, float] | None:
+        stmt = (
+            select(AssetExchangeSpec.filters)
+            .where(AssetExchangeSpec.symbol == symbol)
+            .limit(1)
+        )
+        result = await self.session.execute(stmt)
+        filters = result.scalar_one_or_none()
+
+        if not filters:
+            return None
+
+        return self.extract_step_sizes(filters)
+
+    async def get_market_data_by_symbol(self, symbol: str) -> dict | None:
+        """Всё, что нужно симулятору по паре, одним запросом: шаги цены и лота
+        плюс ставки комиссии — они лежат в одной строке asset_exchange_specs.
+
+        None в ставках означает «не заполнено» (см.
+        app/scripts/seed_commission_rates.py) — вызывающий код должен
+        откатиться на константу из app/constants/commissions.py.
+        """
+        stmt = (
+            select(
+                AssetExchangeSpec.filters,
+                AssetExchangeSpec.maker_commission_rate,
+                AssetExchangeSpec.taker_commission_rate,
+            )
+            .where(AssetExchangeSpec.symbol == symbol)
+            .limit(1)
+        )
+        row = (await self.session.execute(stmt)).first()
+
+        if not row:
+            return None
+
+        filters, maker, taker = row
+
+        market_data = self.extract_step_sizes(filters)
+        market_data["maker_commission_rate"] = (
+            Decimal(str(maker)) if maker is not None else None
+        )
+        market_data["taker_commission_rate"] = (
+            Decimal(str(taker)) if taker is not None else None
+        )
+
+        return market_data
+
+    async def set_commission_rates(
+        self, symbol: str, maker_rate, taker_rate
+    ) -> None:
+        stmt = (
+            update(AssetExchangeSpec)
+            .where(AssetExchangeSpec.symbol == symbol)
+            .values(
+                maker_commission_rate=maker_rate,
+                taker_commission_rate=taker_rate,
+            )
+        )
+        await self.session.execute(stmt)
+
+    async def get_symbols_without_commission_rates(self) -> list[str]:
+        stmt = select(AssetExchangeSpec.symbol).where(
+            AssetExchangeSpec.taker_commission_rate.is_(None)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
 
     async def get_symbols_characteristics_from_active_pairs(
         self

@@ -32,6 +32,7 @@ show_help() {
     echo "  report        - app.scripts.top_bots_report"
     echo "  seed_data     - app.scripts.seed_binance_data"
     echo "  seed_pairs    - app.scripts.seed_watched_pairs_usdt"
+    echo "  commissions   - app.scripts.seed_commission_rates (ставки maker/taker по парам)"
     echo ""
     echo -e "${YELLOW}Примеры:${NC}"
     echo "  ./run.sh start"
@@ -98,6 +99,9 @@ case "$1" in
                 ;;
             seed_pairs | seed_watched_pairs_usdt)
                 run_script_in_container "app.scripts.seed_watched_pairs_usdt"
+                ;;
+            commissions | seed_commission_rates)
+                run_script_in_container "app.scripts.seed_commission_rates"
                 ;;
             *)
                 echo "Ошибка: неизвестный скрипт '$2'." >&2

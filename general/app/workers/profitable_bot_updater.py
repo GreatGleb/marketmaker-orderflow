@@ -88,8 +88,6 @@ class ProfitableBotUpdaterCommand(Command):
                     refer_bot.start_updown_percents = 0
                 if refer_bot.min_timeframe_asset_volatility is None:
                     refer_bot.min_timeframe_asset_volatility = 0
-                if refer_bot.min_timeframe_asset_volatility is None:
-                    refer_bot.min_timeframe_asset_volatility = 0
                 if refer_bot.ma_number_of_candles_for_open_order is None:
                     refer_bot.ma_number_of_candles_for_open_order = 0
                 if refer_bot.ma_number_of_candles_for_close_order is None:
@@ -111,6 +109,7 @@ class ProfitableBotUpdaterCommand(Command):
                         refer_bot.time_to_wait_for_entry_price_to_open_order_in_seconds
                         or 0
                     ),
+                    "use_trailing_stop": bool(refer_bot.use_trailing_stop),
                     "consider_ma_for_open_order": refer_bot.consider_ma_for_open_order,
                     "consider_ma_for_close_order": refer_bot.consider_ma_for_close_order,
                     "ma_number_of_candles_for_open_order": str(
@@ -147,11 +146,23 @@ class ProfitableBotUpdaterCommand(Command):
         if start_updown_ticks < 1:
             start_updown_ticks = 1
 
-        ref_bot_config = bot_config.clone()
+        new_ticks = {
+            "stop_success_ticks": stop_success_ticks,
+            "stop_loss_ticks": stop_loss_ticks,
+            "start_updown_ticks": start_updown_ticks,
+        }
 
-        ref_bot_config.stop_success_ticks = stop_success_ticks
-        ref_bot_config.stop_loss_ticks = stop_loss_ticks
-        ref_bot_config.start_updown_ticks = start_updown_ticks
+        # Сюда приходят конфиги двух видов: настоящий TestBot (копиботы,
+        # binance_bot) и namedtuple BotObject у обычных тестовых ботов
+        # (demo_test_bot.py:79). У namedtuple нет ни clone(), ни присваивания
+        # полей, поэтому для него копия делается через _replace.
+        if hasattr(bot_config, "clone"):
+            ref_bot_config = bot_config.clone()
+
+            for field, value in new_ticks.items():
+                setattr(ref_bot_config, field, value)
+        else:
+            ref_bot_config = bot_config._replace(**new_ticks)
 
         return ref_bot_config
 

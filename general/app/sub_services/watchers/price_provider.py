@@ -1,4 +1,6 @@
 import asyncio
+import logging
+import time
 from datetime import datetime
 from decimal import Decimal
 
@@ -8,18 +10,68 @@ from app.enums.trade_type import TradeType
 
 
 class PriceProvider:
+    # Сколько попыток опрашивать часто, прежде чем перейти на редкий опрос.
+    FAST_POLL_ATTEMPTS = 50
+    FAST_POLL_INTERVAL_SECONDS = 0.1
+    SLOW_POLL_INTERVAL_SECONDS = 1.0
+    # Как часто напоминать в лог, что цены по паре всё ещё нет.
+    MISSING_LOG_INTERVAL_SECONDS = 60
+
+    # Общий на процесс: тысячи ботов на одной паре не должны писать
+    # тысячи одинаковых строк в лог.
+    _last_missing_log: dict[str, float] = {}
+
     def __init__(self, redis):
         self.redis = redis
 
+    @classmethod
+    def _log_missing_price(cls, symbol: str, waiting_seconds: float) -> None:
+        now = time.monotonic()
+        last = cls._last_missing_log.get(symbol)
+
+        if last is not None and now - last < cls.MISSING_LOG_INTERVAL_SECONDS:
+            return
+
+        cls._last_missing_log[symbol] = now
+        logging.info(
+            f"⏳ Нет цены в Redis по ключу price:{symbol} "
+            f"уже {waiting_seconds:.0f} с — боты на этой паре стоят. "
+            f"Проверьте app.scripts.watch_ws_and_save."
+        )
+
     async def get_price(self, symbol: str) -> Decimal:
+        # Ждём цену бесконечно: бросать открытую позицию из-за паузы в
+        # питателе цен нельзя. Но молчать об этом тоже нельзя — иначе бот
+        # выглядит работающим, а на деле стоит.
+        attempt = 0
+        started_at = time.monotonic()
+
         while True:
             try:
                 price_str = await self.redis.get(f"price:{symbol}")
                 if price_str:
+                    if attempt:
+                        self._last_missing_log.pop(symbol, None)
                     return Decimal(price_str)
             except Exception as e:
-                print(f"Redis Error: {e}")
-            await asyncio.sleep(0.1)
+                logging.info(f"Redis Error: {e}")
+
+            attempt += 1
+
+            # Первые секунды молчим: цена может появиться с небольшой
+            # задержкой, и ругаться на это бессмысленно. Жалуемся, только
+            # когда пауза перестала быть мгновенной.
+            if attempt >= self.FAST_POLL_ATTEMPTS:
+                self._log_missing_price(symbol, time.monotonic() - started_at)
+
+            # Первые попытки — часто: цена обычно появляется сразу. Дальше
+            # реже, иначе тысячи ботов на мёртвой паре забьют Redis
+            # бессмысленными запросами.
+            await asyncio.sleep(
+                self.FAST_POLL_INTERVAL_SECONDS
+                if attempt < self.FAST_POLL_ATTEMPTS
+                else self.SLOW_POLL_INTERVAL_SECONDS
+            )
 
 
 class PriceWatcher:

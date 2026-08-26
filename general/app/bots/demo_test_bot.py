@@ -25,7 +25,7 @@ from app.dependencies import (
     resolve_crud,
 )
 from app.db.base import DatabaseSessionManager
-from app.constants.commissions import COMMISSION_OPEN, COMMISSION_CLOSE
+from app.constants.commissions import COMMISSION_OPEN
 from app.enums.event_type import StopReasonEvent
 from app.enums.trade_type import TradeType
 from app.sub_services.logic.market_setup import MarketDataBuilder
@@ -64,6 +64,28 @@ class StartTestBotsCommand(Command):
 
         await asyncio.sleep(60)
 
+        # Без активных ботов собирать namedtuple не из чего, и раньше здесь
+        # падал IndexError, роняя весь процесс: supervisor перезапускал его
+        # по кругу. Ждём, пока боты появятся в test_bots.
+        while not self.stop_event.is_set():
+            active_bots = await bot_crud.get_active_bots()
+
+            if active_bots:
+                break
+
+            # Иначе транзакция висит открытой всё время ожидания.
+            await session.rollback()
+
+            logging.info(
+                'Нет активных ботов в test_bots, жду 60 с. '
+                'Создать их: python -m app.scripts.new_bots'
+            )
+            await asyncio.sleep(60)
+
+        if self.stop_event.is_set():
+            logging.info('Остановлено до запуска ботов.')
+            return
+
         builder = MarketDataBuilder(session)
         shared_data = await builder.build()
 
@@ -71,7 +93,6 @@ class StartTestBotsCommand(Command):
 
         tasks = []
 
-        active_bots = await bot_crud.get_active_bots()
         active_bots_dicts = [bot.__dict__ for bot in active_bots]
         active_bots_dicts = [{k: v for k, v in bot_dict.items() if k != '_sa_instance_state'} for bot_dict in
                                    active_bots_dicts]
@@ -157,6 +178,9 @@ class StartTestBotsCommand(Command):
             time_to_wait_for_entry_price_to_open_order_in_seconds=Decimal(refer_bot[
                 'time_to_wait_for_entry_price_to_open_order_in_seconds'
             ]),
+            # .get(), а не [...]: ключи copy_bot_*, записанные в Redis до
+            # добавления поля, его ещё не содержат.
+            use_trailing_stop=bool(refer_bot.get('use_trailing_stop')),
             consider_ma_for_open_order=bool(refer_bot['consider_ma_for_open_order']),
             consider_ma_for_close_order=bool(refer_bot['consider_ma_for_close_order']),
             ma_number_of_candles_for_open_order=refer_bot['ma_number_of_candles_for_open_order'],
@@ -280,6 +304,13 @@ class StartTestBotsCommand(Command):
                 return
             tick_size = data["tick_size"]
 
+            # Taker с обеих сторон: и вход по пробою уровня, и выход по
+            # стоп-лоссу/тейк-профиту в реальности исполняются по рынку.
+            # None = ставка не засеяна (seed_commission_rates.py) → константа.
+            commission_rate = data.get("taker_commission_rate")
+            if commission_rate is None:
+                commission_rate = COMMISSION_OPEN
+
             if bot_id == 1:
                 logging.info('bot_id 1 started work')
 
@@ -311,12 +342,16 @@ class StartTestBotsCommand(Command):
                     logging.info(f'waiting for {bot_id}')
 
                 try:
-                    wait_seconds = 1
                     if bot_config.consider_ma_for_open_order:
+                        # MA-бот входит только по пересечению средних, поэтому
+                        # time_to_wait здесь не применяется: 12 часов — это
+                        # предохранитель, по нему цикл просто уходит на новую
+                        # итерацию ожидания.
                         wait_seconds = 12 * 60 * 60
-
-                    if bot_config.time_to_wait_for_entry_price_to_open_order_in_seconds:
+                    elif bot_config.time_to_wait_for_entry_price_to_open_order_in_seconds:
                         wait_seconds = bot_config.time_to_wait_for_entry_price_to_open_order_in_seconds
+                    else:
+                        wait_seconds = 1
 
                     timeout = int(wait_seconds)
                     price_watcher = PriceWatcher(redis=redis)
@@ -348,7 +383,10 @@ class StartTestBotsCommand(Command):
 
             close_not_lose_price = (
                 PriceCalculator.calculate_close_not_lose_price(
-                    open_price=open_price, trade_type=trade_type
+                    open_price=open_price,
+                    trade_type=trade_type,
+                    commission_open=commission_rate,
+                    commission_close=commission_rate,
                 )
             )
 
@@ -375,6 +413,8 @@ class StartTestBotsCommand(Command):
                             tick_size=tick_size,
                             open_price=open_price,
                             trade_type=trade_type,
+                            commission_open=commission_rate,
+                            commission_close=commission_rate,
                         )
                     )
                 take_profit_price = original_take_profit_price
@@ -387,7 +427,7 @@ class StartTestBotsCommand(Command):
                     open_price=open_price,
                     open_time=datetime.now(UTC),
                     open_fee=(
-                        Decimal(bot_config.balance) * Decimal(COMMISSION_OPEN)
+                        Decimal(bot_config.balance) * Decimal(commission_rate)
                     ),
                     order_type=trade_type
                 )
@@ -400,7 +440,7 @@ class StartTestBotsCommand(Command):
                     open_price=open_price,
                     open_time=datetime.now(UTC),
                     open_fee=(
-                        Decimal(bot_config.balance) * Decimal(COMMISSION_OPEN)
+                        Decimal(bot_config.balance) * Decimal(commission_rate)
                     ),
                     order_type=trade_type
                 )
@@ -456,7 +496,7 @@ class StartTestBotsCommand(Command):
                 else:
                     price_diff_from_cnl = close_not_lose_price - updated_price
 
-                diff_ticks = price_diff_from_cnl * tick_size
+                diff_ticks = price_diff_from_cnl / tick_size
 
                 if diff_ticks < 10 and just30sec_elapsed_time >= 30:
                     order.stop_reason_event = StopReasonEvent.STOP_LONG_LOSE.value
@@ -481,6 +521,18 @@ class StartTestBotsCommand(Command):
                 close_price=close_price,
                 open_price=open_price,
                 trade_type=trade_type,
+                commission_open=commission_rate,
+                commission_close=commission_rate,
+            )
+
+            # Тем же расчётом, что и внутри calculate_pnl, иначе поля
+            # open_fee/close_fee не сходятся с profit_loss.
+            open_fee, close_fee = PriceCalculator.calculate_fees(
+                balance=balance,
+                open_price=open_price,
+                close_price=close_price,
+                commission_open=commission_rate,
+                commission_close=commission_rate,
             )
 
             order_data = {
@@ -489,12 +541,12 @@ class StartTestBotsCommand(Command):
                 "balance": str(balance),
                 "open_price": str(open_price),
                 "open_time": order.open_time,
-                "open_fee": str(order.open_fee),
+                "open_fee": str(open_fee),
                 "stop_loss_price": str(order.stop_loss_price),
                 "bot_id": bot_id,
                 "close_price": str(close_price),
                 "close_time": datetime.now(UTC),
-                "close_fee": str(order.open_price * Decimal(COMMISSION_CLOSE)),
+                "close_fee": str(close_fee),
                 "profit_loss": str(pnl),
                 "is_active": False,
                 "start_updown_ticks": int(order.start_updown_ticks),

@@ -21,6 +21,13 @@ from app.dependencies import (
 
 from app.utils import Command, CommandResult
 
+# Сделки забираются из Redis через LPOP, то есть удаляются до вставки в БД.
+# При сбое БД батч возвращается в очередь — но только пока она не разрослась:
+# одна сделка занимает ~600 байт, без потолка длинный простой БД съест всю
+# память Redis (maxmemory в docker-compose не задан).
+# 200 000 записей — примерно 125 МБ.
+QUEUE_MAX_LENGTH = 200_000
+
 
 class OrderBulkInsertCommand(Command):
 
@@ -57,6 +64,7 @@ class OrderBulkInsertCommand(Command):
                 test_order_crud = TestOrderCrud(session)
                 for iteration in range(10):
                     orders = []
+                    raws = []
                     for _ in range(4000):
                         raw = await redis.lpop(ORDER_QUEUE_KEY)
 
@@ -66,11 +74,13 @@ class OrderBulkInsertCommand(Command):
                         try:
                             order = json.loads(raw)
                             order = self.parse_datetime_fields(order, DATETIME_FIELDS)
-                            orders.append(order)
                         except Exception as e:
                             logging.info(f"❌ Ошибка при обработке записи из Redis: {e}")
+                            continue
 
-                    RETRY_DELAY_SECONDS = 5 * 60
+                        orders.append(order)
+                        raws.append(raw)
+
                     EMPTY_ORDERS_DELAY_SECONDS = 1 * 60
 
                     for i in range(0, len(orders), BATCH_SIZE):
@@ -79,12 +89,27 @@ class OrderBulkInsertCommand(Command):
                             await test_order_crud.bulk_create(orders=batch)
                         except Exception as e:
                             logging.info(f"❌ Ошибка при вставке батча в БД: {e}")
-                            logging.info("Ждем {RETRY_DELAY_SECONDS // 60} мин. и пробуем снова.")
-                            await asyncio.sleep(RETRY_DELAY_SECONDS)
-                            try:
-                                await test_order_crud.bulk_create(orders=batch)
-                            except Exception as e_retry:
-                                logging.info(f"❌ Повторная попытка тоже не удалась: {e_retry}. Пропускаем батч.")
+
+                            # Иначе транзакция остаётся сломанной и следующие
+                            # батчи падают уже из-за неё.
+                            await session.rollback()
+
+                            batch_raws = raws[i : i + BATCH_SIZE]
+                            queue_length = await redis.llen(ORDER_QUEUE_KEY)
+
+                            if queue_length + len(batch_raws) <= QUEUE_MAX_LENGTH:
+                                await redis.lpush(ORDER_QUEUE_KEY, *batch_raws)
+                                logging.info(
+                                    f"↩️ Батч из {len(batch_raws)} сделок возвращён "
+                                    f"в очередь, повтор на следующем витке."
+                                )
+                            else:
+                                logging.info(
+                                    f"⚠️ Батч из {len(batch_raws)} сделок не влезает "
+                                    f"в лимит очереди ({queue_length} + "
+                                    f"{len(batch_raws)} > {QUEUE_MAX_LENGTH}) и потерян. "
+                                    f"Починить БД или поднять QUEUE_MAX_LENGTH."
+                                )
 
                     if not orders:
                         logging.info(f"Список заказов пуст. Ждем {EMPTY_ORDERS_DELAY_SECONDS // 60} минуту...")
@@ -93,6 +118,6 @@ class OrderBulkInsertCommand(Command):
             end_time = time.time()
             elapsed_time = end_time - start_time
             wait_time = 60 - elapsed_time
-            await asyncio.sleep(wait_time)
+            await asyncio.sleep(max(wait_time, 1))
 
         return CommandResult(success=True)

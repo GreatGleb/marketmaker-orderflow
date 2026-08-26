@@ -16,15 +16,30 @@ class MarketDataBuilder:
         symbols = await self.asset_crud.get_all_active_pairs()
 
         for symbol in symbols:
-            step_sizes = await self.exchange_crud.get_step_size_by_symbol(
+            # Один запрос на пару: шаги и ставки лежат в одной строке
+            # asset_exchange_specs.
+            market_data = await self.exchange_crud.get_market_data_by_symbol(
                 symbol
             )
+
+            if not market_data:
+                shared_data[symbol] = {
+                    "tick_size": None,
+                    "maker_commission_rate": None,
+                    "taker_commission_rate": None,
+                }
+                continue
+
+            tick_size = market_data["tick_size"]
+
             shared_data[symbol] = {
                 "tick_size": (
-                    Decimal(str(step_sizes.get("tick_size")))
-                    if step_sizes
-                    else None
-                )
+                    Decimal(str(tick_size)) if tick_size is not None else None
+                ),
+                # None = ставка не засеяна, потребитель берёт константу.
+                # Заполняется app/scripts/seed_commission_rates.py.
+                "maker_commission_rate": market_data["maker_commission_rate"],
+                "taker_commission_rate": market_data["taker_commission_rate"],
             }
 
         return shared_data
