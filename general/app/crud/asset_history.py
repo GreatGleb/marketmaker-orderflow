@@ -26,12 +26,21 @@ class AssetHistoryCrud(BaseCrud[AssetHistory]):
 
         logging.info('AssetHistoryCrud init')
 
+    # asyncpg не принимает больше 32767 параметров в одном запросе,
+    # поэтому большие пачки режем на куски по числу колонок.
+    MAX_QUERY_ARGS = 30000
+
     async def bulk_create(self, items: list[dict]) -> None:
         if not items:
             return
 
-        stmt = insert(AssetHistory).values(items)
-        await self.session.execute(stmt)
+        columns = max(len(item) for item in items)
+        chunk_size = max(1, self.MAX_QUERY_ARGS // columns)
+
+        for start in range(0, len(items), chunk_size):
+            chunk = items[start:start + chunk_size]
+            stmt = insert(AssetHistory).values(chunk)
+            await self.session.execute(stmt)
 
     async def delete_older_than(self, cutoff_timestamp: datetime):
         stmt = delete(AssetHistory).where(
