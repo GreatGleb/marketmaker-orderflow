@@ -9,6 +9,10 @@
 |---|---|
 | [test-bots/](test-bots/README.md) | Тестовые боты (paper trading): `start_test_bots` + `demo_test_bot` и их зависимости |
 
+Незакрытые задачи по тестовым ботам собраны в
+[test-bots/09-roadmap.md](test-bots/09-roadmap.md) — новую сессию удобно
+начинать оттуда.
+
 ## Соглашения
 
 * Все пути в документах — от корня репозитория
