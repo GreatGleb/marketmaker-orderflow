@@ -24,6 +24,13 @@ SPOT_EXCHANGE_INFO_URL = "https://api.binance.com/api/v3/exchangeInfo"
 SUBSCRIBE_CHUNK = 150
 # Если БД не успевает, буфер не должен расти в память бесконечно.
 MAX_SPOT_BUFFER = 20000
+# TTL для ключей price:*. Без него цена живёт в Redis вечно: если пара выпала
+# из watched_pair или питатель встал, боты продолжают «торговать» по
+# замороженной цене и засоряют test_orders. С TTL они просто ждут (и пишут
+# об этом в лог — см. PriceProvider.get_price).
+PRICE_TTL_SECONDS = 120
+# Как часто перепроверять список пар, если подписываться пока не на что.
+EMPTY_SYMBOLS_RETRY_SECONDS = 30
 
 logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -116,10 +123,15 @@ async def save_filtered_assets(session: AsyncSession, redis, data: list[dict], i
         if last_price is not None:
             latest_prices[f"price:{symbol}"] = last_price
 
-    # Один mset вместо set на каждую запись: на больших пачках
-    # последовательные round-trip'ы в Redis не давали флашеру уложиться в интервал.
+    # Пайплайн, а не mset: нужен TTL на каждый ключ, а mset его не умеет.
+    # Пайплайн уходит одним round-trip'ом, поэтому флашер по-прежнему
+    # укладывается в интервал — в отличие от последовательных set.
     if latest_prices:
-        await redis.mset(latest_prices)
+        async with redis.pipeline(transaction=False) as pipe:
+            for price_key, price_value in latest_prices.items():
+                pipe.set(price_key, price_value, ex=PRICE_TTL_SECONDS)
+
+            await pipe.execute()
 
     is_stopped = await redis.get(f"asset_history:stop")
     if is_stopped:
@@ -308,24 +320,37 @@ async def run_spot_ws_listener():
             if item.get("status") == "TRADING"
         }
 
-        if use_watched_filter:
-            watched_crud = WatchedPairCrud(session)
-            wanted = sorted((await watched_crud.get_symbol_to_id_map()).keys())
-            if not wanted:
-                logging.info("❌ watched_pair пуст, подписываться не на что.")
-                return
-        else:
-            # Писать можно только туда, где есть asset_exchange_id,
-            # иначе save_filtered_assets уйдёт в пересид по KeyError.
-            asset_crud = AssetExchangeSpecCrud(session)
-            wanted = sorted((await asset_crud.get_all_symbols_with_id_map()).keys())
+        watched_crud = WatchedPairCrud(session)
+        asset_crud = AssetExchangeSpecCrud(session)
 
-        symbols = [symbol for symbol in wanted if symbol in spot_symbols]
-        skipped = len(wanted) - len(symbols)
+        # Ждём, а не выходим: на чистой базе watched_pair пуст, его наполняет
+        # seed_watched_pairs. Если здесь сделать return, supervisord после
+        # трёх перезапусков пометит процесс FATAL и перестанет его поднимать —
+        # и цены не пойдут даже после наполнения списка.
+        while True:
+            if use_watched_filter:
+                wanted = sorted((await watched_crud.get_symbol_to_id_map()).keys())
+            else:
+                # Писать можно только туда, где есть asset_exchange_id,
+                # иначе save_filtered_assets уйдёт в пересид по KeyError.
+                wanted = sorted((await asset_crud.get_all_symbols_with_id_map()).keys())
 
-        if not symbols:
-            logging.info("❌ Ни одной подходящей пары нет на споте.")
-            return
+            symbols = [symbol for symbol in wanted if symbol in spot_symbols]
+            skipped = len(wanted) - len(symbols)
+
+            if symbols:
+                break
+
+            reason = (
+                "watched_pair пуст" if not wanted
+                else "ни одной пары из watched_pair нет на споте"
+            )
+            logging.info(
+                f"Подписываться не на что: {reason}. Жду "
+                f"{EMPTY_SYMBOLS_RETRY_SECONDS} с. Наполнить список: "
+                f"python -m app.scripts.seed_watched_pairs"
+            )
+            await asyncio.sleep(EMPTY_SYMBOLS_RETRY_SECONDS)
 
         logging.info(
             f"Режим пар: {symbols_mode}. Подписываюсь на {len(symbols)} пар, "

@@ -23,7 +23,8 @@ show_help() {
     echo "  restart       - Перезапустить проект"
     echo "  logs          - Показать логи контейнеров (в реальном времени)"
     echo "  shell         - Открыть командную строку (bash) внутри контейнера"
-    echo "  init          - Выполнить начальную загрузку данных (seed data & pairs)"
+    echo "  init          - Полная настройка с нуля: контейнеры, миграции, сиды, боты"
+    echo "                  Флаги: --skip-commissions (быстрее), --recreate-bots (пересоздать парк)"
     echo "  scripts [имя] - Запустить указанный python-скрипт"
     echo ""
     echo -e "${YELLOW}Доступные скрипты для команды 'scripts':${NC}"
@@ -31,13 +32,14 @@ show_help() {
     echo "  demo          - app.bots.demo_test_bot"
     echo "  report        - app.scripts.top_bots_report"
     echo "  seed_data     - app.scripts.seed_binance_data"
-    echo "  seed_pairs    - app.scripts.seed_watched_pairs_usdt"
+    echo "  seed_pairs    - app.scripts.seed_watched_pairs (топ пар по резким скачкам)"
     echo "  commissions   - app.scripts.seed_commission_rates (ставки maker/taker по парам)"
     echo ""
     echo -e "${YELLOW}Примеры:${NC}"
     echo "  ./run.sh start"
     echo "  ./run.sh scripts watch"
     echo "  ./run.sh init"
+    echo "  ./run.sh init --skip-commissions"
     echo ""
     echo -e "Если запустить без команд (${YELLOW}./run.sh${NC}), будет показана эта справка."
 }
@@ -63,11 +65,44 @@ case "$1" in
         docker-compose up --build -d
         ;;
     init)
-        echo -e "${GREEN}Выполняю начальную загрузку данных...${NC}"
-        run_script_in_container "app.scripts.seed_binance_data"
-        run_script_in_container "app.scripts.seed_watched_pairs_usdt"
-        run_script_in_container "app.scripts.set_isolate_mode_and_leverage_for_binance_pairs"
-        echo -e "${GREEN}Загрузка данных завершена.${NC}"
+        echo -e "${GREEN}Полная настройка проекта. Это займёт до 20 минут.${NC}"
+
+        if [ ! -f general/.env ]; then
+            echo -e "${YELLOW}Нет файла general/.env — скопируйте general/.env.example и заполните ключи.${NC}" >&2
+            exit 1
+        fi
+
+        echo -e "${CYAN}[1/4] Собираю и запускаю контейнеры...${NC}"
+        docker-compose up --build -d || exit 1
+
+        echo -e "${CYAN}[2/4] Жду базу данных...${NC}"
+        for _ in $(seq 1 60); do
+            docker exec orderflow_postgres pg_isready -U postgres >/dev/null 2>&1 && break
+            sleep 2
+        done
+        if ! docker exec orderflow_postgres pg_isready -U postgres >/dev/null 2>&1; then
+            echo -e "${YELLOW}База не поднялась. Смотрите: docker-compose logs db${NC}" >&2
+            exit 1
+        fi
+
+        # boot.sh внутри контейнера сначала прогоняет alembic upgrade head и
+        # только потом запускает supervisord — значит его отклик означает,
+        # что миграции уже применены.
+        echo -e "${CYAN}[3/4] Жду миграции и запуск процессов...${NC}"
+        for _ in $(seq 1 90); do
+            docker exec "$CONTAINER_NAME" supervisorctl status >/dev/null 2>&1 && break
+            sleep 2
+        done
+        if ! docker exec "$CONTAINER_NAME" supervisorctl status >/dev/null 2>&1; then
+            echo -e "${YELLOW}Приложение не поднялось. Смотрите: ./run.sh logs${NC}" >&2
+            exit 1
+        fi
+
+        echo -e "${CYAN}[4/4] Сиды, ожидание цен, создание ботов...${NC}"
+        shift
+        docker exec -it "$CONTAINER_NAME" python -m app.scripts.init_setup "$@" || exit 1
+
+        echo -e "${GREEN}Готово. Логи: ./run.sh logs${NC}"
         ;;
     logs)
         echo -e "${CYAN}Показываю логи... (Нажмите Ctrl+C для выхода)${NC}"
@@ -97,8 +132,8 @@ case "$1" in
             seed_data | seed_binance_data)
                 run_script_in_container "app.scripts.seed_binance_data"
                 ;;
-            seed_pairs | seed_watched_pairs_usdt)
-                run_script_in_container "app.scripts.seed_watched_pairs_usdt"
+            seed_pairs | seed_watched_pairs)
+                run_script_in_container "app.scripts.seed_watched_pairs"
                 ;;
             commissions | seed_commission_rates)
                 run_script_in_container "app.scripts.seed_commission_rates"

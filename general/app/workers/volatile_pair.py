@@ -18,6 +18,10 @@ from app.dependencies import (
     resolve_crud,
 )
 from app.config import settings
+from app.constants.volatility import (
+    VOLATILE_SYMBOL_TTL_SECONDS,
+    most_volatile_symbol_key,
+)
 from app.db.base import DatabaseSessionManager
 
 from app.utils import Command
@@ -42,9 +46,6 @@ class VolatilePairCommand(Command):
             level=logging.INFO
         )
 
-        first_run_completed = False
-        asset_volatility_timeframes = []
-
         dsm = DatabaseSessionManager.create(settings.DB_URL)
 
         while not self.stop_event.is_set():
@@ -55,12 +56,12 @@ class VolatilePairCommand(Command):
                     bot_crud = TestBotCrud(session)
                     asset_crud = AssetHistoryCrud(session)
 
-                    if not first_run_completed:
-                        unique_values = (
-                            await bot_crud.get_unique_min_timeframe_volatility_values()
-                        )
-                        asset_volatility_timeframes = list(unique_values)
-                        first_run_completed = True
+                    # Перечитываем каждый цикл, а не один раз на старте:
+                    # иначе боты с новым таймфреймом, заведённые уже после
+                    # запуска воркера, никогда бы не получили свою пару.
+                    asset_volatility_timeframes = list(
+                        await bot_crud.get_unique_min_timeframe_volatility_values()
+                    )
 
                     most_volatile = None
                     tf_str = None
@@ -80,8 +81,13 @@ class VolatilePairCommand(Command):
 
                             if most_volatile:
                                 symbol = most_volatile.symbol
-                                await redis.set(f"most_volatile_symbol_{tf_str}", symbol, ex=60)
-                                logging.info(f"most_volatile_symbol_{tf_str} updated: {symbol}")
+                                key = most_volatile_symbol_key(tf_str)
+                                # TTL: если воркер умрёт, ключ протухнет и боты
+                                # встанут, а не будут торговать старой парой.
+                                await redis.set(
+                                    key, symbol, ex=VOLATILE_SYMBOL_TTL_SECONDS
+                                )
+                                logging.info(f"{key} updated: {symbol}")
                     else:
                         now = datetime.now(UTC)
                         time_ago = now - timedelta(hours=1)
@@ -105,4 +111,4 @@ class VolatilePairCommand(Command):
             end_time = time.time()
             elapsed_time = end_time - start_time
             wait_time = 30 - elapsed_time
-            await asyncio.sleep(wait_time)
+            await asyncio.sleep(max(wait_time, 1))

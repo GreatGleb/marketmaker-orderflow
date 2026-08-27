@@ -12,6 +12,7 @@ from app.config import settings
 import asyncio
 
 from app.db.models import AssetExchangeSpec, AssetHistory
+from app.scripts.supervisor_control import paused
 
 logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -19,9 +20,16 @@ logging.basicConfig(
 )
 
 async def get_average_percentage_for_minimum_tick():
+    """Средний процент, который стоит один тик, по всем активным парам.
+
+    Возвращает None, если посчитать не по чему: вызывающий код обязан это
+    обработать, а не подставлять значение по умолчанию. Через это число
+    задаются проценты волатильных ботов, и ошибка в нём тихо перекосит все
+    их стопы и тейки.
+    """
     start_time = time.time()
 
-    average_percent = 0.01
+    average_percent = None
 
     dsm = DatabaseSessionManager.create(settings.DB_URL)
     async with (dsm.get_session() as session):
@@ -30,7 +38,9 @@ async def get_average_percentage_for_minimum_tick():
         active_symbols = await asset_crud.get_all_active_pairs(only_symbols_in_period=True)
 
         if not active_symbols:
-            return average_percent
+            print('Нет свежих цен в asset_history — средний процент за тик '
+                  'посчитать не по чему.')
+            return None
 
         stmt_active_symbols = (
             select(AssetExchangeSpec.symbol)
@@ -83,6 +93,11 @@ async def get_average_percentage_for_minimum_tick():
             percents.append(percent)
 
             symbols_characteristics[symbol] = [tick_size, last_price]
+
+        if not percents:
+            print('Ни у одной активной пары нет PRICE_FILTER — средний '
+                  'процент за тик посчитать не из чего.')
+            return None
 
         sum_of_percents = sum(percents)
         average_percent = sum_of_percents / len(percents)
@@ -369,6 +384,8 @@ async def create_bots():
 
             # min_tf_volatility_values = [0.5, 1, 2, 3]
 
+            created_count = 0
+
             try:
                 for start in start_ticks_values:
                     for stop_lose in stop_lose_ticks_values:
@@ -392,9 +409,11 @@ async def create_bots():
 
                         await bot_crud.bulk_create(new_bots)
                         await session.commit()
-                print(f"✅ Успешно создано ботов. {len(new_bots)}")
+                        created_count += len(new_bots)
+                print(f"✅ Тиковых ботов создано: {created_count}")
             except Exception as e:
-                print(e)
+                # Порции уже закоммичены, поэтому говорим, сколько успели.
+                print(f"❌ Ошибка после {created_count} созданных тиковых ботов: {e}")
 
         if 1:
             copy_bot_min_time_profitability_min_values = [10, 20, 30, 40, 50, 60, 120, 180, 240, 360, 420, 480, 540,
@@ -420,7 +439,7 @@ async def create_bots():
 
                 await bot_crud.bulk_create(new_bots)
                 await session.commit()
-                print(f"✅ Успешно создано ботов. {len(new_bots)}")
+                print(f"✅ Копиботов v1 создано: {len(new_bots)}")
 
                 new_bots = []
                 for min_time in copy_bot_min_time_profitability_min_values:
@@ -435,9 +454,71 @@ async def create_bots():
 
                 await bot_crud.bulk_create(new_bots)
                 await session.commit()
-                print(f"✅ Успешно создано ботов. {len(new_bots)}")
+                print(f"✅ Копиботов v2 создано: {len(new_bots)}")
             except Exception as e:
-                print(e)
+                print(f"❌ Ошибка при создании копиботов: {e}")
+
+        # Боты старого образца: пара за ними не закреплена, каждый цикл они
+        # торгуют самой волатильной парой за своё окно min_timeframe. Раз пара
+        # меняется, параметры задаются в процентах, а не в тиках: тик на дорогой
+        # и дешёвой монете — это разные деньги.
+        #
+        # Требуют запущенного воркера set_volatile_pairs, иначе ключей
+        # most_volatile_symbol_* в Redis не будет и боты просто встанут.
+        if 1:
+            # Сетка прорежена относительно тиковой: этих ботов 8 × 9 × 7 × 4,
+            # и каждый — отдельная корутина в симуляторе.
+            volatile_start_ticks = [5, 10, 20, 30, 40, 50, 70, 100]
+            volatile_stop_lose_ticks = [20, 30, 40, 50, 60, 80, 150, 300, 600]
+            volatile_stop_win_ticks = [5, 10, 20, 40, 60, 100, 300]
+            min_tf_volatility_values = [0.5, 1, 2, 3]
+
+            created_count = 0
+
+            try:
+                # Средний процент, который стоит один тик по всем активным
+                # парам. Через него тиковая сетка переводится в процентную,
+                # и значения остаются сопоставимыми с тиковыми ботами.
+                average_percent = await get_average_percentage_for_minimum_tick()
+
+                if average_percent is None:
+                    # Молча взять значение по умолчанию нельзя: проценты всех
+                    # волатильных ботов считаются от него, и ошибка перекосит
+                    # им стопы и тейки в разы.
+                    raise RuntimeError(
+                        'не посчитан средний процент за тик — запустите '
+                        'app.scripts.watch_ws_and_save, дайте ему набрать '
+                        'цены и повторите'
+                    )
+
+                average_percent_for_1_tick = Decimal(str(average_percent))
+                print(f'Средний процент за 1 тик: {average_percent_for_1_tick}')
+
+                for start in volatile_start_ticks:
+                    for stop_lose in volatile_stop_lose_ticks:
+                        new_bots = []
+                        for stop_win in volatile_stop_win_ticks:
+                            for min_tf in min_tf_volatility_values:
+                                bot_data = {
+                                    # Пустая строка, а не пара: символ придёт
+                                    # из Redis на каждом цикле.
+                                    "symbol": '',
+                                    "balance": Decimal("1000.0"),
+                                    "start_updown_percents": start * average_percent_for_1_tick,
+                                    "stop_loss_percents": stop_lose * average_percent_for_1_tick,
+                                    "stop_win_percents": stop_win * average_percent_for_1_tick,
+                                    "min_timeframe_asset_volatility": min_tf,
+                                    "is_active": True,
+                                }
+                                new_bots.append(bot_data)
+
+                        await bot_crud.bulk_create(new_bots)
+                        await session.commit()
+                        created_count += len(new_bots)
+
+                print(f"✅ Волатильных ботов создано: {created_count}")
+            except Exception as e:
+                print(f"❌ Ошибка после {created_count} созданных волатильных ботов: {e}")
 
         # # ma test bots
         #
@@ -479,5 +560,17 @@ async def create_bots():
         return
 
 
+async def create_bots_safely():
+    """create_bots с остановкой симулятора.
+
+    Менять парк под работающим симулятором нельзя: TRUNCATE снесёт test_bots
+    вместе с test_orders, а симулятор продолжит писать сделки от имени уже
+    несуществующих ботов. Открытые позиции живут только в памяти процесса и
+    при остановке теряются — это меньшее зло по сравнению с мусором в данных.
+    """
+    with paused("test_bots"):
+        await create_bots()
+
+
 if __name__ == "__main__":
-    asyncio.run(create_bots())
+    asyncio.run(create_bots_safely())

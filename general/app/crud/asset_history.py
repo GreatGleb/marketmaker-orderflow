@@ -67,6 +67,64 @@ class AssetHistoryCrud(BaseCrud[AssetHistory]):
         result = await self.session.execute(query)
         return result.first()
 
+    async def get_top_jumpy_symbols(
+        self, since: datetime, limit: int = 50, jump_threshold: float = 0.5,
+        window_seconds: int = 1,
+    ):
+        """Пары с самыми резкими скачками цены, а не с самым большим разбросом.
+
+        Скачок — движение больше jump_threshold процентов внутри окна в
+        window_seconds секунд. Одно движение растянуто на много тиков, поэтому
+        считаем только «передние фронты»: моменты, когда окно превысило порог,
+        а предыдущее ещё нет. Иначе один рывок засчитался бы сотню раз.
+
+        Ранжируем по сумме скачков — так учитываются и частота, и размер.
+        """
+        query = text("""
+            with windowed as (
+                select
+                    symbol,
+                    event_time,
+                    (max(last_price) over w - min(last_price) over w)
+                        / nullif(min(last_price) over w, 0) * 100 as jump_pct
+                from asset_history
+                where event_time >= :since
+                window w as (
+                    partition by symbol order by event_time
+                    range between :window_seconds preceding and current row
+                )
+            ),
+            edges as (
+                select
+                    symbol,
+                    jump_pct,
+                    lag(jump_pct) over (
+                        partition by symbol order by event_time
+                    ) as prev_jump_pct
+                from windowed
+            )
+            select
+                symbol,
+                count(*) as jumps,
+                sum(jump_pct) as jumps_sum,
+                max(jump_pct) as max_jump
+            from edges
+            where jump_pct > :jump_threshold
+              and (prev_jump_pct is null or prev_jump_pct <= :jump_threshold)
+            group by symbol
+            order by jumps_sum desc
+            limit :limit
+        """).bindparams(
+            since=since,
+            window_seconds=timedelta(seconds=window_seconds),
+            jump_threshold=jump_threshold,
+            limit=limit,
+        )
+
+        result = await self.session.execute(query)
+
+        return result.all()
+
     async def get_most_volatiles_since(self, since: datetime):
         query = (
             select(

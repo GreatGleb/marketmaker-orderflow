@@ -17,6 +17,8 @@ from redis.asyncio import Redis
 from app.config import settings
 from app.bots.binance_bot import BinanceBot
 from app.constants.order import ORDER_QUEUE_KEY
+from app.constants.volatility import most_volatile_symbol_key
+from app.crud.exchange_pair_spec import AssetExchangeSpecCrud
 from app.crud.test_bot import TestBotCrud
 from app.db.models import TestBot, TestOrder
 from app.dependencies import (
@@ -135,6 +137,88 @@ class StartTestBotsCommand(Command):
 
         await asyncio.gather(*tasks)
 
+    # Догрузка рыночных данных по паре, которой не оказалось в снимке.
+    # Всё общее на процесс: в волатильном режиме сотни ботов утыкаются в одну
+    # и ту же новую пару одновременно.
+    _market_data_lock = asyncio.Lock()
+    # symbol -> когда последний раз не нашли. Служит и кэшем «не искать
+    # заново», и throttle-ом для лога.
+    _market_data_misses: dict[str, float] = {}
+    MARKET_DATA_MISS_TTL_SECONDS = 300
+
+    @staticmethod
+    def _has_tick_size(data) -> bool:
+        return bool(data) and data.get("tick_size") is not None
+
+    @classmethod
+    async def get_market_data(cls, symbol, shared_data):
+        """tick_size и ставки комиссии по паре.
+
+        shared_data строится один раз на старте, а волатильный режим выбирает
+        пару динамически и может наткнуться на появившуюся позже. Тогда
+        догружаем и кладём в тот же словарь — платит только первый бот.
+        """
+        data = shared_data.get(symbol)
+
+        if cls._has_tick_size(data):
+            return data
+
+        now = time.monotonic()
+        last_miss = cls._market_data_misses.get(symbol)
+
+        if (
+            last_miss is not None
+            and now - last_miss < cls.MARKET_DATA_MISS_TTL_SECONDS
+        ):
+            # Уже искали и не нашли — не ходим в БД снова.
+            return None
+
+        async with cls._market_data_lock:
+            # Пока ждали блокировку, пару мог догрузить другой бот...
+            data = shared_data.get(symbol)
+
+            if cls._has_tick_size(data):
+                return data
+
+            # ...либо уже сходить за ней и не найти. Без этой проверки все
+            # ожидавшие блокировку по очереди повторили бы один и тот же
+            # бесполезный запрос.
+            last_miss = cls._market_data_misses.get(symbol)
+
+            if (
+                last_miss is not None
+                and time.monotonic() - last_miss
+                < cls.MARKET_DATA_MISS_TTL_SECONDS
+            ):
+                return None
+
+            dsm = DatabaseSessionManager.create(settings.DB_URL)
+
+            async with dsm.get_session() as session:
+                market_data = await AssetExchangeSpecCrud(
+                    session
+                ).get_market_data_by_symbol(symbol)
+
+            if not cls._has_tick_size(market_data):
+                cls._market_data_misses[symbol] = now
+                logging.info(
+                    f"❌ Нет рыночных данных по паре {symbol}: не найден "
+                    f"tick_size в asset_exchange_specs. Боты на этой паре "
+                    f"стоят. Проверьте app.scripts.seed_binance_data."
+                )
+
+                return None
+
+            data = {
+                "tick_size": Decimal(str(market_data["tick_size"])),
+                "maker_commission_rate": market_data["maker_commission_rate"],
+                "taker_commission_rate": market_data["taker_commission_rate"],
+            }
+            shared_data[symbol] = data
+            cls._market_data_misses.pop(symbol, None)
+
+            return data
+
     @staticmethod
     async def update_config_from_referral_bot(bot_config: TestBot, redis):
         # Лидера уже посчитал воркер set_profitable_bot и разложил по ключам
@@ -162,7 +246,12 @@ class StartTestBotsCommand(Command):
             stop_win_percents=Decimal(refer_bot['stop_win_percents']),
             stop_loss_percents=Decimal(refer_bot['stop_loss_percents']),
             start_updown_percents=Decimal(refer_bot['start_updown_percents']),
-            min_timeframe_asset_volatility=refer_bot['min_timeframe_asset_volatility'],
+            # Именно Decimal, а не строка: ниже это поле проверяется на
+            # истинность, а строка '0' истинна и увела бы копибота в режим
+            # выбора пары по волатильности.
+            min_timeframe_asset_volatility=Decimal(
+                refer_bot['min_timeframe_asset_volatility']
+            ),
             time_to_wait_for_entry_price_to_open_order_in_seconds=Decimal(refer_bot[
                 'time_to_wait_for_entry_price_to_open_order_in_seconds'
             ]),
@@ -261,30 +350,30 @@ class StartTestBotsCommand(Command):
 
                 logging.info(f'found ref for {bot_id}')
 
-            # if bot_config.consider_ma_for_open_order:
-            #     symbol = bot_config.symbol
-            # else:
-            #     symbol = await redis.get(
-            #         f"most_volatile_symbol_{bot_config.min_timeframe_asset_volatility}"
-            #     )
-
-            symbol = bot_config.symbol
+            if bot_config.min_timeframe_asset_volatility:
+                # Старый режим: пара за ботом не закреплена, каждый цикл берём
+                # самую волатильную за своё окно. Ключ пишет воркер
+                # set_volatile_pairs с TTL 60 с, поэтому мёртвый воркер
+                # означает остановку ботов, а не торговлю по старой паре.
+                symbol = await redis.get(
+                    most_volatile_symbol_key(
+                        bot_config.min_timeframe_asset_volatility
+                    )
+                )
+            else:
+                symbol = bot_config.symbol
 
             if not symbol:
                 logging.info('there no symbol')
                 await asyncio.sleep(60)
                 return
 
-            data = shared_data.get(symbol)
+            data = await self.get_market_data(symbol, shared_data)
+
             if not data:
-                logging.info(original_bot_config.copybot_v2_time_in_minutes)
-                logging.info('original_bot_config.copybot_v2_time_in_minutes')
-                logging.info(is_it_copy)
-                logging.info('is_it_copy')
-                logging.info(symbol)
-                logging.info('not symbols data')
                 await asyncio.sleep(60)
                 return
+
             tick_size = data["tick_size"]
 
             # Taker с обеих сторон: и вход по пробою уровня, и выход по

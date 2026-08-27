@@ -40,6 +40,10 @@ logging.basicConfig(
 # 1 запрос в секунду = 1200 веса в минуту, половина лимита: массовый засев
 # (--all, ~900 пар) не выбьет ключ из лимитов.
 REQUEST_DELAY_SECONDS = 1.0
+# Если столько запросов подряд упало, дальше идти незачем: почти наверняка
+# дело в ключах или в доступе к API, а не в конкретной паре. Иначе на 877
+# парах это 15 минут молчаливых ошибок.
+MAX_CONSECUTIVE_FAILURES = 5
 
 
 async def collect_symbols(session, mode, explicit_symbols):
@@ -75,6 +79,7 @@ async def seed_commission_rates(mode="bots", explicit_symbols=None):
 
         updated = 0
         failed = []
+        consecutive_failures = 0
 
         for symbol in symbols:
             try:
@@ -84,8 +89,21 @@ async def seed_commission_rates(mode="bots", explicit_symbols=None):
             except Exception as e:
                 logging.info(f'❌ {symbol}: не удалось получить ставки — {e}')
                 failed.append(symbol)
+                consecutive_failures += 1
+
+                if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+                    logging.info(
+                        f'❌ {consecutive_failures} запросов подряд упало — '
+                        f'прекращаю. Проверьте BINANCE_API_KEY и '
+                        f'BINANCE_SECRET_KEY в .env и доступ к API с этого '
+                        f'сервера. Заполнено до остановки: {updated} пар.'
+                    )
+                    break
+
                 await asyncio.sleep(REQUEST_DELAY_SECONDS)
                 continue
+
+            consecutive_failures = 0
 
             await exchange_crud.set_commission_rates(
                 symbol=symbol, maker_rate=maker, taker_rate=taker
