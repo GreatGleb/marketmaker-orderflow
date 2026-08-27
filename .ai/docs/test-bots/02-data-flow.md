@@ -38,10 +38,10 @@
 |---|---|---|---|---|
 | `price:{SYMBOL}` | string | `watch_ws_and_save.py:121` (`MSET`) | `PriceProvider.get_price` (`price_provider.py:14`) | последняя цена. **Без него симулятор висит молча** |
 | `candles:{SYMBOL}` | string (JSON-массив цен закрытия) | `watch_binance_candles.py:41` | `BinanceBot.get_prev_minutes_ma` (`binance_bot.py:1658`) | закрытия минутных свечей для MA |
-| `order_queue` | list | `demo_test_bot.py:561` (`RPUSH`) | `bulk_insert_orders.py` (`LPOP`) | завершённые виртуальные сделки. Константа — `app/constants/order.py` |
+| `order_queue` | list | `demo_test_bot.py:544` (`RPUSH`) | `bulk_insert_orders.py` (`LPOP`) | завершённые виртуальные сделки. Константа — `app/constants/order.py` |
 | `copy_bot_{bot_id}` | string (JSON конфига) | `profitable_bot_updater.py:296` | `demo_test_bot.py:156` | конфиг реферального бота для копибота v1 |
 | `asset_history:stop` | string (флаг) | вручную / служебные скрипты | `watch_ws_and_save.py` | пауза записи в `asset_history` (обслуживание таблицы) |
-| `most_volatile_symbol_{tf}` | string | `app/workers/volatile_pair.py` | закомментировано в `demo_test_bot.py:281-286` | выбор самой волатильной пары. Сейчас **не используется** |
+| `most_volatile_symbol_{tf}` | string | `app/workers/volatile_pair.py` | закомментировано в `demo_test_bot.py:269-274` | выбор самой волатильной пары. Сейчас **не используется** |
 
 Адрес Redis захардкожен в `general/app/dependencies.py` как
 `redis://:@redis:6379/0` — это DNS-имя сервиса в сети docker-compose.
@@ -85,7 +85,7 @@ Binance, откуда берётся `tick_size` (`PRICE_FILTER.tickSize`,
 
 ## Формат сообщения в `order_queue`
 
-`demo_test_bot.py:538-560`. Все Decimal сериализуются в строки,
+`demo_test_bot.py:521-543`. Все Decimal сериализуются в строки,
 datetime — через `json_serializer` (:191) в ISO. Потребитель разбирает
 даты обратно списком `DATETIME_FIELDS` (`bulk_insert_orders.py:45`).
 
@@ -103,7 +103,7 @@ datetime — через `json_serializer` (:191) в ISO. Потребитель 
 ```
 
 **Добавляете поле в `TestOrder`** — надо трогать три места: миграцию,
-словарь `order_data` (`demo_test_bot.py:538`) и, если это дата,
+словарь `order_data` (`demo_test_bot.py:521`) и, если это дата,
 `DATETIME_FIELDS` в `bulk_insert_orders.py:45`.
 
 ## Потребитель очереди (`bulk_insert_orders.py`)

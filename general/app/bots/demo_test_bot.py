@@ -136,25 +136,13 @@ class StartTestBotsCommand(Command):
         await asyncio.gather(*tasks)
 
     @staticmethod
-    async def update_config_from_referral_bot(
-        bot_config: TestBot, original_bot_config, bot_crud, redis, session,
-    ):
-        if original_bot_config.copybot_v2_time_in_minutes is not None:
-            tf_bot_ids = await ProfitableBotUpdaterCommand.get_profitable_bots_id_by_timeframes(
-                bot_crud=bot_crud,
-                bot_profitability_timeframes=[bot_config.copy_bot_min_time_profitability_min],
-                check_24h_profitability=bot_config.copybot_v1_check_for_24h_profitability,
-                by_referral_bot_id=bot_config.copybot_v1_check_for_referral_bot_profitability,
-            )
-
-            logging.info('finished get_profitable_bots_id_by_timeframes')
-            refer_bot = await ProfitableBotUpdaterCommand.get_bot_config_by_params(
-                bot_crud=bot_crud,
-                bot_ids=tf_bot_ids[bot_config.copy_bot_min_time_profitability_min],
-            )
-        else:
-            refer_bot_js = await redis.get(f"copy_bot_{bot_config.id}")
-            refer_bot = json.loads(refer_bot_js) if refer_bot_js else None
+    async def update_config_from_referral_bot(bot_config: TestBot, redis):
+        # Лидера уже посчитал воркер set_profitable_bot и разложил по ключам
+        # copy_bot_{id} (profitable_bot_updater.py:296). Для копибота v1 здесь
+        # его собственный id, для v2 — id донора-копибота v1; ключ есть в обоих
+        # случаях, поэтому отдельная ветка с пересчётом через БД не нужна.
+        refer_bot_js = await redis.get(f"copy_bot_{bot_config.id}")
+        refer_bot = json.loads(refer_bot_js) if refer_bot_js else None
 
         if not refer_bot:
             logging.info(
@@ -256,25 +244,20 @@ class StartTestBotsCommand(Command):
             is_it_copy = bot_config.copy_bot_min_time_profitability_min
 
             if is_it_copy:
-                dsm = DatabaseSessionManager.create(settings.DB_URL)
-                async with dsm.get_session() as session:
-                    bot_crud = TestBotCrud(session)
-
-                    updating_config_res = (
-                        await self.update_config_from_referral_bot(
-                            bot_config=bot_config,
-                            original_bot_config=original_bot_config,
-                            bot_crud=bot_crud,
-                            redis=redis,
-                            session=session
-                        )
+                # Сессия к БД здесь больше не нужна: конфиг донора берётся
+                # из Redis, а не пересчитывается запросами.
+                updating_config_res = (
+                    await self.update_config_from_referral_bot(
+                        bot_config=bot_config,
+                        redis=redis,
                     )
-                    bot_config = updating_config_res['config']
-                    referral_bot_id = updating_config_res['referral_bot_id']
+                )
+                bot_config = updating_config_res['config']
+                referral_bot_id = updating_config_res['referral_bot_id']
 
-                    if not bot_config:
-                        await asyncio.sleep(60)
-                        return
+                if not bot_config:
+                    await asyncio.sleep(60)
+                    return
 
                 logging.info(f'found ref for {bot_id}')
 

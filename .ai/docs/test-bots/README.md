@@ -26,7 +26,7 @@
 ```
 general/app/scripts/start_test_bots.py     ← процесс, который надо запускать
     └── StartTestBotsCommand               ← general/app/bots/demo_test_bot.py:45
-            └── simulate_bot()             ← general/app/bots/demo_test_bot.py:220
+            └── simulate_bot()             ← general/app/bots/demo_test_bot.py:208
                     └── redis LPUSH "order_queue"
                             └── OrderBulkInsertCommand → INSERT INTO test_orders
 ```

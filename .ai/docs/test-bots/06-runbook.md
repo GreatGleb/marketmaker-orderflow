@@ -67,11 +67,11 @@ docker exec -it orderflow_general python -m app.scripts.new_bots
 ```
 
 ⚠️ **Скрипт начинается с `TRUNCATE TABLE test_bots RESTART IDENTITY CASCADE`**
-(`new_bots.py:322`). `CASCADE` затрагивает и `test_orders` (там FK на
+(`new_bots.py:340`). `CASCADE` затрагивает и `test_orders` (там FK на
 `test_bots`) — **вся накопленная статистика стирается**. Перед запуском
 делайте дамп или закомментируйте блок `if 1:` с TRUNCATE.
 
-Что создаётся текущей версией (`create_bots`, `new_bots.py:310`):
+Что создаётся текущей версией (`create_bots`, `new_bots.py:328`):
 
 * пара жёстко задана в коде: `symbol = "BIOUSDT"` (:313) — менять здесь;
 * ~15 120 тиковых ботов: перебор `start × stop_lose × stop_win × trailing × wait`

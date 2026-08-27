@@ -264,16 +264,20 @@ class ProfitableBotUpdaterCommand(Command):
         while not self.stop_event.is_set():
             bots = await bot_crud.get_copybots()
 
+            # Пересобираем каждый цикл, а не один раз на старте: копибота
+            # могли завести уже после запуска воркера, и тогда ниже
+            # tf_bot_ids[bot.id] падало с KeyError, роняя воркер.
+            bot_profitability_params = {
+                bot.id: {
+                    'tf': bot.copy_bot_min_time_profitability_min,
+                    '24h': bot.copybot_v1_check_for_24h_profitability,
+                    'by_ref': bot.copybot_v1_check_for_referral_bot_profitability,
+                }
+                for bot in bots
+            }
+
             if not first_run_completed:
                 first_run_completed = True
-
-                for bot in bots:
-                    params = {
-                        'tf': bot.copy_bot_min_time_profitability_min,
-                        '24h': bot.copybot_v1_check_for_24h_profitability,
-                        'by_ref': bot.copybot_v1_check_for_referral_bot_profitability
-                    }
-                    bot_profitability_params[bot.id] = params
 
                 logging.info(bot_profitability_params)
                 logging.info('bot_profitability_params')
