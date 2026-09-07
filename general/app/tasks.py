@@ -6,33 +6,39 @@ from celery.schedules import crontab
 
 from app.config import settings
 from app.exceptions.tasks import TaskNeedsRetry
-from app.workers.order_book_cleanup import OrderBookCleaner
-from app.workers.clear_old_assets_history import ClearOldAssetsHistoryCommand
+from app.workers.retention import RetentionCommand
+from app.workers.test_order_rollup import TestOrderRollupCommand
 from app.sub_services.notifications.factory import NotificationServiceFactory
 
 app = Celery("tasks", broker=settings.CELERY_BROKER)
 # app.conf.update(task_always_eager=True)
 
+# Чистка идёт каждый час, а не раз в сутки. Суточный проход означал бы, что к
+# ночи накопилось 13 ГБ и 42 миллиона строк, которые надо снести за один раз:
+# такой DELETE раздувает WAL и держит базу, а autovacuum за ним не успевает.
+# Часовой проход сносит примерно 1/24 этого объёма и проходит незаметно.
 app.conf.beat_schedule = {
-    "daily-order-book-cleanup": {
-        "task": "app.tasks.order_book_cleanup_collector",
-        "schedule": crontab(minute=0, hour=0),  # Every day at 00:00 UTC
+    "retention-hourly": {
+        "task": "app.tasks.retention",
+        "schedule": crontab(minute=20),  # каждый час в :20
     },
-    # "clear-old-assets-history-every-day": {
-    #     "task": "app.tasks.clear_old_assets_history",
-    #     "schedule": crontab(minute=0, hour=1),  # 01:00 UTC
-    # },
+    # Свёртки должны опережать чистку: `test_orders` удаляется только до
+    # границы свёрнутого, и если свёртки встанут, чистка встанет следом.
+    "test-order-rollup": {
+        "task": "app.tasks.test_order_rollup",
+        "schedule": crontab(minute="*/10"),
+    },
 }
 
 
 @app.task(bind=True, default_retry_delay=60, max_retries=3)
-def order_book_cleanup_collector(self):
-    _run_task(self, OrderBookCleaner, [], lambda x: 0)
+def retention(self):
+    _run_task(self, RetentionCommand, [], get_countdown)
 
 
 @app.task(bind=True, default_retry_delay=60, max_retries=3)
-def clear_old_assets_history(self):
-    _run_task(self, ClearOldAssetsHistoryCommand, [], lambda x: 0)
+def test_order_rollup(self):
+    _run_task(self, TestOrderRollupCommand, [], get_countdown)
 
 
 def get_countdown(retry: int) -> int:

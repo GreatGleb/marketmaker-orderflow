@@ -669,3 +669,99 @@ class MarketOrder(BaseId):
         index=True,
         comment="Profit or loss from the order",
     )
+
+
+class TestOrderRollup(BaseId):
+    """Свёртка `test_orders` по десятиминутным блокам.
+
+    Сырые сделки — это результат эксперимента, и удалять их «просто так»
+    нельзя. Но и держать их вечно нельзя тоже: на полной скорости парк пишет
+    около 490 строк в секунду, то есть 42 миллиона строк и 13 ГБ в сутки.
+
+    Поэтому каждый закрытый блок сворачивается в одну строку на сочетание
+    (бот, пара, реферальный бот), после чего сырые строки блока имеет право
+    удалить ретеншн. Статистика — сколько сделок, сколько прибыльных, какой
+    суммарный P/L, чем закончились — переживает чистку.
+
+    Почему именно десять минут: все окна прибыльности копиботов кратны
+    десяти (10, 20, ..., 1440, 2880), поэтому любое из них собирается из
+    целых блоков без потерь.
+
+    Причины закрытия лежат отдельными счётчиками, а не измерением ключа:
+    значений всего три (`StopReasonEvent`), и так распределение сохраняется,
+    не размножая строки втрое.
+    """
+
+    __tablename__ = "test_order_rollups"
+
+    bucket_start: Mapped[datetime] = mapped_column(
+        types.DateTime(timezone=True),
+        nullable=False,
+        comment="Начало десятиминутного блока, UTC",
+    )
+    bot_id: Mapped[Optional[int]] = mapped_column(
+        types.Integer, nullable=True, comment="Бот, чьи это сделки"
+    )
+    referral_bot_id: Mapped[Optional[int]] = mapped_column(
+        types.Integer,
+        nullable=True,
+        comment="Бот, за которым копировали, если сделки копибота",
+    )
+    asset_symbol: Mapped[str] = mapped_column(
+        types.String(255), nullable=False, comment="Пара"
+    )
+
+    orders_count: Mapped[int] = mapped_column(
+        types.Integer, nullable=False, comment="Сделок в блоке"
+    )
+    profitable_count: Mapped[int] = mapped_column(
+        types.Integer, nullable=False, comment="Из них с profit_loss > 0"
+    )
+    profit_loss_sum: Mapped[Optional[Decimal]] = mapped_column(
+        types.Numeric, nullable=True, comment="Суммарный P/L блока"
+    )
+    fee_sum: Mapped[Optional[Decimal]] = mapped_column(
+        types.Numeric,
+        nullable=True,
+        comment="Суммарная комиссия (open_fee + close_fee)",
+    )
+
+    stop_won_count: Mapped[int] = mapped_column(
+        types.Integer,
+        nullable=False,
+        server_default="0",
+        comment="Закрыто по цели (stop-won)",
+    )
+    stop_loosed_count: Mapped[int] = mapped_column(
+        types.Integer,
+        nullable=False,
+        server_default="0",
+        comment="Закрыто по стопу (stop-loosed)",
+    )
+    stop_long_lose_count: Mapped[int] = mapped_column(
+        types.Integer,
+        nullable=False,
+        server_default="0",
+        comment="Закрыто по времени удержания (stop-long-lose)",
+    )
+
+    __table_args__ = (
+        # Ключ свёртки. Уникальность нужна не ради чистоты: она делает
+        # пересчёт блока безопасным при любом числе повторов, в том числе
+        # когда два прохода наложились друг на друга — вместо второго
+        # комплекта строк получится перезапись первого.
+        #
+        # NULLS NOT DISTINCT (Postgres 15) — потому что referral_bot_id
+        # пустой у всех некопиботов, а по умолчанию NULL не равен NULL и
+        # уникальность на таких строках не работала бы вовсе.
+        Index(
+            "uq_test_order_rollups_key",
+            "bucket_start",
+            "bot_id",
+            "referral_bot_id",
+            "asset_symbol",
+            unique=True,
+            postgresql_nulls_not_distinct=True,
+        ),
+        Index("idx_test_order_rollups_bot_bucket", "bot_id", "bucket_start"),
+    )

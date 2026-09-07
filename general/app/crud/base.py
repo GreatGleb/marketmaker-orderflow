@@ -1,8 +1,10 @@
+import time
+
 from typing import Any, Generic, Optional, Type, TypeVar
 from uuid import UUID
 
 from pydantic import BaseModel
-from sqlalchemy import UnaryExpression, func, select
+from sqlalchemy import UnaryExpression, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 T = TypeVar("T")
@@ -31,6 +33,68 @@ class BaseCrud(Generic[T]):
         await self.session.delete(model)
         await self.session.flush()
         return model
+
+    async def delete_older_than_in_batches(
+        self,
+        column_name: str,
+        cutoff,
+        batch_rows: int = 50_000,
+        deadline: float | None = None,
+    ) -> tuple[int, bool]:
+        """Удаляет старые строки пачками. Возвращает (удалено, всё ли добито).
+
+        Один `DELETE` на десятки миллионов строк — это одна транзакция, один
+        снимок и один кусок WAL на несколько гигабайт: база встаёт колом, а
+        autovacuum не может освободить место, пока транзакция жива. Поэтому
+        режем на пачки и коммитим каждую.
+
+        Строки выбираются по `ctid` — физическому адресу: подзапрос находит
+        `batch_rows` подходящих строк по индексу, а `DELETE` бьёт по ним
+        напрямую, Tid Scan'ом, без повторного поиска.
+
+        Именно `ctid IN (...)`, а не `USING`: во втором случае планировщик
+        соединяет таблицу с подзапросом хэшем и ради этого читает таблицу
+        целиком на каждой пачке. На двух миллионах строк это 5.9 с против
+        0.9 с, и разрыв растёт вместе с таблицей — то есть ровно там, где
+        чистка и нужна.
+
+        `deadline` — момент `time.monotonic()`, после которого проход
+        останавливается, даже если старое ещё осталось. Не успели — доберём
+        на следующем запуске; занимать базу дольше отведённого нельзя.
+        """
+        table = self.entity_type.__table__
+
+        # Имена берутся из метаданных модели, а не из внешних данных —
+        # подставлять их в текст запроса безопасно. Значения — параметры.
+        column = table.columns[column_name]
+
+        statement = text(
+            f"""
+            DELETE FROM {table.name}
+            WHERE ctid IN (
+                SELECT ctid
+                FROM {table.name}
+                WHERE {column.name} < :cutoff
+                LIMIT :batch
+            )
+            """
+        )
+
+        deleted = 0
+
+        while True:
+            result = await self.session.execute(
+                statement, {"cutoff": cutoff, "batch": batch_rows}
+            )
+            await self.session.commit()
+
+            deleted += result.rowcount
+
+            if result.rowcount < batch_rows:
+                return deleted, True
+
+            if deadline is not None and time.monotonic() >= deadline:
+                return deleted, False
 
     async def find_by_id(self, id_: str | UUID) -> T | None:
         query = await self.session.scalars(

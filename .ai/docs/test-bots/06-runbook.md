@@ -38,6 +38,12 @@ docker exec -it orderflow_general python -m app.scripts.seed_commission_rates -s
 (цены), `test_bots` (симулятор), `insert_test_orders`, `set_profitable_bot`.
 То есть после `./run.sh start` тестовые боты **уже работают**.
 
+Отдельно от supervisord, по расписанию Celery (контейнеры
+`orderflow_celery_beat` и `orderflow_celery_worker`), идёт чистка базы:
+`app.tasks.retention` раз в час и `app.tasks.test_order_rollup` раз в десять
+минут. Без них диск кончается примерно за неделю —
+[10-retention.md](10-retention.md).
+
 ```bash
 docker exec -it orderflow_general supervisorctl status
 docker exec -it orderflow_general supervisorctl restart test_bots
@@ -128,11 +134,21 @@ docker exec -it orderflow_postgres psql -U postgres -c \
     where taker_commission_rate is not null limit 10;"
 ```
 
+```bash
+# 7. Чистка работает? (иначе диск кончится за неделю)
+docker exec -it orderflow_postgres psql -U postgres -c \
+  "select min(created_at) as самая_старая_сделка from test_orders;"
+docker exec -it orderflow_postgres psql -U postgres -c \
+  "select max(bucket_start), now() - max(bucket_start) as отставание_свёрток
+     from test_order_rollups;"
+```
+
 Типичные диагнозы:
 
 | Симптом | Причина |
 |---|---|
 | `test_orders` не растёт, `order_queue` растёт | лежит `insert_test_orders` |
+| `test_orders` растёт и не чистится | встали Celery-задачи или отстают свёртки, см. [10-retention.md](10-retention.md) |
 | `order_queue` = 0 и `test_orders` не растёт | симулятор висит: нет `price:{SYMBOL}` или пара не попала в `shared_data` |
 | в логе `not symbols data` | пары нет в `shared_data`: нет свежих тиков в `asset_history` либо нет `filters` в `asset_exchange_specs` |
 | в логе `there no symbol` | у бота пустой `symbol` и не нашёлся донор |
