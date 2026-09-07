@@ -92,7 +92,7 @@ docker exec -it orderflow_general python -m app.scripts.new_bots
 ## Отчёты
 
 ```bash
-# топ-10 за всё время
+# сутки, неделя и две недели сразу — поведение без флагов окна
 docker exec -it orderflow_general python -m app.scripts.top_bots_report
 
 # топ-20 обычных ботов за последние 2 часа
@@ -101,12 +101,30 @@ docker exec -it orderflow_general python -m app.scripts.top_bots_report -H 2 -ju
 # только копиботы v1 за 30 минут
 docker exec -it orderflow_general python -m app.scripts.top_bots_report -m 30 -just_copy 1
 
-# только копиботы v2
-docker exec -it orderflow_general python -m app.scripts.top_bots_report -just_copy_v2 1
+# две недели по копиботам v2
+docker exec -it orderflow_general python -m app.scripts.top_bots_report -d 14 -just_copy_v2 1
+
+# кто из доноров кормит копиботов — считать по referral_bot_id
+docker exec -it orderflow_general python -m app.scripts.top_bots_report -d 7 -ref
+
+# за всю сохранённую историю
+docker exec -it orderflow_general python -m app.scripts.top_bots_report -all
 ```
 
 Флаги `-just_copy` / `-just_copy_v2` / `-just_not_copy` — строковые,
-значение не важно, важно наличие (проверка на truthy).
+значение не важно, важно наличие (проверка на truthy), и взаимоисключающие:
+сработает первый по порядку. `-d` / `-H` / `-m` складываются в одно окно.
+Полный список флагов — в `README.md`, раздел «Отчёт по прибыльности ботов».
+
+Отчёт читает два источника сразу: свёртки за всё, что уже свёрнуто, и сырые
+`test_orders` за хвост после границы свёрнутого. Поэтому окна длиннее
+`RETENTION_TEST_ORDERS_HOURS` (72 ч) считаются полностью, а не обрезаются
+молча до срока хранения сырья. Строка «источник» в шапке каждого отчёта
+показывает, где прошла граница; если она застыла в прошлом — встали свёртки,
+дальше по [10-retention.md](10-retention.md).
+
+Глубина отчёта — вся история свёрток. Запрос глубже не ошибка: отчёт
+урежет окно до имеющегося и скажет об этом.
 
 ## Проверка живости (диагностика по порядку)
 

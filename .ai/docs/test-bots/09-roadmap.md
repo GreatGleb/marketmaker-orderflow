@@ -381,8 +381,8 @@ CCX13 закончатся примерно за неделю без чистк�
   нигде.
 * `TestOrder.referral_bot_from_profit_func` — всегда `NULL`, запись
   закомментирована.
-* `TestBot.total_profit` — обновление за `if False:` в
-  `top_bots_report.py:79`.
+* `TestBot.total_profit` — колонка есть, не пишется и не читается: запись
+  из `top_bots_report.py` удалена вместе с блоком за `if False:`.
 * `get_most_volatile_symbol` в `new_bots.py:117` — медленная Python-версия
   детектора скачков, заменена на SQL в `get_top_jumpy_symbols`. Возвращает
   мусор (leftover-переменную), вызов закомментирован.

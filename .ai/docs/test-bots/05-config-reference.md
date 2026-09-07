@@ -26,7 +26,7 @@
 | `copybot_v2_time_in_minutes` | numeric NULL | `demo_test_bot.py:225` | **признак копибота v2** + окно оценки прибыльности копибота-донора |
 | `min_timeframe_asset_volatility` | numeric NULL | — | **не используется** (код выбора пары закомментирован) |
 | `copy_bot_max_time_profitability_min` | numeric NULL | — | **не используется** |
-| `total_profit` | numeric NOT NULL | — | обновление отключено (`top_bots_report.py:79` `if False:`) |
+| `total_profit` | numeric NOT NULL | — | **не используется**: не пишется и не читается |
 | `created_at` / `updated_at` | timestamptz | — | из `BaseId` |
 
 Метод `TestBot.clone()` (`models.py:535`) — копия строки как нового объекта;

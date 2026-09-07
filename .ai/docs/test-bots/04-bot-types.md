@@ -136,5 +136,5 @@ SL/TP. Именно такие боты генерирует `new_bots.py` (пе
 * `copy_bot_max_time_profitability_min` — поле есть в модели, в коде не читается.
 * `TestOrder.referral_bot_from_profit_func` — поле есть, запись закомментирована
   (`demo_test_bot.py:533`).
-* `TestBot.total_profit` — обновление в `top_bots_report.py` спрятано за
-  `if False:` (`top_bots_report.py:79`).
+* `TestBot.total_profit` — колонка не пишется и не читается: запись из
+  `top_bots_report.py` удалена.

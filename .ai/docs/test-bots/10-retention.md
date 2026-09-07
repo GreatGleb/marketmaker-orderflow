@@ -77,6 +77,12 @@ test_orders: свёртки отстают (... против ...), чистим 
 Что теряется при чистке: отдельные сделки — цены входа и выхода, тики, время
 удержания. Что остаётся: агрегаты по каждому боту с шагом в десять минут.
 
+Читает их `top_bots_report.py` — сразу из обоих источников: свёртки до
+границы свёрнутого, сырые сделки после неё. Ветки стыкуются по watermark и
+не перекрываются, поэтому сделки на стыке не считаются дважды. Копиботы в
+`get_sorted_by_profit` продолжают ходить только в `test_orders`: их окна не
+длиннее 48 часов, а свежесть там важнее глубины.
+
 ## Сколько это стоит на диске
 
 Свёртки не бесплатны, и их объём **не зависит от числа сделок** — только от
@@ -208,6 +214,13 @@ docker exec -it orderflow_general python -m tests.test_retention_windows
 Границы, арифметика блоков, защита от опережения свёрток — на заглушках,
 идут где угодно.
 
+```bash
+docker exec -it orderflow_general python -m tests.test_report_windows
+```
+
+Деление окна отчёта между свёртками и сырьём: стык без нахлёста и щели,
+выравнивание по блоку, совпадение колонок обеих веток объединения.
+
 Полная проверка на живой базе (создаёт отдельную базу, инструкция — в шапке
 `general/tests/test_retention_db.py`):
 
@@ -235,7 +248,8 @@ docker run --rm --network marketmaker-orderflow_orderflow_network \
 |---|---|
 | `general/app/workers/retention.py` | проход чистки: три таблицы, границы, бюджет времени |
 | `general/app/workers/test_order_rollup.py` | свёртки: докуда посчитано, что сворачивать дальше |
-| `general/app/crud/test_order_rollup.py` | SQL свёрток, арифметика блоков |
+| `general/app/crud/test_order_rollup.py` | SQL свёрток, арифметика блоков, чтение статистики из двух источников |
+| `general/app/scripts/top_bots_report.py` | отчёт по прибыльности за произвольное окно |
 | `general/app/crud/base.py` | `delete_older_than_in_batches` — удаление пачками |
 | `general/app/workers/repack.py` | pg_repack, только по явному включению |
 | `general/app/config.py` | все сроки и потолки |

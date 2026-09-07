@@ -44,11 +44,78 @@ docker exec -it orderflow_general python -m app.scripts.watch_ws_and_save
 
 docker exec -it orderflow_general python -m app.scripts.start_test_bots
 
+# Отчёт по прибыльности ботов — см. раздел ниже
 docker exec -it orderflow_general python -m app.scripts.top_bots_report
 
 # Тестирование Telegram уведомлений
 docker exec -it orderflow_general python -m app.scripts.test_telegram_notifications
 ```
+
+---
+
+## 📊 Отчёт по прибыльности ботов
+
+```bash
+docker exec -it orderflow_general python -m app.scripts.top_bots_report
+```
+
+Без флагов печатает три периода сразу — за сутки, за неделю и за две недели.
+
+### Флаги
+
+| Флаг | Значение | По умолчанию |
+|---|---|---|
+| `-d`, `--days` | глубина окна в сутках | — |
+| `-H`, `--hours` | глубина окна в часах | — |
+| `-m`, `--minutes` | глубина окна в минутах | — |
+| `-all`, `--all_history` | за всю сохранённую историю | выкл. |
+| `-just_copy`, `--just_copy_bots` | только копиботы v1 | все боты |
+| `-just_copy_v2`, `--just_copy_bots_v2` | только копиботы v2 | все боты |
+| `-just_not_copy`, `--just_not_copy_bots` | только обычные боты | все боты |
+| `-ref`, `--by_referral` | считать по донорам (`referral_bot_id`), а не по самим ботам | выкл. |
+| `-top_count`, `--top_count` | сколько ботов показать | 10 |
+
+`-d` / `-H` / `-m` складываются в одно окно: `-d 1 -H 12` — это 36 часов.
+Если не задан ни один — печатаются три стандартных периода. `-all`
+перекрывает их все.
+
+Фильтры по виду ботов взаимоисключающие: если указать несколько, сработает
+первый в порядке `-just_copy` → `-just_copy_v2` → `-just_not_copy`. Значение
+у них не важно, важно наличие — `-just_copy 1` и `-just_copy yes` одинаковы.
+
+### Примеры
+
+```bash
+# топ-20 обычных ботов за последние 2 часа
+docker exec -it orderflow_general python -m app.scripts.top_bots_report -H 2 -just_not_copy 1 -top_count 20
+
+# копиботы v1 за 30 минут
+docker exec -it orderflow_general python -m app.scripts.top_bots_report -m 30 -just_copy 1
+
+# две недели по копиботам v2
+docker exec -it orderflow_general python -m app.scripts.top_bots_report -d 14 -just_copy_v2 1
+
+# кто из доноров кормит копиботов, за неделю
+docker exec -it orderflow_general python -m app.scripts.top_bots_report -d 7 -ref
+```
+
+### Что показывает
+
+```
+📊 Топ-10 по прибыли — за неделю
+   окно: 2026-08-31 21:20 → 2026-09-07 21:26 (168.1 ч)
+   источник: свёртки до 2026-09-07 20:20, сырые сделки после
+
+  1. Бот 1 — 💰 P/L 1037.0000, 📈 прибыльных 1009/1009 (100.0%), комиссия 101.6000, закрытий [цель 1009 / стоп 0 / время 0]
+```
+
+Строка «источник» — не украшение. Сырые сделки живут 72 часа
+(`RETENTION_TEST_ORDERS_HOURS`), поэтому окна глубже считаются по свёрткам
+(`test_order_rollups`), а последний час добирается из `test_orders`. Если граница свёрнутого застыла в прошлом — встали свёртки,
+разбор в [`.ai/docs/test-bots/10-retention.md`](.ai/docs/test-bots/10-retention.md).
+
+Запросить окно глубже, чем есть данные, не ошибка: отчёт урежет его до
+имеющегося и скажет об этом.
 
 ---
 

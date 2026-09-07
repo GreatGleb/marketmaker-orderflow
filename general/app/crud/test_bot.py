@@ -9,6 +9,39 @@ from app.crud.base import BaseCrud
 UTC = timezone.utc
 
 
+def active_bots_subquery(
+    just_copy_bots=False,
+    just_copy_bots_v2=False,
+    just_not_copy_bots=False,
+    symbol=None,
+):
+    """id активных ботов нужного вида.
+
+    Вынесено из `get_sorted_by_profit`, потому что тот же отбор нужен
+    статистике по свёрткам (`TestOrderRollupCrud.profit_by_bot`). Два
+    расходящихся определения «какие боты в отчёте» — это два отчёта,
+    которые нельзя сравнивать между собой.
+    """
+    query = select(TestBot.id).where(TestBot.is_active == True)
+
+    if just_copy_bots:
+        query = query.where(
+            TestBot.copy_bot_min_time_profitability_min.is_not(None)
+        )
+    elif just_copy_bots_v2:
+        query = query.where(TestBot.copybot_v2_time_in_minutes.is_not(None))
+    elif just_not_copy_bots:
+        query = query.where(
+            TestBot.copy_bot_min_time_profitability_min.is_(None),
+            TestBot.copybot_v2_time_in_minutes.is_(None),
+        )
+
+    if symbol:
+        query = query.where(TestBot.symbol == symbol)
+
+    return query
+
+
 class TestBotCrud(BaseCrud[TestBot]):
 
     def __init__(self, session: AsyncSession):
@@ -32,28 +65,12 @@ class TestBotCrud(BaseCrud[TestBot]):
         symbol=None,
         by_referral_bot_id=False,
     ):
-        active_bots_subquery = select(TestBot.id).where(
-            TestBot.is_active == True
+        active_bots = active_bots_subquery(
+            just_copy_bots=just_copy_bots,
+            just_copy_bots_v2=just_copy_bots_v2,
+            just_not_copy_bots=just_not_copy_bots,
+            symbol=symbol,
         )
-
-        if just_copy_bots:
-            active_bots_subquery = active_bots_subquery.where(
-                TestBot.copy_bot_min_time_profitability_min.is_not(None)
-            )
-        elif just_copy_bots_v2:
-            active_bots_subquery = active_bots_subquery.where(
-                TestBot.copybot_v2_time_in_minutes.is_not(None)
-            )
-        elif just_not_copy_bots:
-            active_bots_subquery = active_bots_subquery.where(
-                TestBot.copy_bot_min_time_profitability_min.is_(None),
-                TestBot.copybot_v2_time_in_minutes.is_(None)
-            )
-
-        if symbol:
-            active_bots_subquery = active_bots_subquery.where(
-                TestBot.symbol == symbol
-            )
 
         select_columns = [
             TestOrder.bot_id,
@@ -72,10 +89,14 @@ class TestBotCrud(BaseCrud[TestBot]):
         if by_referral_bot_id:
             select_columns[0] = TestOrder.referral_bot_id
 
-        profits_query = select(*select_columns).where(TestOrder.bot_id.in_(active_bots_subquery))
+        profits_query = select(*select_columns).where(
+            TestOrder.bot_id.in_(active_bots)
+        )
 
         if by_referral_bot_id:
-            profits_query = select(*select_columns).where(TestOrder.referral_bot_id.in_(active_bots_subquery))
+            profits_query = select(*select_columns).where(
+                TestOrder.referral_bot_id.in_(active_bots)
+            )
 
         if since is not None:
             now = datetime.now(UTC)

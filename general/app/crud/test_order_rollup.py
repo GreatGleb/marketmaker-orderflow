@@ -1,9 +1,11 @@
 from datetime import datetime, timedelta
 
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select, text, union_all
 
+from app.config import settings
 from app.db.models import TestOrder, TestOrderRollup
 from app.crud.base import BaseCrud
+from app.crud.test_bot import active_bots_subquery
 from app.enums.event_type import StopReasonEvent
 
 
@@ -132,6 +134,213 @@ class TestOrderRollupCrud(BaseCrud[TestOrderRollup]):
 
         return result.rowcount
 
+    # Имена колонок статистики. Обе ветки объединения обязаны отдавать их
+    # в этом порядке и под этими именами: имена подзапроса UNION берутся из
+    # первой ветки, и разъехавшийся порядок молча сложит комиссию с числом
+    # сделок.
+    STAT_COLUMNS = (
+        "orders_count",
+        "profitable_count",
+        "profit_loss",
+        "fee",
+        "stop_won",
+        "stop_loosed",
+        "stop_long_lose",
+    )
+
+    async def rollup_watermark(self) -> datetime | None:
+        """Момент, до которого статистика уже лежит в свёртках.
+
+        Это конец последнего посчитанного блока — ровно та же граница, по
+        которой ретеншн разрешает себе удалять сырьё (`retention.py`).
+        Поэтому она же делит окно отчёта: до неё читаем свёртки, после —
+        сырые сделки. `None` — свёрток нет вовсе.
+        """
+        last = await self.last_bucket_start()
+
+        if last is None:
+            return None
+
+        return last + timedelta(minutes=settings.ROLLUP_BUCKET_MINUTES)
+
+    async def earliest_data_at(self) -> datetime | None:
+        """Самый ранний момент, за который вообще осталась статистика.
+
+        Нужен отчёту, чтобы не врать заголовком: если попросили две недели,
+        а свёртки живут неделю, окно надо показать настоящее.
+
+        `LEAST` в Postgres пропускает NULL, поэтому пустая таблица из двух
+        не мешает второй ответить.
+        """
+        result = await self.session.execute(
+            select(
+                func.least(
+                    select(
+                        func.min(TestOrderRollup.bucket_start)
+                    ).scalar_subquery(),
+                    select(func.min(TestOrder.created_at)).scalar_subquery(),
+                )
+            )
+        )
+
+        return result.scalar()
+
+    async def profit_by_bot(
+        self,
+        since: datetime,
+        just_copy_bots=False,
+        just_copy_bots_v2=False,
+        just_not_copy_bots=False,
+        symbol=None,
+        by_referral_bot_id=False,
+    ) -> tuple[list, datetime, datetime | None]:
+        """Статистика по каждому боту за окно `[since, сейчас)`.
+
+        В отличие от `TestBotCrud.get_sorted_by_profit`, которая читает
+        только `test_orders`, эта считает по обоим источникам сразу:
+        свёртки за всё, что уже свёрнуто, сырые сделки за хвост после
+        границы свёрнутого. Иначе окно длиннее
+        `RETENTION_TEST_ORDERS_HOURS` молча обрезалось бы до срока хранения
+        сырья — без ошибки, просто с неправильными цифрами.
+
+        Двойного счёта не будет: границы веток стыкуются по watermark, а не
+        перекрываются. Сырьё за уже свёрнутые блоки в базе какое-то время
+        лежит (ретеншн ходит раз в час) — из отчёта оно исключено.
+
+        Возвращает `(строки, начало окна, граница свёрнутого)`. Начало окна
+        возвращается посчитанным, а не запрошенным: оно округляется вниз до
+        блока, потому что мельче блока свёртки ничего не знают.
+        """
+        bucket = timedelta(minutes=settings.ROLLUP_BUCKET_MINUTES)
+        watermark = await self.rollup_watermark()
+
+        rollup_from, rollup_to, raw_from = split_window(
+            since=since, watermark=watermark, bucket=bucket
+        )
+
+        bots = active_bots_subquery(
+            just_copy_bots=just_copy_bots,
+            just_copy_bots_v2=just_copy_bots_v2,
+            just_not_copy_bots=just_not_copy_bots,
+            symbol=symbol,
+        )
+
+        parts = []
+
+        if rollup_from is not None:
+            parts.append(
+                self.rollup_part(bots, rollup_from, rollup_to, by_referral_bot_id)
+            )
+
+        parts.append(self.raw_part(bots, raw_from, by_referral_bot_id))
+
+        combined = (
+            parts[0] if len(parts) == 1 else union_all(*parts)
+        ).subquery()
+
+        stmt = (
+            select(
+                combined.c.bot_id,
+                *[
+                    func.sum(combined.c[name]).label(name)
+                    for name in self.STAT_COLUMNS
+                ],
+            )
+            .group_by(combined.c.bot_id)
+            .order_by(func.sum(combined.c.profit_loss).desc())
+        )
+
+        rows = (await self.session.execute(stmt)).all()
+
+        return rows, rollup_from or raw_from, watermark
+
+    @classmethod
+    def rollup_part(cls, bots, start: datetime, end: datetime, by_referral):
+        """Ветка по свёрткам: складываем уже посчитанное."""
+        key = (
+            TestOrderRollup.referral_bot_id
+            if by_referral
+            else TestOrderRollup.bot_id
+        )
+
+        return (
+            select(
+                key.label("bot_id"),
+                func.sum(TestOrderRollup.orders_count).label("orders_count"),
+                func.sum(TestOrderRollup.profitable_count).label(
+                    "profitable_count"
+                ),
+                func.sum(
+                    func.coalesce(TestOrderRollup.profit_loss_sum, 0)
+                ).label("profit_loss"),
+                func.sum(func.coalesce(TestOrderRollup.fee_sum, 0)).label(
+                    "fee"
+                ),
+                func.sum(TestOrderRollup.stop_won_count).label("stop_won"),
+                func.sum(TestOrderRollup.stop_loosed_count).label(
+                    "stop_loosed"
+                ),
+                func.sum(TestOrderRollup.stop_long_lose_count).label(
+                    "stop_long_lose"
+                ),
+            )
+            .where(
+                key.in_(bots),
+                TestOrderRollup.bucket_start >= start,
+                TestOrderRollup.bucket_start < end,
+            )
+            .group_by(key)
+        )
+
+    @classmethod
+    def raw_part(cls, bots, start: datetime, by_referral):
+        """Ветка по сырым сделкам: считаем ровно то же, что `build_range`.
+
+        Если эти два счёта разойдутся, отчёт даст разрыв ровно на границе
+        свёрнутого — самое неприятное расхождение из возможных, потому что
+        граница каждый час уезжает.
+        """
+        key = (
+            TestOrder.referral_bot_id if by_referral else TestOrder.bot_id
+        )
+
+        return (
+            select(
+                key.label("bot_id"),
+                func.count().label("orders_count"),
+                func.count()
+                .filter(TestOrder.profit_loss > 0)
+                .label("profitable_count"),
+                func.sum(func.coalesce(TestOrder.profit_loss, 0)).label(
+                    "profit_loss"
+                ),
+                func.sum(
+                    func.coalesce(TestOrder.open_fee, 0)
+                    + func.coalesce(TestOrder.close_fee, 0)
+                ).label("fee"),
+                func.count()
+                .filter(
+                    TestOrder.stop_reason_event
+                    == StopReasonEvent.STOP_WON.value
+                )
+                .label("stop_won"),
+                func.count()
+                .filter(
+                    TestOrder.stop_reason_event
+                    == StopReasonEvent.STOP_LOOSED.value
+                )
+                .label("stop_loosed"),
+                func.count()
+                .filter(
+                    TestOrder.stop_reason_event
+                    == StopReasonEvent.STOP_LONG_LOSE.value
+                )
+                .label("stop_long_lose"),
+            )
+            .where(key.in_(bots), TestOrder.created_at >= start)
+            .group_by(key)
+        )
+
     async def delete_older_than(self, cutoff: datetime) -> int:
         """Чистка самих свёрток.
 
@@ -161,3 +370,30 @@ def floor_to_bucket(moment: datetime, bucket: timedelta) -> datetime:
     return datetime.fromtimestamp(
         seconds - (seconds % step), tz=moment.tzinfo
     )
+
+
+def split_window(
+    since: datetime, watermark: datetime | None, bucket: timedelta
+) -> tuple[datetime | None, datetime | None, datetime]:
+    """Как поделить окно отчёта между свёртками и сырьём.
+
+    Возвращает `(откуда свёртки, докуда свёртки, откуда сырьё)`; первые два
+    — `None`, если свёртки в этом окне не нужны.
+
+    Правило одно: ветки стыкуются по watermark и не перекрываются. Сдвинь
+    любую границу на блок — и сделки этого блока либо посчитаются дважды,
+    либо не посчитаются вовсе.
+
+    Начало округляется вниз до блока: свёртка не знает, что было внутри
+    десяти минут, поэтому взять её половину нельзя. Округление вниз делает
+    окно чуть шире запрошенного, а не уже — недосчитать хуже, чем
+    прихватить лишние минуты, и отчёт всё равно печатает настоящую границу.
+    """
+    since = floor_to_bucket(since, bucket)
+
+    if watermark is None or watermark <= since:
+        # Свёрток нет, или всё окно лежит уже после границы свёрнутого —
+        # читаем только сырьё.
+        return None, None, since
+
+    return since, watermark, watermark
