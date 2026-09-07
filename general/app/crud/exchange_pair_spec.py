@@ -106,6 +106,46 @@ class AssetExchangeSpecCrud(BaseCrud[AssetExchangeSpec]):
 
         filters, maker, taker = row
 
+        return self._build_market_data(filters, maker, taker)
+
+    async def get_market_data_by_symbols(
+        self, symbols: list[str]
+    ) -> dict[str, dict]:
+        """То же, что get_market_data_by_symbol, но сразу по списку пар:
+        один select ... where symbol in (...) вместо запроса на каждую.
+        Активных пар на старте сотни, а с шардированием запросы ещё и
+        множатся на число шардов.
+
+        В ответе только те пары, что нашлись в asset_exchange_specs:
+        отсутствие ключа означает «спеки не засеяны», вызывающий код сам
+        решает, чем это заполнить.
+        """
+        if not symbols:
+            return {}
+
+        stmt = select(
+            AssetExchangeSpec.symbol,
+            AssetExchangeSpec.filters,
+            AssetExchangeSpec.maker_commission_rate,
+            AssetExchangeSpec.taker_commission_rate,
+        ).where(AssetExchangeSpec.symbol.in_(set(symbols)))
+        rows = (await self.session.execute(stmt)).all()
+
+        market_data_by_symbol: dict[str, dict] = {}
+        for symbol, filters, maker, taker in rows:
+            # На пару может быть несколько строк (разные contract_type) —
+            # берём первую, как это делал limit(1) в запросе на одну пару.
+            if symbol in market_data_by_symbol:
+                continue
+
+            market_data_by_symbol[symbol] = self._build_market_data(
+                filters, maker, taker
+            )
+
+        return market_data_by_symbol
+
+    def _build_market_data(self, filters, maker, taker) -> dict:
+        """Строка asset_exchange_specs -> шаги цены и лота плюс ставки."""
         market_data = self.extract_step_sizes(filters)
         market_data["maker_commission_rate"] = (
             Decimal(str(maker)) if maker is not None else None
