@@ -208,10 +208,6 @@ class AssetExchangeSpec(BaseId):
 class AssetHistory(BigId):
     __tablename__ = "asset_history"
 
-    id: Mapped[int] = mapped_column(
-        types.BigInteger, primary_key=True, index=True, comment="Primary key"
-    )
-
     asset_exchange_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("asset_exchange_specs.id", ondelete="SET NULL"),
         nullable=True,
