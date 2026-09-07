@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import time
 
 from datetime import timedelta
 
@@ -19,6 +20,58 @@ from app.dependencies import (
 )
 
 from app.utils import Command
+
+
+class WindowCache:
+    """Кэш рейтингов прибыльности с разным сроком годности по окнам.
+
+    Рейтинг за 48 часов за полминуты практически не меняется, а стоит он
+    десятки миллионов строк в test_orders. Пересчитывать его так же часто, как
+    десятиминутный, — чистая трата: воркер тратил на это больше ядра
+    непрерывно и всё равно не успевал за своим 30-секундным циклом.
+
+    Поэтому окно живёт REFRESH_FRACTION от своей длины, но не меньше
+    MIN_REFRESH_SECONDS:
+
+        10 минут  → пересчёт раз в 30 с   (как и было)
+        12 часов  → раз в 36 минут
+        48 часов  → раз в 2.4 часа
+
+    Данные отстают максимум на те же 5% длины окна — для двухсуточного
+    рейтинга это ничто.
+
+    Срок жизни объекта задаёт, кэшируется ли что-то между циклами: воркер
+    держит один экземпляр постоянно, разовые вызовы создают свой, и тогда кэш
+    работает просто как дедупликация внутри одного обхода.
+    """
+
+    REFRESH_FRACTION = 0.05
+    MIN_REFRESH_SECONDS = 30
+
+    def __init__(self):
+        self._entries: dict[tuple, tuple[float, list]] = {}
+
+    def lifetime_seconds(self, minutes) -> float:
+        return max(
+            self.MIN_REFRESH_SECONDS,
+            float(minutes) * 60 * self.REFRESH_FRACTION,
+        )
+
+    def get(self, key, minutes):
+        entry = self._entries.get(key)
+
+        if entry is None:
+            return None
+
+        stored_at, value = entry
+
+        if time.monotonic() - stored_at >= self.lifetime_seconds(minutes):
+            return None
+
+        return value
+
+    def set(self, key, value) -> None:
+        self._entries[key] = (time.monotonic(), value)
 
 
 class ProfitableBotUpdaterCommand(Command):
@@ -167,11 +220,54 @@ class ProfitableBotUpdaterCommand(Command):
         return ref_bot_config
 
     @staticmethod
+    async def profitable_bot_ids_for_window(
+        bot_crud, minutes, by_referral_bot_id=False, window_cache=None
+    ):
+        """ID прибыльных ботов за окно, от самого прибыльного к менее.
+
+        window_cache — словарь на один цикл воркера. Окон всего два десятка, а
+        копиботов 80, и без кэша один и тот же агрегат по test_orders считался
+        бы по сорок раз подряд. Кэш обязан быть короткоживущим: данные меняются
+        каждую секунду.
+        """
+        key = (float(minutes), bool(by_referral_bot_id))
+
+        if window_cache is not None:
+            cached = window_cache.get(key, minutes)
+
+            if cached is not None:
+                return cached
+
+        rows = await bot_crud.get_sorted_by_profit(
+            since=timedelta(minutes=float(minutes)),
+            just_not_copy_bots=True,
+            by_referral_bot_id=by_referral_bot_id,
+        )
+        profitable = sorted(
+            (row for row in rows if row[1] is not None and row[1] > 0),
+            key=lambda row: row[1],
+            reverse=True,
+        )
+        bot_ids = [row[0] for row in profitable]
+
+        logging.info(
+            f'окно {minutes} мин'
+            f'{", по реферальным" if by_referral_bot_id else ""}: '
+            f'прибыльных ботов {len(bot_ids)}'
+        )
+
+        if window_cache is not None:
+            window_cache.set(key, bot_ids)
+
+        return bot_ids
+
+    @staticmethod
     async def get_profitable_bots_id_by_timeframes(
         bot_crud, bot_profitability_timeframes,
         check_24h_profitability=False,
         by_referral_bot_id=False,
     ):
+        window_cache = WindowCache()
         tf_bot_ids = {}
 
         for tf in bot_profitability_timeframes:
@@ -180,6 +276,7 @@ class ProfitableBotUpdaterCommand(Command):
                 timeframe=tf,
                 check_24h_profitability=check_24h_profitability,
                 by_referral_bot_id=by_referral_bot_id,
+                window_cache=window_cache,
             )
 
         return tf_bot_ids
@@ -188,7 +285,13 @@ class ProfitableBotUpdaterCommand(Command):
     async def get_profitable_bots_id_by_individual_params(
         bot_crud,
         bot_profitability_parameters,
+        window_cache=None,
     ):
+        # Свой кэш, если не дали общий: у 80 копиботов всего 20 разных окон,
+        # и даже внутри одного обхода это экономит четыре пятых запросов.
+        if window_cache is None:
+            window_cache = WindowCache()
+
         tf_bot_ids = {}
 
         for bot_id, parameters in bot_profitability_parameters.items():
@@ -197,6 +300,7 @@ class ProfitableBotUpdaterCommand(Command):
                 timeframe=parameters["tf"],
                 check_24h_profitability=parameters["24h"],
                 by_referral_bot_id=parameters["by_ref"],
+                window_cache=window_cache,
             )
 
         return tf_bot_ids
@@ -207,48 +311,28 @@ class ProfitableBotUpdaterCommand(Command):
         timeframe,
         check_24h_profitability=False,
         by_referral_bot_id=False,
+        window_cache=None,
     ):
-        time_ago = timedelta(minutes=float(timeframe))
+        get_ids = ProfitableBotUpdaterCommand.profitable_bot_ids_for_window
 
-        profits_data = await bot_crud.get_sorted_by_profit(
-            since=time_ago, just_not_copy_bots=True
+        tf_ids = await get_ids(
+            bot_crud=bot_crud, minutes=timeframe, window_cache=window_cache
         )
-        filtered_sorted = sorted(
-            [item for item in profits_data if item[1] > 0],
-            key=lambda x: x[1],
-            reverse=True,
-        )
-        tf_ids = [item[0] for item in filtered_sorted]
-        logging.info(f'profits_data: {len(tf_ids)}')
 
         if check_24h_profitability:
-            time_ago_24h = timedelta(hours=float(24))
-            profits_data_24h = await bot_crud.get_sorted_by_profit(
-                since=time_ago_24h, just_not_copy_bots=True
-            )
-            filtered_sorted_24h = sorted(
-                [item for item in profits_data_24h if item[1] > 0],
-                key=lambda x: x[1],
-                reverse=True,
-            )
-            ids_24h = [item[0] for item in filtered_sorted_24h]
-            ids_checked_24h = [item for item in tf_ids if item in ids_24h]
-            tf_ids = ids_checked_24h
+            ids_24h = set(await get_ids(
+                bot_crud=bot_crud, minutes=24 * 60, window_cache=window_cache
+            ))
+            # set, а не list: на тысячах ботов проверка вхождения в список
+            # превращала фильтр в квадрат.
+            tf_ids = [bot_id for bot_id in tf_ids if bot_id in ids_24h]
 
         if by_referral_bot_id:
-            profits_data_by_referral = await bot_crud.get_sorted_by_profit(
-                since=time_ago, just_not_copy_bots=True, by_referral_bot_id=True
-            )
-            logging.info(f'profits_data_by_referral: {len(profits_data_by_referral)}')
-            filtered_sorted_by_referral = sorted(
-                [item for item in profits_data_by_referral if item[1] > 0],
-                key=lambda x: x[1],
-                reverse=True,
-            )
-            tf_ids_by_referral = [item[0] for item in filtered_sorted_by_referral]
-            logging.info(f'tf_ids_by_referral: {len(tf_ids_by_referral)}')
-            ids_checked_by_referral = [item for item in tf_ids if item in tf_ids_by_referral]
-            tf_ids = ids_checked_by_referral
+            ids_by_referral = set(await get_ids(
+                bot_crud=bot_crud, minutes=timeframe,
+                by_referral_bot_id=True, window_cache=window_cache,
+            ))
+            tf_ids = [bot_id for bot_id in tf_ids if bot_id in ids_by_referral]
 
         return tf_ids
 
@@ -260,6 +344,9 @@ class ProfitableBotUpdaterCommand(Command):
     ):
         first_run_completed = False
         bot_profitability_params = {}
+        # Живёт между циклами: длинные окна пересчитываются раз в проценты от
+        # своей длины, а не каждые 30 секунд.
+        window_cache = WindowCache()
 
         while not self.stop_event.is_set():
             bots = await bot_crud.get_copybots()
@@ -285,6 +372,7 @@ class ProfitableBotUpdaterCommand(Command):
             tf_bot_ids = await self.get_profitable_bots_id_by_individual_params(
                 bot_crud=bot_crud,
                 bot_profitability_parameters=bot_profitability_params,
+                window_cache=window_cache,
             )
 
             for bot in bots:
