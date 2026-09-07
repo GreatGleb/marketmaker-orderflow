@@ -33,6 +33,7 @@ from app.enums.trade_type import TradeType
 from app.sub_services.logic.market_setup import MarketDataBuilder
 from app.sub_services.logic.price_calculator import PriceCalculator
 from app.sub_services.watchers.price_provider import (
+    PriceCache,
     PriceWatcher,
     PriceProvider,
 )
@@ -61,7 +62,13 @@ class StartTestBotsCommand(Command):
             level=logging.INFO
         )
 
-        price_provider = PriceProvider(redis=redis)
+        # Один MGET раз в 50 мс на весь процесс вместо GET на каждого бота
+        # каждые 100 мс. Без этого такт цикла удержания растягивается в разы:
+        # см. .ai/docs/test-bots/09-roadmap.md, пункт 1.1.
+        price_cache = PriceCache(redis=redis)
+        price_cache.start()
+
+        price_provider = PriceProvider(redis=redis, cache=price_cache)
         binance_bot = BinanceBot(is_need_prod_for_data=True, redis=redis)
 
         await asyncio.sleep(60)
@@ -395,6 +402,12 @@ class StartTestBotsCommand(Command):
                 )
             )
 
+            # Один на сделку, а не на каждую попытку входа: он лёгкий, но
+            # главное — переиспользует price_provider с общим кэшем цен.
+            price_watcher = PriceWatcher(
+                redis=redis, price_provider=price_provider
+            )
+
             while True:
                 initial_price = await price_provider.get_price(symbol=symbol)
 
@@ -426,7 +439,6 @@ class StartTestBotsCommand(Command):
                         wait_seconds = 1
 
                     timeout = int(wait_seconds)
-                    price_watcher = PriceWatcher(redis=redis)
 
                     trade_type, entry_price = await asyncio.wait_for(
                         price_watcher.wait_for_entry_price(

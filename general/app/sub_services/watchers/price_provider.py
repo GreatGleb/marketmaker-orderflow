@@ -9,6 +9,70 @@ from sqlalchemy.orm import Mapped
 from app.enums.trade_type import TradeType
 
 
+class PriceCache:
+    """Один MGET на все нужные пары вместо GET на каждого бота.
+
+    Раньше каждый бот ходил в Redis каждые 0.1 с. Потолок одного процесса
+    Python — около 9 500 операций в секунду независимо от числа ботов, и на
+    2 000 ботов такт цикла удержания растягивался со 100 до 195 мс, а на
+    17 000 — до 1 671 мс. С кэшем в Redis уходит один MGET раз в 50 мс, а
+    боты читают из словаря вообще без ввода-вывода.
+
+    Кэш держит только те пары, которые реально спрашивают: волатильный режим
+    выбирает пару на ходу, заранее список не известен.
+    """
+
+    REFRESH_INTERVAL_SECONDS = 0.05
+    # Пауза после ошибки: долбить упавший Redis каждые 50 мс незачем.
+    ERROR_RETRY_SECONDS = 1.0
+
+    def __init__(self, redis):
+        self.redis = redis
+        self._prices: dict[str, Decimal] = {}
+        self._symbols: set[str] = set()
+        self._task: asyncio.Task | None = None
+
+    def track(self, symbol: str) -> None:
+        """Добавляет пару в список обновляемых."""
+        self._symbols.add(symbol)
+
+    def get(self, symbol: str) -> Decimal | None:
+        """Последняя известная цена. None — цены сейчас нет."""
+        return self._prices.get(symbol)
+
+    def start(self) -> None:
+        if self._task is None or self._task.done():
+            self._task = asyncio.create_task(self._refresh_forever())
+
+    async def _refresh_forever(self) -> None:
+        while True:
+            try:
+                await self._refresh_once()
+                delay = self.REFRESH_INTERVAL_SECONDS
+            except Exception as e:
+                logging.info(f"Кэш цен: ошибка чтения из Redis: {e}")
+                delay = self.ERROR_RETRY_SECONDS
+
+            await asyncio.sleep(delay)
+
+    async def _refresh_once(self) -> None:
+        symbols = sorted(self._symbols)
+
+        if not symbols:
+            return
+
+        values = await self.redis.mget([f"price:{s}" for s in symbols])
+
+        for symbol, value in zip(symbols, values):
+            if value is None:
+                # Ключ протух (TTL 120 с в watch_ws_and_save) или пара выпала
+                # из watched_pair. Убираем из кэша, чтобы боты ждали, а не
+                # торговали по замороженной цене.
+                self._prices.pop(symbol, None)
+            else:
+                self._prices[symbol] = Decimal(value)
+
+
 class PriceProvider:
     # Сколько попыток опрашивать часто, прежде чем перейти на редкий опрос.
     FAST_POLL_ATTEMPTS = 50
@@ -21,8 +85,10 @@ class PriceProvider:
     # тысячи одинаковых строк в лог.
     _last_missing_log: dict[str, float] = {}
 
-    def __init__(self, redis):
+    def __init__(self, redis, cache: "PriceCache | None" = None):
         self.redis = redis
+        # Без кэша ходим в Redis напрямую — так работает боевой binance_bot.
+        self.cache = cache
 
     @classmethod
     def _log_missing_price(cls, symbol: str, waiting_seconds: float) -> None:
@@ -39,6 +105,17 @@ class PriceProvider:
             f"Проверьте app.scripts.watch_ws_and_save."
         )
 
+    async def _read_price(self, symbol: str) -> Decimal | None:
+        """Одна попытка получить цену. None — цены сейчас нет."""
+        if self.cache is not None:
+            self.cache.track(symbol)
+
+            return self.cache.get(symbol)
+
+        price_str = await self.redis.get(f"price:{symbol}")
+
+        return Decimal(price_str) if price_str else None
+
     async def get_price(self, symbol: str) -> Decimal:
         # Ждём цену бесконечно: бросать открытую позицию из-за паузы в
         # питателе цен нельзя. Но молчать об этом тоже нельзя — иначе бот
@@ -48,11 +125,11 @@ class PriceProvider:
 
         while True:
             try:
-                price_str = await self.redis.get(f"price:{symbol}")
-                if price_str:
+                price = await self._read_price(symbol)
+                if price is not None:
                     if attempt:
                         self._last_missing_log.pop(symbol, None)
-                    return Decimal(price_str)
+                    return price
             except Exception as e:
                 logging.info(f"Redis Error: {e}")
 
@@ -75,9 +152,11 @@ class PriceProvider:
 
 
 class PriceWatcher:
-    def __init__(self, redis):
+    def __init__(self, redis, price_provider: PriceProvider | None = None):
         self.redis = redis
-        self.price_provider = PriceProvider(redis)
+        # Свой провайдер — только если готового не дали: иначе потеряется
+        # общий кэш цен, ради которого всё и затевалось.
+        self.price_provider = price_provider or PriceProvider(redis)
 
     async def wait_for_entry_price(
         self,
