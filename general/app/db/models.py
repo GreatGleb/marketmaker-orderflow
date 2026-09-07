@@ -36,6 +36,29 @@ class BaseId(Base):
     )
 
 
+class BigId(BaseId):
+    """`id` для таблиц, в которые пишет поток.
+
+    int4 кончается на 2 147 483 647. На полной скорости парк пишет около
+    490 строк в секунду в один только `test_orders` — это 42 миллиона строк
+    в сутки и переполнение последовательности примерно через 51 день, после
+    чего вставки начинают падать. Чистка от этого не спасает: `DELETE` не
+    откатывает sequence, та считает выданные значения, а не живые строки.
+
+    Расширить колонку на уже наполненной таблице дорого: `ALTER COLUMN ...
+    TYPE` переписывает её целиком под `ACCESS EXCLUSIVE` и требует свободного
+    места в размер таблицы с индексами — на заполненном диске так нельзя. На
+    пустой таблице это бесплатно, поэтому тип объявлен здесь: новые
+    развёртывания получают bigint сразу и переписывать им нечего.
+    """
+
+    __abstract__ = True
+
+    id: Mapped[int] = mapped_column(
+        types.BigInteger, primary_key=True, nullable=False, autoincrement=True
+    )
+
+
 class AssetPair(BaseId):
     __tablename__ = "asset_pairs"
 
@@ -182,11 +205,11 @@ class AssetExchangeSpec(BaseId):
     )
 
 
-class AssetHistory(BaseId):
+class AssetHistory(BigId):
     __tablename__ = "asset_history"
 
     id: Mapped[int] = mapped_column(
-        types.Integer, primary_key=True, index=True, comment="Primary key"
+        types.BigInteger, primary_key=True, index=True, comment="Primary key"
     )
 
     asset_exchange_id: Mapped[Optional[int]] = mapped_column(
@@ -325,7 +348,7 @@ class WatchedPair(BaseId):
     )
 
 
-class AssetOrderBook(BaseId):
+class AssetOrderBook(BigId):
     __tablename__ = "asset_order_book"
 
     asset_exchange_id: Mapped[int] = mapped_column(
@@ -348,7 +371,7 @@ class AssetOrderBook(BaseId):
     )
 
 
-class TestOrder(BaseId):
+class TestOrder(BigId):
     __tablename__ = "test_orders"
 
     asset_symbol: Mapped[str] = mapped_column(
@@ -671,7 +694,7 @@ class MarketOrder(BaseId):
     )
 
 
-class TestOrderRollup(BaseId):
+class TestOrderRollup(BigId):
     """Свёртка `test_orders` по десятиминутным блокам.
 
     Сырые сделки — это результат эксперимента, и удалять их «просто так»
