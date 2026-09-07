@@ -136,16 +136,30 @@ class TestOrderRollupCommand(Command):
 
     @staticmethod
     async def clear_old_rollups(rollup_crud: TestOrderRollupCrud) -> None:
+        """Чистка самих свёрток. По умолчанию не делает ничего.
+
+        Свёртки — единственное, что остаётся от эксперимента после удаления
+        сырых сделок. Выбрасывать их по расписанию нельзя: это решение
+        человека. Поэтому удаление включается только явным положительным
+        `RETENTION_ROLLUP_DAYS`, а пустое, нулевое и отрицательное значение
+        означают «хранить бессрочно» — кривая настройка не должна
+        оборачиваться потерей данных.
+        """
         if not settings.RETENTION_ENABLED:
             return
 
-        cutoff = datetime.now(UTC) - timedelta(
-            days=settings.RETENTION_ROLLUP_DAYS
-        )
+        days = settings.RETENTION_ROLLUP_DAYS
+
+        if days is None or days <= 0:
+            return
+
+        cutoff = datetime.now(UTC) - timedelta(days=days)
         removed = await rollup_crud.delete_older_than(cutoff)
 
         if removed:
-            logging.info(f"Удалено устаревших свёрток: {removed}")
+            logging.info(
+                f"Удалено свёрток старше {days} суток: {removed}"
+            )
 
 
 async def main() -> None:

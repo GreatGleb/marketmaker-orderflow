@@ -126,6 +126,51 @@ async def check_disabled_rollups_are_loud():
     print("  выключенные свёртки предупреждают о потере статистики")
 
 
+class RecordingRollupCrud:
+    """Запоминает, просили ли её что-нибудь удалить."""
+
+    def __init__(self):
+        self.delete_calls = []
+
+    async def delete_older_than(self, cutoff):
+        self.delete_calls.append(cutoff)
+        return 0
+
+
+async def check_rollups_are_kept_forever():
+    """Свёртки не удаляются по расписанию — только по явному сроку.
+
+    Это последнее, что остаётся от эксперимента после чистки сырых сделок.
+    Выбросить их — решение человека, а не побочный эффект настройки,
+    поэтому пустое, нулевое и отрицательное значение означают «хранить».
+    """
+    for days in (None, 0, -1):
+        crud = RecordingRollupCrud()
+
+        with patch.object(settings, "RETENTION_ROLLUP_DAYS", days):
+            await TestOrderRollupCommand.clear_old_rollups(crud)
+
+        assert not crud.delete_calls, (
+            f"RETENTION_ROLLUP_DAYS={days} не должен ничего удалять, "
+            f"а свёртки чистились до {crud.delete_calls}"
+        )
+
+    assert settings.RETENTION_ROLLUP_DAYS is None, (
+        "по умолчанию свёртки должны храниться бессрочно, а стоит "
+        f"{settings.RETENTION_ROLLUP_DAYS}"
+    )
+
+    # Явный положительный срок чистку всё-таки включает.
+    crud = RecordingRollupCrud()
+
+    with patch.object(settings, "RETENTION_ROLLUP_DAYS", 30):
+        await TestOrderRollupCommand.clear_old_rollups(crud)
+
+    assert len(crud.delete_calls) == 1, "явный срок обязан работать"
+
+    print("  свёртки хранятся бессрочно, пока срок не задан явно")
+
+
 async def main():
     print("Границы ретеншна:")
     check_bucket_math()
@@ -133,6 +178,7 @@ async def main():
     await check_cutoff_never_outruns_rollups()
     await check_window_covers_longest_copybot_window()
     await check_disabled_rollups_are_loud()
+    await check_rollups_are_kept_forever()
     print("\nвсё сходится")
 
 
