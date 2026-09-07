@@ -122,27 +122,95 @@ class StartTestBotsCommand(Command):
                             binance_bot=binance_bot,
                         )
                     except Exception as e:
-                        try:
-                            error_traceback = traceback.format_exc()
-                            logging.info(error_traceback)
-                            telegram_service = (
-                                NotificationServiceFactory.get_telegram_service()
-                            )
-                            if telegram_service:
-                                await telegram_service.send_bot_error_notification(
-                                    bot_id=bot_config.id,
-                                    error_message=str(e),
-                                    additional_info=f"Полный стек ошибки:\n{error_traceback}",
-                                )
-                        except Exception as telegram_error:
-                            logging.info(
-                                f"❌ Ошибка при отправке уведомления в Telegram: {telegram_error}"
-                            )
+                        error_traceback = traceback.format_exc()
+                        logging.info(error_traceback)
+                        await self._notify_bot_error(
+                            bot_id=bot_config.id,
+                            error=e,
+                            error_traceback=error_traceback,
+                        )
                         await asyncio.sleep(1)
 
             tasks.append(asyncio.create_task(_run_loop(bot)))
 
         await asyncio.gather(*tasks)
+
+    # Уведомления об ошибках ботов. Всё общее на процесс: при системном
+    # сбое (упал Redis, отвалилась база) в одну и ту же ошибку утыкаются все
+    # боты сразу, и без троттлинга это тысячи одинаковых сообщений в минуту —
+    # Telegram забанит бота, а причину сбоя в потоке будет не найти.
+    # Тот же приём, что в PriceProvider._log_missing_price.
+    ERROR_NOTIFY_INTERVAL_SECONDS = 300
+    # Сколько разных ошибок помним. Текст ошибки может содержать меняющиеся
+    # данные (id, цены), поэтому ключей бывает много — при переполнении
+    # выкидываем те, чей интервал уже истёк.
+    ERROR_NOTIFY_MAX_KEYS = 500
+
+    # подпись ошибки -> когда последний раз отправляли
+    _last_error_notification: dict[str, float] = {}
+    # подпись ошибки -> сколько сообщений подавили с прошлой отправки
+    _suppressed_error_notifications: dict[str, int] = {}
+
+    @classmethod
+    def _forget_expired_error_notifications(cls, now: float) -> None:
+        expired = [
+            key
+            for key, last in cls._last_error_notification.items()
+            if now - last >= cls.ERROR_NOTIFY_INTERVAL_SECONDS
+        ]
+
+        for key in expired:
+            cls._last_error_notification.pop(key, None)
+            cls._suppressed_error_notifications.pop(key, None)
+
+    @classmethod
+    async def _notify_bot_error(
+        cls,
+        bot_id: int,
+        error: Exception,
+        error_traceback: str,
+    ) -> None:
+        # Ключ — тип и текст ошибки, но не id бота: при системном сбое
+        # интересна сама ошибка, а не каждый из ботов, который в неё попал.
+        key = f"{type(error).__name__}: {error}"
+        now = time.monotonic()
+        last = cls._last_error_notification.get(key)
+
+        if last is not None and now - last < cls.ERROR_NOTIFY_INTERVAL_SECONDS:
+            cls._suppressed_error_notifications[key] = (
+                cls._suppressed_error_notifications.get(key, 0) + 1
+            )
+            return
+
+        if len(cls._last_error_notification) >= cls.ERROR_NOTIFY_MAX_KEYS:
+            cls._forget_expired_error_notifications(now)
+
+        cls._last_error_notification[key] = now
+        suppressed = cls._suppressed_error_notifications.pop(key, 0)
+
+        additional_info = f"Полный стек ошибки:\n{error_traceback}"
+
+        if suppressed:
+            interval_minutes = cls.ERROR_NOTIFY_INTERVAL_SECONDS / 60
+            additional_info = (
+                f"🔁 Подавлено таких же сообщений за последние "
+                f"{interval_minutes:.0f} мин: {suppressed}\n\n"
+                f"{additional_info}"
+            )
+
+        try:
+            telegram_service = NotificationServiceFactory.get_telegram_service()
+
+            if telegram_service:
+                await telegram_service.send_bot_error_notification(
+                    bot_id=bot_id,
+                    error_message=str(error),
+                    additional_info=additional_info,
+                )
+        except Exception as telegram_error:
+            logging.info(
+                f"❌ Ошибка при отправке уведомления в Telegram: {telegram_error}"
+            )
 
     # Догрузка рыночных данных по паре, которой не оказалось в снимке.
     # Всё общее на процесс: в волатильном режиме сотни ботов утыкаются в одну
