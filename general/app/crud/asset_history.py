@@ -95,11 +95,30 @@ class AssetHistoryCrud(BaseCrud[AssetHistory]):
           иначе одна аномалия перебивает десяток настоящих рывков.
         """
         query = text("""
-            with liquid as (
+            with
+            -- Считаем по одному источнику. В asset_history лежат и фьючерсы
+            -- (BINANCE), и спот (BINANCE_SPOT) — режим питателя цен
+            -- переключается настройкой. Окно, попавшее на переключение,
+            -- иначе смешивает два ряда цен, и сдвиг на базис между ними
+            -- выглядит как мгновенное движение, которого не было.
+            --
+            -- Текущим считается источник с самыми свежими тиками в окне, а
+            -- при равной свежести — тот, которым их больше: выбор обязан
+            -- быть однозначным, иначе отбор начнёт скакать между режимами.
+            current_source as (
+                select source
+                from asset_history
+                where event_time >= :since
+                group by source
+                order by max(event_time) desc, count(*) desc
+                limit 1
+            ),
+            liquid as (
                 select symbol
                 from asset_history
                 where event_time >= :since
                   and last_price > 0
+                  and source = (select source from current_source)
                 group by symbol
                 having max(quote_asset_volume_24h) >= :min_quote_volume_24h
             ),
@@ -113,6 +132,7 @@ class AssetHistoryCrud(BaseCrud[AssetHistory]):
                 join liquid using (symbol)
                 where h.event_time >= :since
                   and h.last_price > 0
+                  and h.source = (select source from current_source)
                 window w as (
                     partition by h.symbol order by h.event_time
                     range between :window_seconds preceding and current row
@@ -199,7 +219,25 @@ class AssetHistoryCrud(BaseCrud[AssetHistory]):
         уже у них.
         """
         query = text("""
-            with per_symbol as (
+            with
+            -- Считаем по одному источнику. В asset_history лежат и фьючерсы
+            -- (BINANCE), и спот (BINANCE_SPOT) — режим питателя цен
+            -- переключается настройкой. Окно, попавшее на переключение,
+            -- иначе смешивает два ряда цен, и сдвиг на базис между ними
+            -- выглядит как мгновенное движение, которого не было.
+            --
+            -- Текущим считается источник с самыми свежими тиками в окне, а
+            -- при равной свежести — тот, которым их больше: выбор обязан
+            -- быть однозначным, иначе отбор начнёт скакать между режимами.
+            current_source as (
+                select source
+                from asset_history
+                where event_time >= :since
+                group by source
+                order by max(event_time) desc, count(*) desc
+                limit 1
+            ),
+            per_symbol as (
                 select
                     symbol,
                     count(*) as ticks,
@@ -215,6 +253,7 @@ class AssetHistoryCrud(BaseCrud[AssetHistory]):
                 from asset_history
                 where event_time >= :since
                   and last_price > 0
+                  and source = (select source from current_source)
                 group by symbol
             ),
             candidates as (
@@ -244,6 +283,7 @@ class AssetHistoryCrud(BaseCrud[AssetHistory]):
                         where h.symbol = c.symbol
                           and h.event_time >= :since
                           and h.last_price > 0
+                          and h.source = (select source from current_source)
                         order by h.last_price
                         offset c.dropped
                         limit 1
@@ -254,6 +294,7 @@ class AssetHistoryCrud(BaseCrud[AssetHistory]):
                         where h.symbol = c.symbol
                           and h.event_time >= :since
                           and h.last_price > 0
+                          and h.source = (select source from current_source)
                         order by h.last_price desc
                         offset c.dropped
                         limit 1

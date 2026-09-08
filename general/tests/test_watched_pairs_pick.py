@@ -62,10 +62,15 @@ PAIRS = [
          jumps=[1.0] * 5, source="BINANCE_SPOT"),
     dict(symbol="CALMUSDT", price="10", volume=50_000_000,
          jumps=[], source="BINANCE_SPOT"),
+    # Рывки есть, но записаны прежним источником и оборвались пару минут
+    # назад: питатель переключили на спот, и этот ряд цен в расчёт идти не
+    # должен — иначе стык двух источников сам выглядит как рывок.
+    dict(symbol="OLDSOURCEUSDT", price="30", volume=50_000_000,
+         jumps=[2.0] * 5, source="BINANCE", stops_early=timedelta(minutes=2)),
 ]
 
 WINNER = "JUMPYUSDT"
-CUT_OFF = ["ONEJUMPUSDT", "CHEAPUSDT", "CALMUSDT"]
+CUT_OFF = ["ONEJUMPUSDT", "CHEAPUSDT", "CALMUSDT", "OLDSOURCEUSDT"]
 
 # Рывок должен уложиться внутрь секундного окна, а соседние окна — остаться
 # ниже порога, иначе фронт не посчитается как передний. Поэтому ровный фон
@@ -82,7 +87,9 @@ def build_ticks(pair, since):
     moment = since
     jumps = list(pair["jumps"])
     next_jump = since + JUMP_EVERY
-    while moment < since + WINDOW:
+    until = since + WINDOW - pair.get("stops_early", timedelta())
+
+    while moment < until:
         rows.append({
             "symbol": pair["symbol"], "source": pair["source"],
             "last_price": price, "quote_asset_volume_24h": pair["volume"],
