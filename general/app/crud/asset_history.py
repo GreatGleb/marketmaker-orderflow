@@ -11,6 +11,14 @@ from sqlalchemy.orm import aliased
 from sqlalchemy import select, func
 
 from app.config import settings
+from app.constants.volatility import (
+    MAX_DROPPED_TICKS,
+    MIN_QUOTE_VOLUME_24H,
+    MIN_TICKS_IN_WINDOW,
+    MIN_TICKS_SHARE_OF_MEDIAN,
+    TICKS_PER_DROPPED_TICK,
+    VOLATILITY_CANDIDATES,
+)
 from app.db.base import DatabaseSessionManager
 from app.db.models import AssetHistory
 from app.crud.base import BaseCrud
@@ -49,23 +57,13 @@ class AssetHistoryCrud(BaseCrud[AssetHistory]):
         await self.session.execute(stmt)
         await self.session.commit()
 
-    async def get_most_volatile_since(self, since: datetime):
-        query = (
-            select(
-                AssetHistory.symbol,
-                func.abs(
-                    (func.max(AssetHistory.last_price) - func.min(AssetHistory.last_price))
-                    / func.min(AssetHistory.last_price)
-                ).label("volatility")
-            )
-            .where(AssetHistory.event_time >= since)
-            .group_by(AssetHistory.symbol)
-            .order_by(text("volatility DESC"))
-            .limit(1)
+    async def get_most_volatile_since(self, since: datetime, **kwargs):
+        """Самая волатильная пара за окно или None, если ни одна не прошла отбор."""
+        rows = await self.get_most_volatiles_since(
+            since=since, limit=1, **kwargs
         )
 
-        result = await self.session.execute(query)
-        return result.first()
+        return rows[0] if rows else None
 
     async def get_top_jumpy_symbols(
         self, since: datetime, limit: int = 50, jump_threshold: float = 0.5,
@@ -125,23 +123,134 @@ class AssetHistoryCrud(BaseCrud[AssetHistory]):
 
         return result.all()
 
-    async def get_most_volatiles_since(self, since: datetime):
-        query = (
-            select(
-                AssetHistory.symbol,
-                func.abs(
-                    (func.max(AssetHistory.last_price) - func.min(AssetHistory.last_price))
-                    / func.min(AssetHistory.last_price)
-                ).label("volatility")
+    async def get_most_volatiles_since(
+        self,
+        since: datetime,
+        limit: int = 10,
+        min_ticks: int = MIN_TICKS_IN_WINDOW,
+        min_ticks_share: float = MIN_TICKS_SHARE_OF_MEDIAN,
+        min_quote_volume_24h: int = MIN_QUOTE_VOLUME_24H,
+        max_dropped_ticks: int = MAX_DROPPED_TICKS,
+    ):
+        """Самые волатильные пары за окно, без мусора и одиночных выбросов.
+
+        Сырой размах (max-min)/min ранжирует не то, что нужно: у неликвидной
+        монеты один случайный тик даёт размах больше, чем настоящее движение у
+        ликвидной пары, и в победители попадает то, чем нельзя торговать.
+
+        Поэтому сначала отсекаются пары, у которых торговать нечем:
+
+        * оборот за сутки ниже min_quote_volume_24h;
+        * тиков в окне меньше min_ticks или меньше min_ticks_share от медианы
+          по парам этого же окна. Планка относительная, потому что абсолютная
+          частота тиков зависит от режима питателя цен: на истории за август
+          (6-12 тиков в минуту) любой абсолютный порог отсекал всех, а от
+          относительного остаётся лучшее из доступного.
+
+        Потом у выживших размах считается не по самым крайним тикам, а по
+        следующим за ними: max_dropped_ticks крайних отпечатков с каждой
+        стороны отбрасывается. Выброс от настоящего движения отличается не
+        размером, а одиночностью — по одной сделке в ордер не войти, а на
+        настоящем ходе тиков у края много. Поэтому потолка на движение здесь
+        нет: пара, реально сходившая на 30%, так и получит свои 30%.
+
+        Отсечка по проценту от медианы цены (коридор) и отсечка по
+        процентилям для этого не годятся: первая режет как раз сильные
+        реальные движения, вторая — короткие рывки, ради которых пара и
+        выбирается.
+
+        Крайние цены достаются точечно по каждому кандидату, а не
+        сортировкой всего окна: на истории за август сортировка часового окна
+        (1.5 млн тиков) стоит 9 с, а этот запрос — 0.6 с на часовом окне и
+        0.2 с на пятиминутном. Ценой этого пары сначала отбираются по сырому
+        размаху (VOLATILITY_CANDIDATES штук), и настоящий размах считается
+        уже у них.
+        """
+        query = text("""
+            with per_symbol as (
+                select
+                    symbol,
+                    count(*) as ticks,
+                    max(quote_asset_volume_24h) as quote_volume_24h,
+                    -- Выбрасывать крайние тики можно только там, где их
+                    -- много: иначе на коротком окне отсечка съест выборку.
+                    least(
+                        :max_dropped_ticks,
+                        count(*) / :ticks_per_dropped_tick
+                    )::int as dropped,
+                    (max(last_price) - min(last_price))
+                        / min(last_price) as raw_volatility
+                from asset_history
+                where event_time >= :since
+                  and last_price > 0
+                group by symbol
+            ),
+            candidates as (
+                select *
+                from per_symbol
+                where ticks >= greatest(
+                          :min_ticks,
+                          (
+                              select percentile_disc(0.5)
+                                  within group (order by ticks)
+                              from per_symbol
+                          ) * :min_ticks_share
+                      )
+                  and quote_volume_24h >= :min_quote_volume_24h
+                order by raw_volatility desc
+                limit :candidates
+            ),
+            edges as (
+                select
+                    c.symbol,
+                    c.ticks,
+                    c.quote_volume_24h,
+                    c.dropped,
+                    (
+                        select h.last_price
+                        from asset_history h
+                        where h.symbol = c.symbol
+                          and h.event_time >= :since
+                          and h.last_price > 0
+                        order by h.last_price
+                        offset c.dropped
+                        limit 1
+                    ) as low_price,
+                    (
+                        select h.last_price
+                        from asset_history h
+                        where h.symbol = c.symbol
+                          and h.event_time >= :since
+                          and h.last_price > 0
+                        order by h.last_price desc
+                        offset c.dropped
+                        limit 1
+                    ) as high_price
+                from candidates c
             )
-            .where(AssetHistory.event_time >= since)
-            .group_by(AssetHistory.symbol)
-            .order_by(text("volatility DESC"))
-            .limit(10)
+            select
+                symbol,
+                (high_price - low_price) / low_price as volatility,
+                ticks,
+                quote_volume_24h,
+                dropped
+            from edges
+            order by volatility desc
+            limit :limit
+        """).bindparams(
+            since=since,
+            min_ticks=min_ticks,
+            min_ticks_share=min_ticks_share,
+            min_quote_volume_24h=min_quote_volume_24h,
+            max_dropped_ticks=max_dropped_ticks,
+            ticks_per_dropped_tick=TICKS_PER_DROPPED_TICK,
+            candidates=max(VOLATILITY_CANDIDATES, limit),
+            limit=limit,
         )
 
         result = await self.session.execute(query)
-        return result.scalars().all()
+
+        return result.all()
 
     async def get_most_volatiles_since_from_symbols_list(self, since: datetime, symbols_list):
         query = (

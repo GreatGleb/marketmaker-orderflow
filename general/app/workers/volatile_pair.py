@@ -19,6 +19,8 @@ from app.dependencies import (
 )
 from app.config import settings
 from app.constants.volatility import (
+    MIN_QUOTE_VOLUME_24H,
+    MIN_TICKS_IN_WINDOW,
     VOLATILE_SYMBOL_TTL_SECONDS,
     most_volatile_symbol_key,
 )
@@ -79,15 +81,36 @@ class VolatilePairCommand(Command):
                                 since=time_ago
                             )
 
+                            key = most_volatile_symbol_key(tf_str)
+
                             if most_volatile:
                                 symbol = most_volatile.symbol
-                                key = most_volatile_symbol_key(tf_str)
                                 # TTL: если воркер умрёт, ключ протухнет и боты
                                 # встанут, а не будут торговать старой парой.
                                 await redis.set(
                                     key, symbol, ex=VOLATILE_SYMBOL_TTL_SECONDS
                                 )
-                                logging.info(f"{key} updated: {symbol}")
+                                # Метрики в логе — чтобы было видно, что
+                                # именно выбрано: по одному размаху не понять,
+                                # мусор это или настоящее движение.
+                                spread = float(most_volatile.volatility) * 100
+                                volume = float(most_volatile.quote_volume_24h)
+                                logging.info(
+                                    f"{key} updated: {symbol} "
+                                    f"(размах {spread:.2f}%, "
+                                    f"тиков {most_volatile.ticks}, "
+                                    f"оборот за сутки {volume:,.0f})"
+                                )
+                            else:
+                                # Ключ намеренно не трогаем: пусть протухнет и
+                                # боты встанут. Торговать неликвидом хуже, чем
+                                # простоять окно.
+                                logging.info(
+                                    f"{key}: ни одна пара не прошла отбор "
+                                    f"(нужно от {MIN_TICKS_IN_WINDOW} тиков в "
+                                    f"окне и оборот от "
+                                    f"{MIN_QUOTE_VOLUME_24H:,} USDT)"
+                                )
                     else:
                         now = datetime.now(UTC)
                         time_ago = now - timedelta(hours=1)
@@ -96,10 +119,20 @@ class VolatilePairCommand(Command):
                             since=time_ago
                         )
                         if most_volatiles:
-                            i = 1
-                            for most_volatile in most_volatiles:
-                                logging.info(f"{i} most_volatile_symbol: {most_volatile}")
-                                i = i + 1
+                            for i, row in enumerate(most_volatiles, start=1):
+                                spread = float(row.volatility) * 100
+                                volume = float(row.quote_volume_24h)
+                                logging.info(
+                                    f"{i} most_volatile_symbol: {row.symbol} "
+                                    f"размах={spread:.2f}% тиков={row.ticks} "
+                                    f"оборот={volume:,.0f}"
+                                )
+                        else:
+                            logging.info(
+                                f"За час ни одна пара не прошла отбор (нужно "
+                                f"от {MIN_TICKS_IN_WINDOW} тиков в окне и "
+                                f"оборот от {MIN_QUOTE_VOLUME_24H:,} USDT)"
+                            )
                         logging.info('\n')
 
                     # if most_volatile and tf_str and symbol:

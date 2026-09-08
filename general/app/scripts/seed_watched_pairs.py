@@ -37,6 +37,9 @@ import httpx
 from sqlalchemy import delete, func, select
 
 from app.config import settings
+# Тот же порог оборота, что и у отбора волатильной пары: держать два своих
+# понятия неликвида в одном проекте — верный способ их разъехать.
+from app.constants.volatility import MIN_QUOTE_VOLUME_24H
 from app.crud.asset_history import AssetHistoryCrud
 from app.crud.test_bot import TestBotCrud
 from app.db.base import DatabaseSessionManager
@@ -51,9 +54,6 @@ logging.basicConfig(
 UTC = timezone.utc
 
 BINANCE_24H_URL = "https://fapi.binance.com/fapi/v1/ticker/24hr"
-# Ниже этого оборота за сутки пару нет смысла брать: на неликвиде «скачок» —
-# это чаще всего одна случайная сделка.
-MIN_QUOTE_VOLUME_24H = 2_000_000
 # Сколько пар со свежей историей нужно, чтобы отбор по скачкам был осмысленным.
 MIN_SYMBOLS_FOR_HISTORY_RANKING = 5
 # Разгон на чистой базе: сколько кандидатов взять и сколько минут за ними
