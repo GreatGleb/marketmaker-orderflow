@@ -43,6 +43,8 @@ cp .env.example .env
 docker exec -it orderflow_general python -m app.scripts.watch_ws_and_save
 
 docker exec -it orderflow_general python -m app.scripts.start_test_bots
+# симулятор уже запущен под supervisord как группа шардов test_bots:*,
+# так что для ручного запуска её сначала надо остановить
 
 # Отчёт по прибыльности ботов — см. раздел ниже
 docker exec -it orderflow_general python -m app.scripts.top_bots_report

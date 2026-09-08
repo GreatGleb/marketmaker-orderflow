@@ -147,7 +147,7 @@ BotObject = namedtuple('BotObject', active_bots_dicts[0].keys())
 Пустая `test_bots` (например, сразу после `TRUNCATE` в `new_bots.py`, до
 создания новых) → `IndexError` **вне** `_run_loop`, то есть падал весь
 процесс. Supervisor перезапускал его, и он падал снова через 60 секунд
-ожидания — в `test_bots.err` копился цикл трейсбеков.
+ожидания — в `test_bots_00.err` копился цикл трейсбеков.
 
 Сейчас перед сборкой namedtuple стоит цикл ожидания: процесс раз в 60 секунд
 опрашивает `test_bots` и пишет в лог подсказку, пока боты не появятся.
@@ -211,8 +211,9 @@ BotObject = namedtuple('BotObject', active_bots_dicts[0].keys())
 ## 7. `shared_data` и список ботов — снимок на старте
 
 Правки в `test_bots` и новые пары в `asset_history` не подхватываются без
-`supervisorctl restart test_bots`. Единственное исключение — конфиг донора
-у копиботов.
+`supervisorctl restart test_bots:*` (симулятор — группа процессов, по имени
+`test_bots` supervisorctl ничего не найдёт). Единственное исключение —
+конфиг донора у копиботов.
 
 ## 8. Баланс копибота всегда 1000
 

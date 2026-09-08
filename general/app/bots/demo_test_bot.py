@@ -47,9 +47,28 @@ UTC = timezone.utc
 
 class StartTestBotsCommand(Command):
 
-    def __init__(self, stop_event):
+    # Замер 2026-08-27: голый цикл держит около 70 тысяч пробуждений корутин
+    # в секунду на ядро, то есть 7 тысяч ботов с тактом 100 мс. Настоящий бот
+    # ещё считает условия выхода на Decimal, поэтому рабочее правило — 4–7
+    # тысяч на процесс, а это порог, за которым такт точно поедет.
+    MAX_BOTS_PER_SHARD = 7_000
+
+    def __init__(self, stop_event, shard: int = 0, shards: int = 1):
+        """shard/shards — доля парка, которую ведёт этот процесс.
+
+        Один событийный цикл вытягивает около 70 тысяч пробуждений корутин
+        в секунду на ядро, а 17 236 ботов с тактом 100 мс требуют 172 тысяч.
+        Поэтому симулятор запускается несколькими процессами, каждый берёт
+        ботов с `id % shards == shard`. Подробности — пункт 1.2 в
+        .ai/docs/test-bots/09-roadmap.md.
+        """
         super().__init__()
         self.stop_event = stop_event
+        self.shard = shard
+        self.shards = shards
+        # Логи всех шардов лежат в разных файлах, но при чтении их вместе
+        # (или в консоли ручного запуска) без пометки не разобрать, чей это.
+        self.log_prefix = f'[шард {shard}/{shards}] ' if shards > 1 else ''
 
     async def command(
         self,
@@ -77,7 +96,9 @@ class StartTestBotsCommand(Command):
         # падал IndexError, роняя весь процесс: supervisor перезапускал его
         # по кругу. Ждём, пока боты появятся в test_bots.
         while not self.stop_event.is_set():
-            active_bots = await bot_crud.get_active_bots()
+            active_bots = await bot_crud.get_active_bots(
+                shard=self.shard, shards=self.shards
+            )
 
             if active_bots:
                 break
@@ -85,15 +106,33 @@ class StartTestBotsCommand(Command):
             # Иначе транзакция висит открытой всё время ожидания.
             await session.rollback()
 
+            # У шарда своя доля парка: боты могут существовать, но не
+            # попадать в его остаток. Иначе сообщение врёт.
+            scope = (
+                'в своей доле парка' if self.shards > 1 else 'в test_bots'
+            )
+
             logging.info(
-                'Нет активных ботов в test_bots, жду 60 с. '
-                'Создать их: python -m app.scripts.new_bots'
+                f'{self.log_prefix}Нет активных ботов {scope}, жду 60 с. '
+                f'Создать их: python -m app.scripts.new_bots'
             )
             await asyncio.sleep(60)
 
         if self.stop_event.is_set():
-            logging.info('Остановлено до запуска ботов.')
+            logging.info(f'{self.log_prefix}Остановлено до запуска ботов.')
             return
+
+        logging.info(
+            f'{self.log_prefix}Ботов в этом процессе: {len(active_bots)}.'
+        )
+
+        if len(active_bots) > self.MAX_BOTS_PER_SHARD:
+            logging.warning(
+                f'{self.log_prefix}Это больше {self.MAX_BOTS_PER_SHARD} ботов '
+                f'на процесс: событийный цикл не успеет обойти их за 100 мс, '
+                f'условия выхода начнут проверяться реже, чем задумано. '
+                f'Увеличьте TEST_BOTS_SHARDS в .env и пересоздайте контейнер.'
+            )
 
         builder = MarketDataBuilder(session)
         shared_data = await builder.build()

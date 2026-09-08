@@ -81,7 +81,7 @@
 
 ```bash
 docker exec -it orderflow_general python -m app.scripts.new_bots   # осторожно: TRUNCATE
-docker exec -it orderflow_general supervisorctl restart test_bots
+docker exec -it orderflow_general supervisorctl restart test_bots:*   # группа шардов
 ```
 
 Мягкий вариант без потери истории: `UPDATE test_bots SET is_active=false`
@@ -113,7 +113,7 @@ Redis.
 ## Рецепт: воспроизвести и отладить один бот
 
 ```bash
-docker exec -it orderflow_general supervisorctl stop test_bots
+docker exec -it orderflow_general supervisorctl stop test_bots:*   # группа шардов
 docker exec -it orderflow_general psql ...  # оставить is_active=true только у нужного id
 docker exec -it orderflow_general python -m app.scripts.start_test_bots
 ```
@@ -129,4 +129,5 @@ docker exec -it orderflow_general python -m app.scripts.start_test_bots
   удержания.
 * Вызывать `TRUNCATE` в скриптах, кроме `new_bots.py` (и там — осознанно).
 * Запускать второй экземпляр `start_test_bots` при работающем supervisor —
-  получите двойные сделки от каждого бота.
+  получите двойные сделки от каждого бота. По той же причине не стоит
+  запускать шард с чужим номером: две копии одной доли парка — то же самое.

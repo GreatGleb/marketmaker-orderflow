@@ -47,8 +47,21 @@ class TestBotCrud(BaseCrud[TestBot]):
     def __init__(self, session: AsyncSession):
         super().__init__(session, TestBot)
 
-    async def get_active_bots(self):
+    async def get_active_bots(self, shard: int = 0, shards: int = 1):
+        """Активные боты; при `shards > 1` — только доля своего шарда.
+
+        Симулятор запускается несколькими процессами, и парк делится по
+        остатку от деления id. Остаток выбран потому, что не требует ни
+        координации между процессами, ни лишнего запроса: каждый бот
+        достаётся ровно одному шарду, пропусков и дублей нет при любом
+        наборе id. Распределение по шардам при этом равномерное — id идут
+        подряд, TRUNCATE в `new_bots.py` начинает нумерацию заново.
+        """
         stmt = select(TestBot).where(TestBot.is_active.is_(True))
+
+        if shards > 1:
+            stmt = stmt.where(TestBot.id % shards == shard)
+
         result = await self.session.execute(stmt)
         return result.scalars().all()
 

@@ -40,4 +40,10 @@ COPY . .
 
 RUN chmod +x boot.sh
 
+# На сколько процессов делится парк тестовых ботов. Значение читает сам
+# supervisord (numprocs у программы test_bots), и без переменной он вообще
+# не стартует — поэтому дефолт задан здесь, а не только в general/.env,
+# откуда его переопределяют.
+ENV TEST_BOTS_SHARDS=1
+
 COPY supervisord.conf /etc/supervisor/supervisord.conf

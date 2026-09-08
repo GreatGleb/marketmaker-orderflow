@@ -46,25 +46,50 @@ docker exec -it orderflow_general python -m app.scripts.seed_commission_rates -s
 
 ```bash
 docker exec -it orderflow_general supervisorctl status
-docker exec -it orderflow_general supervisorctl restart test_bots
+docker exec -it orderflow_general supervisorctl restart test_bots:*
 docker exec -it orderflow_general supervisorctl start candles_history   # для MA-ботов
-docker exec -it orderflow_general tail -f /var/log/test_bots.log
+docker exec -it orderflow_general tail -f /var/log/test_bots_00.log
 ```
 
-Логи внутри контейнера: `/var/log/test_bots.log`, `symbols_history.log`,
-`insert_test_orders.log`, `set_profitable_bot.log`, `candles_history.log`
-(+ соответствующие `.err`).
+⚠️ Симулятор — **группа процессов**, а не один процесс: `test_bots` объявлен
+с `numprocs`, и его копии называются `test_bots:test_bots_00`,
+`test_bots:test_bots_01` и так далее. Имени `test_bots` для supervisorctl не
+существует — `supervisorctl restart test_bots` ответит `no such process`.
+Управлять надо всей группой (`test_bots:*`) или конкретным шардом
+(`test_bots:test_bots_01`). Скрипты, которые останавливают симулятор сами
+(`new_bots.py`, `seed_watched_pairs.py`), это уже умеют — см.
+`supervisor_control.process_names`.
+
+Сколько процессов — задаёт `TEST_BOTS_SHARDS` в `general/.env` (по умолчанию 1,
+для полного парка в 17 236 ботов нужно 4; правило — 4–7 тысяч ботов на
+процесс). Переменную читает supervisord, поэтому после её изменения
+контейнер надо пересоздать: `./run.sh restart`. Каждый шард берёт ботов с
+`id % TEST_BOTS_SHARDS == номер шарда` — подробности в пункте 1.2
+[09-roadmap.md](09-roadmap.md).
+
+Логи внутри контейнера: `/var/log/test_bots_00.log` (и по файлу на каждый
+шард), `symbols_history.log`, `insert_test_orders.log`,
+`set_profitable_bot.log`, `candles_history.log` (+ соответствующие `.err`).
+Смотреть все шарды сразу: `tail -f /var/log/test_bots_*.log`. В логе каждая
+строка помечена `[шард N/M]`, если шардов больше одного.
 
 ## Ручной запуск (для отладки)
 
 ```bash
-docker exec -it orderflow_general supervisorctl stop test_bots   # чтобы не было двух копий
+docker exec -it orderflow_general supervisorctl stop test_bots:*   # чтобы не было двух копий
 docker exec -it orderflow_general python -m app.scripts.start_test_bots
+
+# только одна доля парка — как её ведёт шард под supervisord
+docker exec -it orderflow_general python -m app.scripts.start_test_bots --shard 0 --shards 4
 ```
 
+Без флагов ручной запуск берёт **весь** парк, независимо от
+`TEST_BOTS_SHARDS`: для отладки почти всегда нужно именно это.
+
 Скрипт поднимает поток, читающий `stdin`: ввод `stop` ставит `stop_event` и
-корректно тушит боты (`start_test_bots.py:15-26`). Поэтому запускать нужно с
-`-it`. Первые 60 секунд — тишина: `asyncio.sleep(60)` ждёт наполнения Redis.
+корректно тушит боты (`start_test_bots.py:input_listener`). Поэтому запускать
+нужно с `-it`; под supervisord, где вводить некому, поток не поднимается
+вообще. Первые 60 секунд — тишина: `asyncio.sleep(60)` ждёт наполнения Redis.
 
 ## Пересоздание парка ботов
 
@@ -87,7 +112,7 @@ docker exec -it orderflow_general python -m app.scripts.new_bots
 * MA-боты и процентные боты — закомментированы.
 
 После пересоздания перезапустите симулятор — иначе он работает по старому
-снимку: `supervisorctl restart test_bots`.
+снимку: `supervisorctl restart test_bots:*`.
 
 ## Отчёты
 

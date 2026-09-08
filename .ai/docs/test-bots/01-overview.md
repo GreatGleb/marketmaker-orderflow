@@ -27,11 +27,15 @@ N минут. Сами сделки живут 72 часа, статистика
 |---|---|---|---|
 | `symbols_history` | `app.scripts.watch_ws_and_save` | **true** | питатель цен: Binance → Redis `price:*` + таблица `asset_history` |
 | `candles_history` | `app.scripts.watch_binance_candles` | false | питатель свечей: Binance kline 1m → Redis `candles:*` (нужен только MA-ботам) |
-| `test_bots` | `app.scripts.start_test_bots` | **true** | сам симулятор |
+| `test_bots` | `app.scripts.start_test_bots` | **true** | сам симулятор. Группа из `TEST_BOTS_SHARDS` процессов (`test_bots:test_bots_00`, ...), каждый ведёт ботов с `id % TEST_BOTS_SHARDS == номер шарда` |
 | `insert_test_orders` | `app.workers.scripts.bull_insert_test_orders` | **true** | потребитель очереди `order_queue` → `INSERT INTO test_orders` |
 | `set_profitable_bot` | `app.workers.scripts.set_profitable_bot` | **true** | считает лидеров прибыльности → Redis `copy_bot_{id}` (нужен копиботам v1) |
 
 Минимальный рабочий набор: `symbols_history` + `test_bots` + `insert_test_orders`.
+
+Шардировать можно только `test_bots`: `set_profitable_bot` и
+`set_volatile_pairs` пишут общие ключи Redis и должны остаться в одном
+экземпляре.
 
 ## Карта файлов
 
@@ -39,7 +43,7 @@ N минут. Сами сделки живут 72 часа, статистика
 
 | Файл | Роль |
 |---|---|
-| `general/app/scripts/start_test_bots.py` | точка входа. Поднимает `asyncio`, поток-слушатель `stdin` для команды `stop`, запускает `StartTestBotsCommand` |
+| `general/app/scripts/start_test_bots.py` | точка входа. Разбирает `--shard/--shards`, поднимает `asyncio`, поток-слушатель `stdin` для команды `stop` (только на терминале), запускает `StartTestBotsCommand` |
 | `general/app/bots/demo_test_bot.py` | **вся логика симуляции**. `StartTestBotsCommand.command` (:51) — бутстрап, `simulate_bot` (:196) — цикл одной сделки |
 
 ### Логика расчётов (stateless, легко тестировать)
