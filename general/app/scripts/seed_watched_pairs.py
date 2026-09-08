@@ -8,6 +8,11 @@
 уползла на 9%, скальперу бесполезна, а та, что десять раз дёрнулась на 1% за
 секунду, — то что нужно.
 
+Сами скачки от мусора не защищают, поэтому в отборе стоят отсечки: оборот от
+$2M за сутки и не меньше двух подтверждённых скачков (один — это чаще всего
+битый тик). После них пар набирается меньше, чем просили, и остаток
+добирается по суточному размаху — см. top_up_from_binance.
+
 Курица и яйцо: скачки считаются по локальной истории, а история собирается
 только по watched-парам. На чистой базе истории нет вообще, поэтому там
 работает разгон:
@@ -54,8 +59,6 @@ logging.basicConfig(
 UTC = timezone.utc
 
 BINANCE_24H_URL = "https://fapi.binance.com/fapi/v1/ticker/24hr"
-# Сколько пар со свежей историей нужно, чтобы отбор по скачкам был осмысленным.
-MIN_SYMBOLS_FOR_HISTORY_RANKING = 5
 # Разгон на чистой базе: сколько кандидатов взять и сколько минут за ними
 # следить, прежде чем считать скачки.
 BOOTSTRAP_CANDIDATES = 100
@@ -80,7 +83,10 @@ async def rank_by_jumps(session, hours, top, jump_threshold):
         since=since, limit=top, jump_threshold=jump_threshold
     )
 
-    if len(rows) < MIN_SYMBOLS_FOR_HISTORY_RANKING:
+    if not rows:
+        # Ни одной пары со скачками — истории нет вообще, это случай разгона.
+        # Пар мало, но они есть — не повод: остаток доберётся ниже, а разгон
+        # стоит перезапуска питателя и нескольких минут простоя симулятора.
         return None
 
     logging.info(f"Топ по скачкам за {hours} ч (порог {jump_threshold}% за секунду):")
@@ -92,7 +98,46 @@ async def rank_by_jumps(session, hours, top, jump_threshold):
     if len(rows) > 15:
         logging.info(f"  ... и ещё {len(rows) - 15}")
 
-    return [row.symbol for row in rows]
+    return await top_up_from_binance([row.symbol for row in rows], top=top)
+
+
+async def top_up_from_binance(chosen, top):
+    """Добирает список до top парами из суточной статистики Binance.
+
+    После отсечек по обороту и числу фронтов отбор по скачкам отдаёт заметно
+    меньше пар, чем просили: на августовской истории 12 из 50. Оставлять
+    watched_pair из 12 пар нельзя — питатель соберёт историю только по ним, и
+    следующий отбор будет выбирать из них же, всё сильнее замыкаясь.
+
+    Разгон (bootstrap) для этого слишком дорог: он заменяет список целиком,
+    перезапускает питатель и останавливает симулятор на несколько минут.
+    Здесь же остаток просто добирается по суточному размаху — тот же приём,
+    что и в watch_and_rank.
+    """
+    missing = top - len(chosen)
+
+    if missing <= 0:
+        return chosen
+
+    logging.info(
+        f"Скачки дали {len(chosen)} пар из {top} — добираю остаток "
+        f"по суточной статистике."
+    )
+
+    try:
+        candidates = await rank_from_binance(top=top + len(chosen))
+    except Exception as error:
+        # Сеть отвалилась — это не повод терять уже отобранное.
+        logging.info(f"Добрать не удалось ({error}), оставляю {len(chosen)} пар.")
+        return chosen
+
+    already = set(chosen)
+    added = [s for s in candidates if s not in already][:missing]
+
+    logging.info(f"Добрано {len(added)} пар: {added[:10]}"
+                 f"{'...' if len(added) > 10 else ''}")
+
+    return chosen + added
 
 
 async def rank_from_binance(top):
@@ -102,7 +147,7 @@ async def rank_from_binance(top):
     (high-low)/low среди достаточно ликвидных пар. Это грубее, но позволяет
     начать собирать цены — а через сутки список стоит пересчитать по истории.
     """
-    logging.info("Локальной истории мало, беру суточную статистику Binance.")
+    logging.info(f"Беру суточную статистику Binance, топ-{top} по размаху.")
 
     async with httpx.AsyncClient(timeout=30) as client:
         response = await client.get(BINANCE_24H_URL)
@@ -333,7 +378,7 @@ async def seed_watched_pairs(
 
             if not symbols:
                 logging.info(
-                    "Локальной истории мало для отбора по скачкам — "
+                    "В локальной истории нет ни одной пары со скачками — "
                     "перехожу на разгон с нуля."
                 )
 
@@ -360,6 +405,13 @@ async def seed_watched_pairs(
             f"✅ watched_pair: добавлено {added}, удалено {removed}, "
             f"всего пар в списке — {len(total)}."
         )
+
+        if added or removed:
+            # Без этого добранные пары остаются без котировок: в режиме
+            # spot_ws подписка формируется один раз при подключении. Разгон
+            # питатель уже перезапускал сам, но повторный перезапуск здесь
+            # безвреден — симулятор всё равно ещё стоит.
+            restart_price_feed()
 
         if not replace and removed == 0:
             logging.info(

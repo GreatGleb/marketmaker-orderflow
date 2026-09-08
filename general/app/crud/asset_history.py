@@ -12,7 +12,9 @@ from sqlalchemy import select, func
 
 from app.config import settings
 from app.constants.volatility import (
+    JUMP_CAP_FACTOR,
     MAX_DROPPED_TICKS,
+    MIN_JUMPS,
     MIN_QUOTE_VOLUME_24H,
     MIN_TICKS_IN_WINDOW,
     MIN_TICKS_SHARE_OF_MEDIAN,
@@ -68,6 +70,9 @@ class AssetHistoryCrud(BaseCrud[AssetHistory]):
     async def get_top_jumpy_symbols(
         self, since: datetime, limit: int = 50, jump_threshold: float = 0.5,
         window_seconds: int = 1,
+        min_quote_volume_24h: int = MIN_QUOTE_VOLUME_24H,
+        min_jumps: int = MIN_JUMPS,
+        jump_cap_factor: float = JUMP_CAP_FACTOR,
     ):
         """Пары с самыми резкими скачками цены, а не с самым большим разбросом.
 
@@ -77,18 +82,39 @@ class AssetHistoryCrud(BaseCrud[AssetHistory]):
         а предыдущее ещё нет. Иначе один рывок засчитался бы сотню раз.
 
         Ранжируем по сумме скачков — так учитываются и частота, и размер.
+
+        Отбор по скачкам сам по себе не спасает ни от неликвида, ни от битых
+        тиков: на августовской истории 9 пар из 31 в топе имели оборот ниже
+        $2M, а 14 попали в список за один единственный «скачок». Поэтому:
+
+        * пары с оборотом за сутки ниже min_quote_volume_24h не участвуют —
+          фильтр стоит до оконных функций, так что заодно считается быстрее;
+        * пара обязана показать не меньше min_jumps фронтов: битый тик даёт
+          ровно один, и одним рывком в список теперь не попасть;
+        * вклад одного скачка в сумму ограничен jump_cap_factor порогами,
+          иначе одна аномалия перебивает десяток настоящих рывков.
         """
         query = text("""
-            with windowed as (
-                select
-                    symbol,
-                    event_time,
-                    (max(last_price) over w - min(last_price) over w)
-                        / nullif(min(last_price) over w, 0) * 100 as jump_pct
+            with liquid as (
+                select symbol
                 from asset_history
                 where event_time >= :since
+                  and last_price > 0
+                group by symbol
+                having max(quote_asset_volume_24h) >= :min_quote_volume_24h
+            ),
+            windowed as (
+                select
+                    h.symbol,
+                    h.event_time,
+                    (max(h.last_price) over w - min(h.last_price) over w)
+                        / nullif(min(h.last_price) over w, 0) * 100 as jump_pct
+                from asset_history h
+                join liquid using (symbol)
+                where h.event_time >= :since
+                  and h.last_price > 0
                 window w as (
-                    partition by symbol order by event_time
+                    partition by h.symbol order by h.event_time
                     range between :window_seconds preceding and current row
                 )
             ),
@@ -104,18 +130,24 @@ class AssetHistoryCrud(BaseCrud[AssetHistory]):
             select
                 symbol,
                 count(*) as jumps,
-                sum(jump_pct) as jumps_sum,
+                sum(least(
+                    jump_pct, :jump_threshold * :jump_cap_factor
+                )) as jumps_sum,
                 max(jump_pct) as max_jump
             from edges
             where jump_pct > :jump_threshold
               and (prev_jump_pct is null or prev_jump_pct <= :jump_threshold)
             group by symbol
+            having count(*) >= :min_jumps
             order by jumps_sum desc
             limit :limit
         """).bindparams(
             since=since,
             window_seconds=timedelta(seconds=window_seconds),
             jump_threshold=jump_threshold,
+            min_quote_volume_24h=min_quote_volume_24h,
+            min_jumps=min_jumps,
+            jump_cap_factor=jump_cap_factor,
             limit=limit,
         )
 
