@@ -84,10 +84,19 @@ async def rank_by_jumps(session, hours, top, jump_threshold):
     )
 
     if not rows:
-        # Ни одной пары со скачками — истории нет вообще, это случай разгона.
-        # Пар мало, но они есть — не повод: остаток доберётся ниже, а разгон
-        # стоит перезапуска питателя и нескольких минут простоя симулятора.
-        return None
+        # Скачков не нашлось. Если истории тоже нет — это случай разгона. А
+        # если тики идут, просто рынок стоял, разгон не нужен: он гасит
+        # симулятор и перезапускает питатель ради того же результата, что
+        # даёт добор по суточному размаху.
+        if not await has_ticks(session, since):
+            return None
+
+        logging.info(
+            f"За {hours} ч ни одна пара не показала скачков выше порога, "
+            f"но тики идут — беру суточный размах."
+        )
+
+        return await top_up_from_binance([], top=top)
 
     logging.info(f"Топ по скачкам за {hours} ч (порог {jump_threshold}% за секунду):")
     for i, row in enumerate(rows[:15], start=1):
@@ -101,12 +110,22 @@ async def rank_by_jumps(session, hours, top, jump_threshold):
     return await top_up_from_binance([row.symbol for row in rows], top=top)
 
 
+async def has_ticks(session, since):
+    """Есть ли в окне хоть один тик: пустая история и тихий рынок — не одно и
+    то же, а реакция на них разная."""
+    return bool((
+        await session.execute(
+            select(AssetHistory.id).where(AssetHistory.event_time >= since).limit(1)
+        )
+    ).scalar())
+
+
 async def top_up_from_binance(chosen, top):
     """Добирает список до top парами из суточной статистики Binance.
 
     После отсечек по обороту и числу фронтов отбор по скачкам отдаёт заметно
-    меньше пар, чем просили: на августовской истории 12 из 50. Оставлять
-    watched_pair из 12 пар нельзя — питатель соберёт историю только по ним, и
+    меньше пар, чем просили: на августовской истории 5 из 50. Оставлять
+    watched_pair из пяти пар нельзя — питатель соберёт историю только по ним, и
     следующий отбор будет выбирать из них же, всё сильнее замыкаясь.
 
     Разгон (bootstrap) для этого слишком дорог: он заменяет список целиком,
@@ -394,6 +413,18 @@ async def seed_watched_pairs(
         if not symbols:
             logging.info("❌ Не удалось отобрать ни одной пары.")
             return
+
+        # Список вышел вдвое короче запрошенного — значит что-то не сложилось:
+        # сорвался добор (сеть), или рынок стоит. Удалять в этом случае нельзя:
+        # питатель начнёт собирать историю только по остатку, и следующий отбор
+        # замкнётся на нём же. Лучше оставить старые пары и разобраться.
+        if replace and len(symbols) * 2 < top:
+            logging.info(
+                f"⚠️ Отобрано всего {len(symbols)} пар из {top} — только "
+                f"пополняю список, не заменяю: иначе watched_pair схлопнется "
+                f"до остатка. Разберитесь с причиной и запустите снова."
+            )
+            replace = False
 
         added, removed = await apply_watched_pairs(session, symbols, replace)
 
