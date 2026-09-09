@@ -49,6 +49,7 @@ from app.crud.asset_history import AssetHistoryCrud
 from app.crud.test_bot import TestBotCrud
 from app.db.base import DatabaseSessionManager
 from app.db.models import AssetExchangeSpec, AssetHistory, WatchedPair
+from app.scripts.simulator_flag import SimulatorIsRunning
 from app.scripts.supervisor_control import is_running, paused, restart
 
 logging.basicConfig(
@@ -482,11 +483,16 @@ def main():
     )
     args = parser.parse_args()
 
-    asyncio.run(seed_watched_pairs(
-        top=args.top, hours=args.hours, jump_threshold=args.jump_threshold,
-        replace=args.replace, bootstrap_mode=args.bootstrap,
-        candidates=args.candidates, watch_minutes=args.watch_minutes,
-    ))
+    try:
+        asyncio.run(seed_watched_pairs(
+            top=args.top, hours=args.hours, jump_threshold=args.jump_threshold,
+            replace=args.replace, bootstrap_mode=args.bootstrap,
+            candidates=args.candidates, watch_minutes=args.watch_minutes,
+        ))
+    except SimulatorIsRunning as e:
+        # Текст исключения — готовое сообщение человеку, трейсбек тут лишний.
+        logging.error(str(e))
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

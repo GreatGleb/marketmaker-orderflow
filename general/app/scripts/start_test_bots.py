@@ -26,6 +26,7 @@ import threading
 from datetime import timezone
 
 from app.bots.demo_test_bot import StartTestBotsCommand
+from app.scripts import simulator_flag
 
 # from app.workers.bulk_insert_orders import OrderBulkInsertCommand
 # from app.workers.profitable_bot_updater import ProfitableBotUpdaterCommand
@@ -96,14 +97,19 @@ async def main(argv=None):
             target=input_listener, args=(loop, stop_event), daemon=True
         ).start()
 
-    await asyncio.gather(
-        # VolatilePairCommand(stop_event=stop_event).run_async(),
-        StartTestBotsCommand(
-            stop_event=stop_event, shard=args.shard, shards=args.shards
-        ).run_async(),
-        # ProfitableBotUpdaterCommand(stop_event=stop_event).run_async(),
-        # OrderBulkInsertCommand(stop_event=stop_event).run_async(),
-    )
+    # Флаг в Redis на всё время работы процесса. По нему new_bots и
+    # seed_watched_pairs видят симулятор, запущенный руками: supervisorctl
+    # такой процесс не остановит, и менять под ним watched_pair или парк
+    # ботов нельзя. Подробности — app/scripts/simulator_flag.py.
+    async with simulator_flag.hold(shard=args.shard, shards=args.shards):
+        await asyncio.gather(
+            # VolatilePairCommand(stop_event=stop_event).run_async(),
+            StartTestBotsCommand(
+                stop_event=stop_event, shard=args.shard, shards=args.shards
+            ).run_async(),
+            # ProfitableBotUpdaterCommand(stop_event=stop_event).run_async(),
+            # OrderBulkInsertCommand(stop_event=stop_event).run_async(),
+        )
 
     print("✅ Все боты завершены.")
 

@@ -13,13 +13,24 @@ supervisord поднимает его как группу процессов `te
 `no such process`. Поэтому здесь имя программы везде разворачивается в
 реальные имена процессов её группы, а вызывающий код по-прежнему пишет
 просто `paused("test_bots")`.
+
+supervisorctl видит только своих детей, поэтому `paused()` дополнительно
+смотрит на флаги в Redis (`simulator_flag`): симулятор, запущенный руками,
+supervisord не остановит, и работать под ним нельзя — вместо тихой порчи
+данных `paused()` бросает `SimulatorIsRunning`.
 """
 import logging
 import subprocess
 
 from contextlib import contextmanager
 
+from app.scripts.simulator_flag import SimulatorIsRunning, live_simulators
+
 SUPERVISORCTL_TIMEOUT_SECONDS = 60
+
+# Программа, за которой следит флаг в Redis. Проверка нужна только ей: сделки
+# пишет симулятор, а не питатель цен или воркеры.
+SIMULATOR_PROGRAM = "test_bots"
 
 # Состояния, из которых процесс придёт в RUNNING сам, если его не тронуть:
 # STARTING — supervisord только что его запустил, BACKOFF — процесс упал и
@@ -163,6 +174,68 @@ def restart(program: str) -> None:
         _restart_one(name)
 
 
+def _refuse_if_simulator_is_unmanaged(
+    programs: tuple[str, ...], supervisord_answered: bool
+) -> None:
+    """Бросает SimulatorIsRunning, если работает симулятор, которого мы не
+    остановим.
+
+    Таких случая два.
+
+    Первый — симулятор запущен руками (`python -m app.scripts.start_test_bots`).
+    supervisorctl о нём не знает, `stop` его не касается, и вызывающий скрипт
+    поменяет данные под живым процессом.
+
+    Второй — supervisorctl не ответил (скрипт запущен вне контейнера). Тогда
+    мы не остановили вообще ничего, и любой живой шард — повод отказаться,
+    даже если он под supervisord.
+
+    Обратный случай: supervisorctl ответил, и шарды под supervisord мы сейчас
+    остановим — их флаги игнорируем. Иначе скрипт отказывался бы работать сам
+    из-за себя же: `supervisorctl stop` шлёт SIGTERM, `finally` в процессе не
+    выполняется, и флаг висит до TTL уже после остановки.
+
+    Проверка идёт до первого `stop`: незачем гасить парк ради операции, которая
+    всё равно не начнётся.
+    """
+    # Имя группы или конкретного шарда (`test_bots:test_bots_00`): под живым
+    # ручным симулятором нельзя менять данные, сколько бы шардов ни гасили.
+    if not any(
+        program == SIMULATOR_PROGRAM
+        or program.startswith(f"{SIMULATOR_PROGRAM}:")
+        for program in programs
+    ):
+        return
+
+    live = live_simulators()
+
+    if supervisord_answered:
+        reason = "и supervisorctl его не остановит"
+        blocking = [s for s in live if not s.under_supervisor]
+    else:
+        reason = (
+            "а supervisorctl не ответил — остановить его отсюда нечем "
+            "(скрипт запущен вне контейнера?)"
+        )
+        blocking = live
+
+    if not blocking:
+        return
+
+    listed = "\n".join(f"  • {s}" for s in blocking)
+
+    raise SimulatorIsRunning(
+        f"🚫 Симулятор работает, {reason}:\n{listed}\n"
+        f"Остановите его и запустите скрипт снова: в терминале процесса "
+        f"введите 'stop' либо `kill <pid>`. Работать под живым симулятором "
+        f"нельзя — он продолжит писать сделки по данным, которые вы в этот "
+        f"момент меняете.\n"
+        f"Если процесса уже нет, флаг исчезнет сам не позже чем через минуту "
+        f"(TTL): так ловятся процессы, убитые SIGKILL. Посмотреть флаги — "
+        f"python -m app.scripts.simulator_flag"
+    )
+
+
 @contextmanager
 def paused(*programs: str):
     """Останавливает процессы на время блока и возвращает как было.
@@ -174,6 +247,10 @@ def paused(*programs: str):
         with paused("test_bots"):
             await create_bots()
 
+    Симулятор, запущенный руками, supervisorctl не остановит — на такой
+    (`simulator_flag`) блок бросает `SimulatorIsRunning` ещё до первой команды
+    `stop`, чтобы вызывающий скрипт не менял данные под живым процессом.
+
     Команда `stop` идёт всем процессам программы, а не только работающим:
     для уже остановленного это ничего не делает, зато не остаётся состояния,
     из которого процесс поднимется в середине блока (`BACKOFF`, `STARTING`,
@@ -181,6 +258,10 @@ def paused(*programs: str):
     писать сделки по данным, которые в этот момент меняют.
     """
     statuses = [s for program in programs for s in _statuses_of(program)]
+
+    _refuse_if_simulator_is_unmanaged(
+        programs, supervisord_answered=bool(statuses)
+    )
 
     if statuses:
         to_stop = [name for name, _ in statuses]

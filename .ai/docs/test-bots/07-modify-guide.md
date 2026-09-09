@@ -30,7 +30,7 @@
 2. Миграция: `cd general && alembic revision --autogenerate -m "..."`;
    файлы — `general/migrations/versions/`.
 3. Генерация ботов: `new_bots.py` — добавить список значений и вложенный
-   цикл в `create_bots` (:329).
+   цикл в `create_bots` (:363-367).
 4. Чтение в симуляторе: `demo_test_bot.py` — в нужную фазу (см.
    [03-simulation-loop.md](03-simulation-loop.md)).
 5. Если параметр должен наследоваться копиботами — **три места**:
@@ -78,7 +78,7 @@
 
 ## Рецепт: сменить торговую пару
 
-Пара задаётся при генерации ботов: `new_bots.py:346`. Затем:
+Пара задаётся при генерации ботов: `new_bots.py:347`. Затем:
 
 ```bash
 docker exec -it orderflow_general python -m app.scripts.new_bots   # осторожно: TRUNCATE
@@ -134,3 +134,6 @@ docker exec -it orderflow_general python -m app.scripts.start_test_bots
 * Запускать второй экземпляр `start_test_bots` при работающем supervisor —
   получите двойные сделки от каждого бота. По той же причине не стоит
   запускать шард с чужим номером: две копии одной доли парка — то же самое.
+  Флаг в Redis (`simulator_flag.py`) от этого не спасает: он не мешает поднять
+  вторую копию, а только не даёт `new_bots` и `seed_watched_pairs` менять
+  данные под ней.

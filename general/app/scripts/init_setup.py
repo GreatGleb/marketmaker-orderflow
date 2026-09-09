@@ -27,6 +27,7 @@ from app.scripts.new_bots import create_bots_safely
 from app.scripts.seed_binance_data import seed_binance_data
 from app.scripts.seed_commission_rates import seed_commission_rates
 from app.scripts.seed_watched_pairs import seed_watched_pairs
+from app.scripts.simulator_flag import SimulatorIsRunning
 
 logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -205,9 +206,16 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    asyncio.run(
-        main(
-            skip_commissions=args.skip_commissions,
-            recreate_bots=args.recreate_bots,
+    try:
+        asyncio.run(
+            main(
+                skip_commissions=args.skip_commissions,
+                recreate_bots=args.recreate_bots,
+            )
         )
-    )
+    except SimulatorIsRunning as e:
+        # Первичная настройка идёт под остановленным симулятором. Если его
+        # остановить нечем, шаги дальше меняли бы данные под живым процессом:
+        # лучше оборваться здесь, чем доделать половину.
+        logging.error(str(e))
+        raise SystemExit(1)

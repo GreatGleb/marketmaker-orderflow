@@ -12,6 +12,7 @@ from app.config import settings
 import asyncio
 
 from app.db.models import AssetExchangeSpec, AssetHistory
+from app.scripts.simulator_flag import SimulatorIsRunning
 from app.scripts.supervisor_control import paused
 
 logging.basicConfig(
@@ -573,4 +574,9 @@ async def create_bots_safely():
 
 
 if __name__ == "__main__":
-    asyncio.run(create_bots_safely())
+    try:
+        asyncio.run(create_bots_safely())
+    except SimulatorIsRunning as e:
+        # Текст исключения — готовое сообщение человеку, трейсбек тут лишний.
+        logging.error(str(e))
+        raise SystemExit(1)
