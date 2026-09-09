@@ -10,7 +10,6 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import aliased
 from sqlalchemy import select, func
 
-from app.config import settings
 from app.constants.volatility import (
     JUMP_CAP_FACTOR,
     MAX_DROPPED_TICKS,
@@ -21,7 +20,6 @@ from app.constants.volatility import (
     TICKS_PER_DROPPED_TICK,
     VOLATILITY_CANDIDATES,
 )
-from app.db.base import DatabaseSessionManager
 from app.db.models import AssetHistory
 from app.crud.base import BaseCrud
 
@@ -382,13 +380,25 @@ class AssetHistoryCrud(BaseCrud[AssetHistory]):
                     .subquery()
                 )
 
+                # Только symbol: результат читается через .scalars(), то
+                # есть берётся первая колонка. last_price отсюда никто не
+                # забирал — цену по паре даёт get_latest_price.
+                #
+                # distinct обязателен: на одну (symbol, event_time) в
+                # asset_history приходится не одна строка (два источника,
+                # BINANCE и BINANCE_SPOT, плюс тики с совпадающей меткой —
+                # в базе встречаются сотни на метку). Пока в выборке была
+                # цена, дубли хотя бы отличались значением; без неё это
+                # просто повтор символа. На замере пятиминутного окна —
+                # 85 строк на 50 пар.
                 query_to_execute = (
-                    select(AssetHistory.symbol, AssetHistory.last_price)
+                    select(AssetHistory.symbol)
                     .join(
                         sub_query_new,
                         (AssetHistory.symbol == sub_query_new.c.symbol)
                         & (AssetHistory.event_time == sub_query_new.c.max_time),
                     )
+                    .distinct()
                 )
 
                 if is_need_full_info:
@@ -405,16 +415,52 @@ class AssetHistoryCrud(BaseCrud[AssetHistory]):
                 logging.error("No query was constructed. This should not happen.")
                 return []
 
-            dsm = DatabaseSessionManager.create(settings.DB_URL)
-            async with dsm.get_session() as session:
-                self.session = session
-
-                result = await asyncio.wait_for(self.session.execute(query_to_execute), timeout=timeout)
-                result = result.scalars().all()
+            # Запрос идёт на сессии из конструктора. Раньше метод открывал
+            # свою и присваивал её self.session: вызывающий код передавал
+            # сессию, а работа шла мимо неё — в отдельной транзакции, — и
+            # подмена оставалась на объекте после выхода из метода.
+            query_result = await asyncio.wait_for(
+                self.session.execute(query_to_execute), timeout=timeout
+            )
+            result = query_result.scalars().all()
         except asyncio.TimeoutError:
+            await self._reset_session()
             logging.error(
-                f"Database query timed out after 5 seconds for query type: {'only_symbols' if only_symbols_in_period else ('full_info' if is_need_full_info else 'symbol_price')}. Please check database performance or increase timeout.")
+                f"Database query timed out after {timeout} seconds for query type: {'only_symbols' if only_symbols_in_period else ('full_info' if is_need_full_info else 'symbol_price')}. Please check database performance or increase timeout.")
         except Exception as e:
+            await self._reset_session()
             logging.error(f"An unexpected error occurred during database query: {e}", exc_info=True)
 
         return result
+
+    async def _reset_session(self) -> None:
+        """Вернуть чужую сессию в пригодное состояние после сорванного запроса.
+
+        Сессия принадлежит вызывающему коду, и он продолжает работать на ней
+        после нашего пустого списка — оставлять её со сломанной транзакцией
+        нельзя.
+
+        Именно invalidate, а не rollback, в обоих случаях:
+
+        * по таймауту `asyncio.wait_for` снимает запрос на полпути, и
+          соединение остаётся с недочитанным ответом — ROLLBACK по нему не
+          пройдёт;
+        * `rollback` экспайрит ORM-объекты, уже загруженные вызывающим кодом
+          на этой сессии. `invalidate` их только отцепляет (expunge), и
+          прочитанные значения остаются на месте. Разница живая:
+          `demo_test_bot.py:144` читает `bot.__dict__` у списка ботов,
+          загруженного до вызова `MarketDataBuilder.build()`. После
+          `rollback` там оказались бы пустые словари, namedtuple собрался бы
+          без полей, и весь парк процесса свалился бы в AttributeError на
+          каждом боте.
+
+        Соединение при этом теряется, но это путь ошибки: платим одним
+        соединением из пула. Транзакцию сервер откатывает сам при обрыве.
+
+        Сама уборка упасть не должна: вызывающий код и так уже получает
+        пустой список и своё сообщение в логе.
+        """
+        try:
+            await self.session.invalidate()
+        except Exception:
+            logging.exception('Не удалось сбросить сессию после сорванного запроса')

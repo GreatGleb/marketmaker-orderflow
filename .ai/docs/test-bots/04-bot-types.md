@@ -53,7 +53,7 @@ SL/TP. Именно такие боты генерирует `new_bots.py` (пе
 
 * воркер `set_volatile_pairs` (`app/workers/volatile_pair.py`, в supervisord
   `autostart=true`) раз в цикл считает победителя по каждому окну через
-  `get_most_volatile_since` (`asset_history.py:62`) и пишет ключ с TTL 60 с.
+  `get_most_volatile_since` (`asset_history.py:60`) и пишет ключ с TTL 60 с.
   Умер воркер — ключ протух, и боты встают, а не торгуют старой парой;
 * `new_bots.py:468` создаёт таких ботов сеткой 8 × 9 × 7 × 4 = 2016, окна
   `min_timeframe` — `[0.5, 1, 2, 3]` минут, проценты пересчитаны из тиковой

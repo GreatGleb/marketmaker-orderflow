@@ -87,7 +87,7 @@
 
 `asset_history` — история тиков; из неё `MarketDataBuilder` берёт список
 «активных пар» (`asset_history.event_time` за последние 5 минут,
-`asset_history.py:358`). `asset_exchange_specs.filters` — JSON фильтров
+`asset_history.py:356`). `asset_exchange_specs.filters` — JSON фильтров
 Binance, откуда берётся `tick_size` (`PRICE_FILTER.tickSize`,
 `exchange_pair_spec.py:34`).
 
