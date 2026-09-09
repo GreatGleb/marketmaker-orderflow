@@ -48,9 +48,9 @@
 | Ключ | Тип | Пишет | Читает | Смысл |
 |---|---|---|---|---|
 | `price:{SYMBOL}` | string | `watch_ws_and_save.py:121` (`MSET`) | `PriceProvider.get_price` (`price_provider.py:14`) | последняя цена. **Без него симулятор висит молча** |
-| `candles:{SYMBOL}` | string (JSON-массив цен закрытия) | `watch_binance_candles.py:41` | `BinanceBot.get_prev_minutes_ma` (`binance_bot.py:1658`) | закрытия минутных свечей для MA |
+| `candles:{SYMBOL}` | string (JSON-массив цен закрытия) | `watch_binance_candles.py:41` | `BinanceBot.get_prev_minutes_ma` (`binance_bot.py:1673`) | закрытия минутных свечей для MA |
 | `order_queue` | list | `demo_test_bot.py:544` (`RPUSH`) | `bulk_insert_orders.py` (`LPOP`) | завершённые виртуальные сделки. Константа — `app/constants/order.py` |
-| `copy_bot_{bot_id}` | string (JSON конфига) | `profitable_bot_updater.py:296` | `demo_test_bot.py:156` | конфиг реферального бота для копибота v1 |
+| `copy_bot_{bot_id}` | string (JSON конфига) | `profitable_bot_updater.py:420` | `demo_test_bot.py:342` | конфиг реферального бота для копибота v1 |
 | `asset_history:stop` | string (флаг) | вручную / служебные скрипты | `watch_ws_and_save.py` | пауза записи в `asset_history` (обслуживание таблицы) |
 | `most_volatile_symbol_{tf}` | string | `app/workers/volatile_pair.py` | закомментировано в `demo_test_bot.py:269-274` | выбор самой волатильной пары. Сейчас **не используется** |
 

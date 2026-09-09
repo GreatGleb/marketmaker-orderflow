@@ -189,22 +189,25 @@ class BinanceBot(Command):
             # logging.info('not refer_bot')
             # await asyncio.sleep(60)
             # return
+            # Числа, а не строки: формат тот же, что у
+            # get_bot_config_by_params, иначе запасной конфиг ведёт себя не
+            # так, как настоящий (строка '0' истинна для `not`).
             refer_bot = {
                 'id': 130,
                 'symbol': 'COAIUSDT',
                 'stop_success_ticks': 10,
                 'stop_loss_ticks': 10,
                 'start_updown_ticks': 5,
-                'stop_win_percents': '0',
-                'stop_loss_percents': '0',
-                'start_updown_percents': '0',
-                'min_timeframe_asset_volatility': '0',
-                # 'time_to_wait_for_entry_price_to_open_order_in_seconds': '1',
-                'time_to_wait_for_entry_price_to_open_order_in_seconds': '60',
+                'stop_win_percents': 0.0,
+                'stop_loss_percents': 0.0,
+                'start_updown_percents': 0.0,
+                'min_timeframe_asset_volatility': 0.0,
+                # 'time_to_wait_for_entry_price_to_open_order_in_seconds': 1,
+                'time_to_wait_for_entry_price_to_open_order_in_seconds': 60.0,
                 'consider_ma_for_open_order': False,
                 'consider_ma_for_close_order': False,
-                'ma_number_of_candles_for_open_order': '0',
-                'ma_number_of_candles_for_close_order': '0'
+                'ma_number_of_candles_for_open_order': 0,
+                'ma_number_of_candles_for_close_order': 0
             }
 
         if self.is_prod:
@@ -220,18 +223,30 @@ class BinanceBot(Command):
             symbol = refer_bot['symbol']
 
             logging.info(f'set bot config')
+            # Дробные поля приезжают из JSON копибота float, поэтому
+            # Decimal(str(...)): короткое представление вместо двоичного
+            # хвоста. Тики и число свечей — целые.
             bot_config = TestBot(
                 symbol=symbol,
-                stop_success_ticks=refer_bot['stop_success_ticks'],
-                stop_loss_ticks = refer_bot['stop_loss_ticks'],
-                start_updown_ticks = refer_bot['start_updown_ticks'],
-                stop_win_percents = Decimal(refer_bot['stop_win_percents']),
-                stop_loss_percents = Decimal(refer_bot['stop_loss_percents']),
-                start_updown_percents = Decimal(refer_bot['start_updown_percents']),
-                min_timeframe_asset_volatility = refer_bot['min_timeframe_asset_volatility'],
-                time_to_wait_for_entry_price_to_open_order_in_seconds = refer_bot['time_to_wait_for_entry_price_to_open_order_in_seconds'],
-                consider_ma_for_open_order=refer_bot['consider_ma_for_open_order'],
-                consider_ma_for_close_order=refer_bot['consider_ma_for_close_order'],
+                stop_success_ticks=int(refer_bot['stop_success_ticks'] or 0),
+                stop_loss_ticks = int(refer_bot['stop_loss_ticks'] or 0),
+                start_updown_ticks = int(refer_bot['start_updown_ticks'] or 0),
+                stop_win_percents = Decimal(str(refer_bot['stop_win_percents'])),
+                stop_loss_percents = Decimal(str(refer_bot['stop_loss_percents'])),
+                start_updown_percents = Decimal(str(refer_bot['start_updown_percents'])),
+                min_timeframe_asset_volatility = Decimal(str(refer_bot['min_timeframe_asset_volatility'])),
+                time_to_wait_for_entry_price_to_open_order_in_seconds = Decimal(str(refer_bot['time_to_wait_for_entry_price_to_open_order_in_seconds'])),
+                consider_ma_for_open_order=bool(refer_bot['consider_ma_for_open_order']),
+                consider_ma_for_close_order=bool(refer_bot['consider_ma_for_close_order']),
+                # Без этих двух полей MA-конфиг донора не переносится вовсе, и
+                # при consider_ma_for_open_order бот падал бы на int(None)
+                # в price_provider.wait_for_entry_price.
+                ma_number_of_candles_for_open_order=int(Decimal(
+                    str(refer_bot['ma_number_of_candles_for_open_order'] or 0)
+                )),
+                ma_number_of_candles_for_close_order=int(Decimal(
+                    str(refer_bot['ma_number_of_candles_for_close_order'] or 0)
+                )),
             )
             logging.info(f'setted bot config')
         else:

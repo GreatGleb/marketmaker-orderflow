@@ -33,11 +33,12 @@
    цикл в `create_bots` (:329).
 4. Чтение в симуляторе: `demo_test_bot.py` — в нужную фазу (см.
    [03-simulation-loop.md](03-simulation-loop.md)).
-5. Если параметр должен наследоваться копиботами — **два места**:
+5. Если параметр должен наследоваться копиботами — **три места**:
    `ProfitableBotUpdaterCommand.get_bot_config_by_params`
-   (`profitable_bot_updater.py:98-123`, сериализация в JSON) **и**
-   `update_config_from_referral_bot` (`demo_test_bot.py:156`, сборка `TestBot`).
-   Забудете второе — параметр молча потеряется у всех копиботов.
+   (`profitable_bot_updater.py:169-207`, сериализация в JSON), затем сборка
+   `TestBot` в `update_config_from_referral_bot` (`demo_test_bot.py:362`) —
+   и такая же сборка у боевого бота (`binance_bot.py:229`), он читает тот же
+   конфиг. Забудете второе или третье — параметр молча потеряется.
 6. Если параметр надо видеть в разрезе сделки — поле в `TestOrder` +
    `order_data` (`demo_test_bot.py:521`).
 

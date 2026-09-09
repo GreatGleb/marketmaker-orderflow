@@ -336,7 +336,7 @@ class StartTestBotsCommand(Command):
     @staticmethod
     async def update_config_from_referral_bot(bot_config: TestBot, redis):
         # Лидера уже посчитал воркер set_profitable_bot и разложил по ключам
-        # copy_bot_{id} (profitable_bot_updater.py:296). Для копибота v1 здесь
+        # copy_bot_{id} (profitable_bot_updater.py:420). Для копибота v1 здесь
         # его собственный id, для v2 — id донора-копибота v1; ключ есть в обоих
         # случаях, поэтому отдельная ветка с пересчётом через БД не нужна.
         refer_bot_js = await redis.get(f"copy_bot_{bot_config.id}")
@@ -351,31 +351,50 @@ class StartTestBotsCommand(Command):
                 'referral_bot_id': 0
             }
 
+        # Типы приводятся здесь, а не по месту использования: конфиг обычного
+        # бота приезжает из базы с числами в полях, и копибот обязан выглядеть
+        # так же — иначе сравнение или арифметика где-нибудь дальше упадёт на
+        # строке. Decimal(str(...)) — потому что в JSON дробные поля едут
+        # float: str() даёт короткое представление ('0.1'), а Decimal(0.1)
+        # затащил бы в цену двоичный хвост. Для min_timeframe_asset_volatility
+        # это ещё и вопрос ключа most_volatile_symbol_* — от хвоста он
+        # перестал бы совпадать с ключом воркера.
         ref_bot_config = TestBot(
             balance=1000,
             symbol=refer_bot["symbol"],
-            stop_success_ticks=Decimal(refer_bot['stop_success_ticks'] or 0),
-            stop_loss_ticks=Decimal(refer_bot['stop_loss_ticks'] or 0),
-            start_updown_ticks=Decimal(refer_bot['start_updown_ticks'] or 0),
-            stop_win_percents=Decimal(refer_bot['stop_win_percents']),
-            stop_loss_percents=Decimal(refer_bot['stop_loss_percents']),
-            start_updown_percents=Decimal(refer_bot['start_updown_percents']),
-            # Именно Decimal, а не строка: ниже это поле проверяется на
-            # истинность, а строка '0' истинна и увела бы копибота в режим
-            # выбора пары по волатильности.
-            min_timeframe_asset_volatility=Decimal(
-                refer_bot['min_timeframe_asset_volatility']
+            # Тики в конфиге донора могут быть null: у бота либо тиковые
+            # уровни, либо процентные. Ноль здесь и означает «не задано».
+            stop_success_ticks=int(refer_bot['stop_success_ticks'] or 0),
+            stop_loss_ticks=int(refer_bot['stop_loss_ticks'] or 0),
+            start_updown_ticks=int(refer_bot['start_updown_ticks'] or 0),
+            stop_win_percents=Decimal(str(refer_bot['stop_win_percents'])),
+            stop_loss_percents=Decimal(str(refer_bot['stop_loss_percents'])),
+            start_updown_percents=Decimal(
+                str(refer_bot['start_updown_percents'])
             ),
-            time_to_wait_for_entry_price_to_open_order_in_seconds=Decimal(refer_bot[
-                'time_to_wait_for_entry_price_to_open_order_in_seconds'
-            ]),
+            min_timeframe_asset_volatility=Decimal(
+                str(refer_bot['min_timeframe_asset_volatility'])
+            ),
+            time_to_wait_for_entry_price_to_open_order_in_seconds=Decimal(
+                str(refer_bot[
+                    'time_to_wait_for_entry_price_to_open_order_in_seconds'
+                ])
+            ),
             # .get(), а не [...]: ключи copy_bot_*, записанные в Redis до
             # добавления поля, его ещё не содержат.
             use_trailing_stop=bool(refer_bot.get('use_trailing_stop')),
             consider_ma_for_open_order=bool(refer_bot['consider_ma_for_open_order']),
             consider_ma_for_close_order=bool(refer_bot['consider_ma_for_close_order']),
-            ma_number_of_candles_for_open_order=refer_bot['ma_number_of_candles_for_open_order'],
-            ma_number_of_candles_for_close_order=refer_bot['ma_number_of_candles_for_close_order'],
+            # Число свечей — целое. Через Decimal(str(...)), а не int()
+            # напрямую: ключ copy_bot_*, записанный прошлой версией воркера,
+            # живёт в Redis до его следующего цикла, а там строка ('5.00'), на
+            # которой int() падает.
+            ma_number_of_candles_for_open_order=int(Decimal(
+                str(refer_bot['ma_number_of_candles_for_open_order'] or 0)
+            )),
+            ma_number_of_candles_for_close_order=int(Decimal(
+                str(refer_bot['ma_number_of_candles_for_close_order'] or 0)
+            )),
         )
 
         # for test if copy_bot use right refer_bot

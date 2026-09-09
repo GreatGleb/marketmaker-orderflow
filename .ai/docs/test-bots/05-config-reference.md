@@ -11,9 +11,9 @@
 | `start_updown_ticks` | int | `demo_test_bot.py:310-316` | отступ уровней входа от текущей цены, в тиках |
 | `stop_loss_ticks` | int | `price_calculator.py:58` | стоп-лосс в тиках от цены открытия |
 | `stop_success_ticks` | int | `price_calculator.py:10` / `:37` | тейк-профит в тиках (или дистанция трейлинга) |
-| `time_to_wait_for_entry_price_to_open_order_in_seconds` | numeric | `demo_test_bot.py:365` | таймаут ожидания входа. У MA-ботов игнорируется |
-| `use_trailing_stop` | bool NULL | `demo_test_bot.py:374`, `:428` | трейлинговый TP вместо фиксированного |
-| `stop_win_percents` | numeric NULL | `profitable_bot_updater.py:133` | TP в процентах от цены (нужны все три `*_percents`) |
+| `time_to_wait_for_entry_price_to_open_order_in_seconds` | numeric | `demo_test_bot.py:563` | таймаут ожидания входа. У MA-ботов игнорируется |
+| `use_trailing_stop` | bool NULL | `demo_test_bot.py:385`, `:610` | трейлинговый TP вместо фиксированного |
+| `stop_win_percents` | numeric NULL | `profitable_bot_updater.py:219` | TP в процентах от цены (нужны все три `*_percents`) |
 | `stop_loss_percents` | numeric NULL | там же | SL в процентах |
 | `start_updown_percents` | numeric NULL | там же | отступ входа в процентах |
 | `consider_ma_for_open_order` | bool | `price_provider.py:93` | вход по пересечению MA |
@@ -31,6 +31,28 @@
 
 Метод `TestBot.clone()` (`models.py:535`) — копия строки как нового объекта;
 нужен `update_config_for_percentage`, чтобы не мутировать общий конфиг.
+
+## Конфиг донора в Redis — `copy_bot_{id}`
+
+Подмножество тех же полей, сериализованное в JSON
+(`profitable_bot_updater.py:169`), из которого копибот собирает себе `TestBot`
+(`demo_test_bot.py:362`, `binance_bot.py:229`). Типы — только числа и `bool`:
+
+| В словаре | Тип | Поля |
+|---|---|---|
+| целые | `int` | тики (могут быть `null`), `ma_number_of_candles_*` |
+| дробные | `float` | `*_percents`, `min_timeframe_asset_volatility`, `time_to_wait_...` |
+| флаги | `bool` | `use_trailing_stop`, `consider_ma_*` |
+| пара | `str` | `symbol` |
+
+`Decimal` в JSON не положить, а строку — нельзя: `'0'` истинна для `not`, и
+проверки «поле не задано» на ней ломаются. Обратно в `Decimal` поле поднимает
+потребитель, через `Decimal(str(...))` — иначе двоичный хвост float попадёт в
+расчёт цены и в ключ `most_volatile_symbol_*`. Подробнее — [08-gotchas.md](08-gotchas.md),
+пункт 9.
+
+`NULL` у донора превращается в `0` (кроме тиков) — для потребителей это и
+означает «не задано».
 
 ## `TestOrder` — `general/app/db/models.py:339`, таблица `test_orders`
 

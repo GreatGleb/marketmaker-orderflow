@@ -22,6 +22,23 @@ from app.dependencies import (
 from app.utils import Command
 
 
+# Конфиг донора уезжает копиботам через JSON (ключ copy_bot_{id} в Redis), а в
+# JSON нет Decimal. Поэтому дробные поля кладутся float, целые — int, и никогда
+# строкой: '0' — истина для `not`, и у потребителей молча ломались бы проверки
+# «поле не задано» (binance_bot.py:1448 на строке '0' ставил таймаут ожидания
+# входа в int('0') = 0 секунд вместо секунды по умолчанию).
+#
+# Точность возвращают на стороне потребителя через Decimal(str(...)): так
+# двоичная погрешность float не попадает ни в арифметику цен, ни в ключ
+# most_volatile_symbol_* (app/constants/volatility.py).
+def _as_float(value, default=0.0):
+    return default if value is None else float(value)
+
+
+def _as_int(value, default=0):
+    return default if value is None else int(value)
+
+
 class WindowCache:
     """Кэш рейтингов прибыльности с разным сроком годности по окнам.
 
@@ -133,42 +150,58 @@ class ProfitableBotUpdaterCommand(Command):
             if refer_bot:
                 refer_bot = refer_bot[0]
 
-                if refer_bot.stop_win_percents is None:
-                    refer_bot.stop_win_percents = 0
-                if refer_bot.stop_loss_percents is None:
-                    refer_bot.stop_loss_percents = 0
-                if refer_bot.start_updown_percents is None:
-                    refer_bot.start_updown_percents = 0
-                if refer_bot.min_timeframe_asset_volatility is None:
-                    refer_bot.min_timeframe_asset_volatility = 0
-                if refer_bot.ma_number_of_candles_for_open_order is None:
-                    refer_bot.ma_number_of_candles_for_open_order = 0
-                if refer_bot.ma_number_of_candles_for_close_order is None:
-                    refer_bot.ma_number_of_candles_for_close_order = 0
-
+                # Только чтение: refer_bot — строка test_bots, загруженная
+                # в живую сессию. Раньше NULL-поля заполнялись нулями
+                # присваиванием в сам объект, и autoflush перед следующим
+                # запросом отправлял настоящий UPDATE test_bots — то есть
+                # RowExclusiveLock на таблицу до конца транзакции, а она у
+                # воркера одна на весь процесс. От порчи данных спасал только
+                # rollback при закрытии сессии; один commit() в этой сессии — и
+                # NULL стали бы нулями. Подстановки живут в словаре, сам
+                # объект не трогаем.
+                #
+                # Ноль вместо NULL — это «не задано»: и Decimal(0), и 0.0
+                # ложны для `not`, на чём и стоят проверки у потребителей
+                # (update_config_for_percentage, откат таймаута к 1 секунде).
+                #
+                # Тики — исключение: они nullable и в базе, подстановку нуля
+                # делают потребители, поэтому null остаётся null.
                 refer_bot_dict = {
                     "id": refer_bot.id,
                     "symbol": refer_bot.symbol,
-                    "stop_success_ticks": refer_bot.stop_success_ticks,
-                    "stop_loss_ticks": refer_bot.stop_loss_ticks,
-                    "start_updown_ticks": refer_bot.start_updown_ticks,
-                    "stop_win_percents": str(refer_bot.stop_win_percents),
-                    "stop_loss_percents": str(refer_bot.stop_loss_percents),
-                    "start_updown_percents": str(refer_bot.start_updown_percents),
-                    "min_timeframe_asset_volatility": str(
+                    "stop_success_ticks": _as_int(
+                        refer_bot.stop_success_ticks, default=None
+                    ),
+                    "stop_loss_ticks": _as_int(
+                        refer_bot.stop_loss_ticks, default=None
+                    ),
+                    "start_updown_ticks": _as_int(
+                        refer_bot.start_updown_ticks, default=None
+                    ),
+                    "stop_win_percents": _as_float(refer_bot.stop_win_percents),
+                    "stop_loss_percents": _as_float(refer_bot.stop_loss_percents),
+                    "start_updown_percents": _as_float(
+                        refer_bot.start_updown_percents
+                    ),
+                    "min_timeframe_asset_volatility": _as_float(
                         refer_bot.min_timeframe_asset_volatility
                     ),
-                    "time_to_wait_for_entry_price_to_open_order_in_seconds": str(
+                    "time_to_wait_for_entry_price_to_open_order_in_seconds": _as_float(
                         refer_bot.time_to_wait_for_entry_price_to_open_order_in_seconds
-                        or 0
                     ),
                     "use_trailing_stop": bool(refer_bot.use_trailing_stop),
-                    "consider_ma_for_open_order": refer_bot.consider_ma_for_open_order,
-                    "consider_ma_for_close_order": refer_bot.consider_ma_for_close_order,
-                    "ma_number_of_candles_for_open_order": str(
+                    "consider_ma_for_open_order": bool(
+                        refer_bot.consider_ma_for_open_order
+                    ),
+                    "consider_ma_for_close_order": bool(
+                        refer_bot.consider_ma_for_close_order
+                    ),
+                    # Число свечей — счётчик, в базе он numeric только по
+                    # историческим причинам.
+                    "ma_number_of_candles_for_open_order": _as_int(
                         refer_bot.ma_number_of_candles_for_open_order
                     ),
-                    "ma_number_of_candles_for_close_order": str(
+                    "ma_number_of_candles_for_close_order": _as_int(
                         refer_bot.ma_number_of_candles_for_close_order
                     ),
                 }
