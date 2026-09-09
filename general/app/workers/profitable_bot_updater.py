@@ -5,19 +5,15 @@ import time
 
 from datetime import timedelta
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from fastapi import Depends
 
 from redis.asyncio import Redis
 
+from app.config import settings
 from app.crud.test_bot import TestBotCrud
+from app.db.base import DatabaseSessionManager
 from app.db.models import TestBot
-from app.dependencies import (
-    get_session,
-    get_redis,
-    resolve_crud,
-)
+from app.dependencies import get_redis
 
 from app.utils import Command
 
@@ -371,9 +367,7 @@ class ProfitableBotUpdaterCommand(Command):
 
     async def command(
         self,
-        session: AsyncSession = Depends(get_session),
         redis: Redis = Depends(get_redis),
-        bot_crud: TestBotCrud = resolve_crud(TestBotCrud),
     ):
         first_run_completed = False
         bot_profitability_params = {}
@@ -381,43 +375,62 @@ class ProfitableBotUpdaterCommand(Command):
         # своей длины, а не каждые 30 секунд.
         window_cache = WindowCache()
 
+        dsm = DatabaseSessionManager.create(settings.DB_URL)
+
         while not self.stop_event.is_set():
-            bots = await bot_crud.get_copybots()
+            # Сессия своя на каждый цикл — так же, как в set_volatile_pairs
+            # (volatile_pair.py:57). Через зависимости Command её брать
+            # нельзя: они решаются один раз в run_async, а цикл живёт внутри
+            # command(), то есть сессия оказалась бы одна на весь процесс.
+            # Коммита у воркера нет — он только читает, — поэтому такая
+            # сессия держала бы одну транзакцию до остановки процесса, а её
+            # снапшот не даёт autovacuum вычистить мёртвые строки, которые
+            # появились после начала транзакции. По test_orders это десятки
+            # миллионов строк в сутки: ретеншн их удаляет, а место не
+            # возвращается (10-retention.md).
+            async with dsm.get_session() as session:
+                bot_crud = TestBotCrud(session)
 
-            # Пересобираем каждый цикл, а не один раз на старте: копибота
-            # могли завести уже после запуска воркера, и тогда ниже
-            # tf_bot_ids[bot.id] падало с KeyError, роняя воркер.
-            bot_profitability_params = {
-                bot.id: {
-                    'tf': bot.copy_bot_min_time_profitability_min,
-                    '24h': bot.copybot_v1_check_for_24h_profitability,
-                    'by_ref': bot.copybot_v1_check_for_referral_bot_profitability,
+                bots = await bot_crud.get_copybots()
+
+                # Пересобираем каждый цикл, а не один раз на старте:
+                # копибота могли завести уже после запуска воркера, и тогда
+                # ниже tf_bot_ids[bot.id] падало с KeyError, роняя воркер.
+                bot_profitability_params = {
+                    bot.id: {
+                        'tf': bot.copy_bot_min_time_profitability_min,
+                        '24h': bot.copybot_v1_check_for_24h_profitability,
+                        'by_ref': bot.copybot_v1_check_for_referral_bot_profitability,
+                    }
+                    for bot in bots
                 }
-                for bot in bots
-            }
 
-            if not first_run_completed:
-                first_run_completed = True
+                if not first_run_completed:
+                    first_run_completed = True
 
-                logging.info(bot_profitability_params)
-                logging.info('bot_profitability_params')
+                    logging.info(bot_profitability_params)
+                    logging.info('bot_profitability_params')
 
-            tf_bot_ids = await self.get_profitable_bots_id_by_individual_params(
-                bot_crud=bot_crud,
-                bot_profitability_parameters=bot_profitability_params,
-                window_cache=window_cache,
-            )
-
-            for bot in bots:
-                refer_bot_dict = await self.get_bot_config_by_params(
-                    bot_crud=bot_crud,
-                    bot_ids=tf_bot_ids[bot.id]
-                )
-                logging.info(refer_bot_dict)
-                logging.info(f"copy_bot_{bot.id}")
-                if refer_bot_dict:
-                    await redis.set(
-                        f"copy_bot_{bot.id}", json.dumps(refer_bot_dict)
+                tf_bot_ids = (
+                    await self.get_profitable_bots_id_by_individual_params(
+                        bot_crud=bot_crud,
+                        bot_profitability_parameters=bot_profitability_params,
+                        window_cache=window_cache,
                     )
+                )
 
+                for bot in bots:
+                    refer_bot_dict = await self.get_bot_config_by_params(
+                        bot_crud=bot_crud,
+                        bot_ids=tf_bot_ids[bot.id]
+                    )
+                    logging.info(refer_bot_dict)
+                    logging.info(f"copy_bot_{bot.id}")
+                    if refer_bot_dict:
+                        await redis.set(
+                            f"copy_bot_{bot.id}", json.dumps(refer_bot_dict)
+                        )
+
+            # Сон — вне сессии: она закрыта, транзакции нет, снапшот отпущен.
+            # window_cache при этом живёт дальше, он к сессии не привязан.
             await asyncio.sleep(30)

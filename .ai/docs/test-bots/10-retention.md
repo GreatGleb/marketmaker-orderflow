@@ -203,6 +203,20 @@ ALTER TABLE test_orders SET (autovacuum_vacuum_scale_factor = 0.05);
 гигабайта, экономить там нечего, а индексов у неё пять и проход самый
 дорогой из всех.
 
+**Порог не поможет, если в базе висит старая транзакция.** Autovacuum не
+трогает строки, которые могут понадобиться хоть одному живому снапшоту, —
+поэтому один воркер, забывший закрыть транзакцию, отменяет весь ретеншн:
+`DELETE` проходит, а место не возвращается. Так и было у
+`set_profitable_bot` до 2026-09-09 (см. [08-gotchas.md](08-gotchas.md),
+пункт 19). Если таблица растёт при работающем ретеншне, смотреть здесь:
+
+```sql
+select pid, state, now() - xact_start as tx_age, query
+from pg_stat_activity
+where xact_start is not null and now() - xact_start > interval '5 minutes'
+order by xact_start;
+```
+
 Опасаться частых проходов не нужно. Обычный `VACUUM` берёт
 `ShareUpdateExclusiveLock`, который не конфликтует ни с `INSERT`, ни с
 `SELECT`, и вдобавок сам себя тормозит (`autovacuum_vacuum_cost_delay`).

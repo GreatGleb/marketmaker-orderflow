@@ -86,7 +86,7 @@
 | шаг цикла удержания |  `demo_test_bot.py:720` | `0.1` с |
 | стартовая задержка | `demo_test_bot.py:93` | `60` с |
 | правило «30 секунд» | `demo_test_bot.py:711` | 30 с / 10 тиков |
-| интервал `set_profitable_bot` | `profitable_bot_updater.py:423` | `30` с |
+| интервал `set_profitable_bot` | `profitable_bot_updater.py:436` | `30` с |
 
 Комиссии — единственное, что делает симуляцию нетривиальной: `take_profit`
 и `close_not_lose_price` считаются так, чтобы после обеих комиссий сделка
