@@ -8,8 +8,6 @@ from collections import namedtuple
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from fastapi import Depends
 
 from redis.asyncio import Redis
@@ -21,11 +19,7 @@ from app.constants.volatility import most_volatile_symbol_key
 from app.crud.exchange_pair_spec import AssetExchangeSpecCrud
 from app.crud.test_bot import TestBotCrud
 from app.db.models import TestBot, TestOrder
-from app.dependencies import (
-    get_session,
-    get_redis,
-    resolve_crud,
-)
+from app.dependencies import get_redis
 from app.db.base import DatabaseSessionManager
 from app.constants.commissions import COMMISSION_OPEN
 from app.enums.event_type import StopReasonEvent
@@ -70,11 +64,29 @@ class StartTestBotsCommand(Command):
         # (или в консоли ручного запуска) без пометки не разобрать, чей это.
         self.log_prefix = f'[шард {shard}/{shards}] ' if shards > 1 else ''
 
+    @staticmethod
+    def _to_bot_objects(active_bots):
+        """ORM-объекты -> namedtuple'ы с теми же полями.
+
+        Отвязывает конфиг бота от сессии: боты живут весь процесс, а сессия
+        закрывается сразу после старта.
+        """
+        active_bots_dicts = [
+            {
+                key: value
+                for key, value in bot.__dict__.items()
+                if key != '_sa_instance_state'
+            }
+            for bot in active_bots
+        ]
+
+        BotObject = namedtuple('BotObject', active_bots_dicts[0].keys())
+
+        return [BotObject(**bot) for bot in active_bots_dicts]
+
     async def command(
         self,
-        session: AsyncSession = Depends(get_session),
         redis: Redis = Depends(get_redis),
-        bot_crud: TestBotCrud = resolve_crud(TestBotCrud),
     ):
         logging.basicConfig(
             format='%(asctime)s - %(levelname)s - %(message)s',
@@ -92,19 +104,52 @@ class StartTestBotsCommand(Command):
 
         await asyncio.sleep(60)
 
+        dsm = DatabaseSessionManager.create(settings.DB_URL)
+
+        active_bots_tuples = []
+        shared_data = {}
+
         # Без активных ботов собирать namedtuple не из чего, и раньше здесь
         # падал IndexError, роняя весь процесс: supervisor перезапускал его
         # по кругу. Ждём, пока боты появятся в test_bots.
         while not self.stop_event.is_set():
-            active_bots = await bot_crud.get_active_bots(
-                shard=self.shard, shards=self.shards
-            )
+            # Сессия — на одну попытку, а не из зависимостей. Зависимости
+            # решаются один раз в Command.run_async, а command() кончается
+            # только на gather ниже: сессия из Depends жила бы, сколько живёт
+            # процесс, и держала бы открытую транзакцию с первого же чтения.
+            # Снапшот такой транзакции не даёт autovacuum вычистить мёртвые
+            # строки, и весь ретеншн по test_orders отменяется — в каждом
+            # шарде свой такой снапшот. См. 08-gotchas.md, пункт 19.
+            async with dsm.get_session() as session:
+                active_bots = await TestBotCrud(session).get_active_bots(
+                    shard=self.shard, shards=self.shards
+                )
 
-            if active_bots:
-                break
+                if active_bots:
+                    logging.info(
+                        f'{self.log_prefix}Ботов в этом процессе: '
+                        f'{len(active_bots)}.'
+                    )
 
-            # Иначе транзакция висит открытой всё время ожидания.
-            await session.rollback()
+                    if len(active_bots) > self.MAX_BOTS_PER_SHARD:
+                        logging.warning(
+                            f'{self.log_prefix}Это больше '
+                            f'{self.MAX_BOTS_PER_SHARD} ботов на процесс: '
+                            f'событийный цикл не успеет обойти их за 100 мс, '
+                            f'условия выхода начнут проверяться реже, чем '
+                            f'задумано. Увеличьте TEST_BOTS_SHARDS в .env и '
+                            f'пересоздайте контейнер.'
+                        )
+
+                    # Пока сессия жива: дальше боты работают на копиях
+                    # конфига, а не на ORM-объектах, привязанных к ней.
+                    active_bots_tuples = self._to_bot_objects(active_bots)
+
+                    shared_data = await MarketDataBuilder(session).build()
+
+                    logging.info(shared_data)
+
+                    break
 
             # У шарда своя доля парка: боты могут существовать, но не
             # попадать в его остаток. Иначе сообщение врёт.
@@ -116,37 +161,15 @@ class StartTestBotsCommand(Command):
                 f'{self.log_prefix}Нет активных ботов {scope}, жду 60 с. '
                 f'Создать их: python -m app.scripts.new_bots'
             )
+            # Сон вне сессии: в паузе процесс не держит ни соединения из
+            # пула, ни транзакции.
             await asyncio.sleep(60)
 
         if self.stop_event.is_set():
             logging.info(f'{self.log_prefix}Остановлено до запуска ботов.')
             return
 
-        logging.info(
-            f'{self.log_prefix}Ботов в этом процессе: {len(active_bots)}.'
-        )
-
-        if len(active_bots) > self.MAX_BOTS_PER_SHARD:
-            logging.warning(
-                f'{self.log_prefix}Это больше {self.MAX_BOTS_PER_SHARD} ботов '
-                f'на процесс: событийный цикл не успеет обойти их за 100 мс, '
-                f'условия выхода начнут проверяться реже, чем задумано. '
-                f'Увеличьте TEST_BOTS_SHARDS в .env и пересоздайте контейнер.'
-            )
-
-        builder = MarketDataBuilder(session)
-        shared_data = await builder.build()
-
-        logging.info(shared_data)
-
         tasks = []
-
-        active_bots_dicts = [bot.__dict__ for bot in active_bots]
-        active_bots_dicts = [{k: v for k, v in bot_dict.items() if k != '_sa_instance_state'} for bot_dict in
-                                   active_bots_dicts]
-
-        BotObject = namedtuple('BotObject', active_bots_dicts[0].keys())
-        active_bots_tuples = [BotObject(**bot) for bot in active_bots_dicts]
 
         for bot in active_bots_tuples:
             async def _run_loop(bot_config):
