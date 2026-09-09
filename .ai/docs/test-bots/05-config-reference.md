@@ -24,7 +24,7 @@
 | `copybot_v1_check_for_24h_profitability` | bool | `profitable_bot_updater.py:207` | доп. фильтр донора: прибылен и за 24 ч |
 | `copybot_v1_check_for_referral_bot_profitability` | bool | там же | доп. фильтр: прибылен как донор копиботов |
 | `copybot_v2_time_in_minutes` | numeric NULL | `demo_test_bot.py:225` | **признак копибота v2** + окно оценки прибыльности копибота-донора |
-| `min_timeframe_asset_volatility` | numeric NULL | — | **не используется** (код выбора пары закомментирован) |
+| `min_timeframe_asset_volatility` | numeric NULL | `demo_test_bot.py:486` | окно в минутах, за которое берётся самая волатильная пара. Заполнено → пара из Redis вместо `symbol`. В нынешнем парке не заполнено ни у кого |
 | `copy_bot_max_time_profitability_min` | numeric NULL | — | **не используется** |
 | `total_profit` | numeric NOT NULL | — | **не используется**: не пишется и не читается |
 | `created_at` / `updated_at` | timestamptz | — | из `BaseId` |

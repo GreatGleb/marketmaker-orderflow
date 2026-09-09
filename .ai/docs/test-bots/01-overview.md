@@ -30,6 +30,8 @@ N минут. Сами сделки живут 72 часа, статистика
 | `test_bots` | `app.scripts.start_test_bots` | **true** | сам симулятор. Группа из `TEST_BOTS_SHARDS` процессов (`test_bots:test_bots_00`, ...), каждый ведёт ботов с `id % TEST_BOTS_SHARDS == номер шарда` |
 | `insert_test_orders` | `app.workers.scripts.bull_insert_test_orders` | **true** | потребитель очереди `order_queue` → `INSERT INTO test_orders` |
 | `set_profitable_bot` | `app.workers.scripts.set_profitable_bot` | **true** | считает лидеров прибыльности → Redis `copy_bot_{id}` (нужен копиботам v1) |
+| `set_volatile_pairs` | `app.workers.scripts.set_volatile_pair_value` | **true** | самая волатильная пара по каждому окну → Redis `most_volatile_symbol_{tf}`, TTL 60 с (нужен ботам с `min_timeframe_asset_volatility`) |
+| `rebuild_watched_pairs` | `app.workers.scripts.rebuild_watched_pairs` | **true** | раз в сутки пересобирает `watched_pair` — список пар, по которым идёт питатель цен |
 
 Минимальный рабочий набор: `symbols_history` + `test_bots` + `insert_test_orders`.
 

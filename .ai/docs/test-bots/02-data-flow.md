@@ -52,7 +52,7 @@
 | `order_queue` | list | `demo_test_bot.py:544` (`RPUSH`) | `bulk_insert_orders.py` (`LPOP`) | завершённые виртуальные сделки. Константа — `app/constants/order.py` |
 | `copy_bot_{bot_id}` | string (JSON конфига) | `profitable_bot_updater.py:420` | `demo_test_bot.py:342` | конфиг реферального бота для копибота v1 |
 | `asset_history:stop` | string (флаг) | вручную / служебные скрипты | `watch_ws_and_save.py` | пауза записи в `asset_history` (обслуживание таблицы) |
-| `most_volatile_symbol_{tf}` | string | `app/workers/volatile_pair.py` | закомментировано в `demo_test_bot.py:269-274` | выбор самой волатильной пары. Сейчас **не используется** |
+| `most_volatile_symbol_{tf}` | string | `app/workers/volatile_pair.py` (TTL 60 с) | `demo_test_bot.py:486` | пара для бота с заполненным `min_timeframe_asset_volatility`. Код живой, но в нынешнем парке таких ботов нет |
 
 Адрес Redis захардкожен в `general/app/dependencies.py` как
 `redis://:@redis:6379/0` — это DNS-имя сервиса в сети docker-compose.
