@@ -13,7 +13,7 @@
 
 ## 1. Правило «30 секунд» закрывало вообще всё (ИСПРАВЛЕНО 2026-08-26)
 
-`general/app/bots/demo_test_bot.py:482`
+`general/app/bots/demo_test_bot.py:711`
 
 Было:
 
@@ -52,7 +52,7 @@ use_trailing_stop | stop_reason_event | orders | avg_pnl
 
 ## 2. Трейлинг-стоп не трейлил (ИСПРАВЛЕНО 2026-08-26)
 
-`general/app/sub_services/logic/price_calculator.py:109-122`
+`general/app/sub_services/logic/price_calculator.py:139-152`
 
 Было:
 
@@ -64,7 +64,7 @@ if trade_type == TradeType.BUY:
 
 В обеих ветках возвращался прежний пик, а не `current_price` — тело функции
 было пустышкой. Пик никогда не двигался, значит
-`calculate_trailing_take_profit_price` (`price_calculator.py:37`) всегда
+`calculate_trailing_take_profit_price` (`price_calculator.py:38`) всегда
 считала от цены открытия, и «трейлинговый» уровень выхода застревал на
 `open_price ∓ stop_success_ticks × tick_size` — для BUY **ниже входа**.
 
@@ -84,30 +84,30 @@ if trade_type == TradeType.BUY:
 цена=101.40  пик=101.60  уровень выхода=101.40  → выход, stop-won
 ```
 
-Отдельно учтите: у трейлинговой формулы (`price_calculator.py:37`) нет
+Отдельно учтите: у трейлинговой формулы (`price_calculator.py:38`) нет
 поправки на комиссии, в отличие от фиксированной (`:10`). Уровень выхода
 считается от пика «как есть», поэтому чистая прибыль трейлинговой сделки
 меньше номинальных `stop_success_ticks` на две комиссии. Это не баг, но при
 сравнении трейлинговых и фиксированных ботов помните о смещении.
 
-Смежное: в `exit_strategy.py:36-38` и `:62-64` закомментирована подтяжка
+Смежное: в `exit_strategy.py:37-38` и `:64-65` закомментирована подтяжка
 стоп-лосса за ценой — трейлинг стоп-лосса так и не доделан.
 
 ## 3. Процентный режим падал у обычных ботов (ИСПРАВЛЕНО 2026-08-26)
 
-`general/app/workers/profitable_bot_updater.py:151`
+`general/app/workers/profitable_bot_updater.py:245`
 
 Было: `ref_bot_config = bot_config.clone()` с последующим присваиванием полей.
 
-`clone()` объявлен на модели `TestBot` (`models.py:535`), а конфиг обычного
-тестового бота — это `namedtuple BotObject` (`demo_test_bot.py:100`):
+`clone()` объявлен на модели `TestBot` (`models.py:566`), а конфиг обычного
+тестового бота — это `namedtuple BotObject` (`demo_test_bot.py:148`):
 неизменяемый кортеж со значениями колонок, но без методов модели. Отсюда
 `AttributeError`, который ловился в `_run_loop` (:94) → уведомление в
 Telegram → `sleep(1)` → та же ошибка. Бесконечный цикл падений с
 сообщением в секунду на каждого сломанного бота.
 
 **Проценты были не причиной, а условием.** `update_config_for_percentage`
-вызывается для каждого бота на каждом цикле (`demo_test_bot.py:288`), но на
+вызывается для каждого бота на каждом цикле (`demo_test_bot.py:523`), но на
 строке 219 стоит ранний выход: если не заполнены **все три** `*_percents`,
 функция возвращает конфиг как есть и до `clone()` не доходит. Поэтому
 тиковые и MA-боты проблему не задевали.
@@ -136,7 +136,7 @@ else:
 
 ## 4. `IndexError`, если нет активных ботов (ИСПРАВЛЕНО 2026-08-26)
 
-`general/app/bots/demo_test_bot.py:100`
+`general/app/bots/demo_test_bot.py:148`
 
 Было:
 
@@ -163,7 +163,7 @@ BotObject = namedtuple('BotObject', active_bots_dicts[0].keys())
 
 ## 5. `time_to_wait...` перекрывал MA-таймаут (ИСПРАВЛЕНО 2026-08-26)
 
-`general/app/bots/demo_test_bot.py:328-337`
+`general/app/bots/demo_test_bot.py:556-565`
 
 Было: сначала ставились 12 часов для `consider_ma_for_open_order`, а
 следующим `if` значение затиралось из
@@ -184,7 +184,7 @@ BotObject = namedtuple('BotObject', active_bots_dicts[0].keys())
 
 ## 6. `PriceProvider.get_price` висел молча (ИСПРАВЛЕНО 2026-08-26)
 
-`general/app/sub_services/watchers/price_provider.py:94`
+`general/app/sub_services/watchers/price_provider.py:119`
 
 Ожидание цены по-прежнему бесконечное — бросать открытую позицию из-за паузы
 в питателе цен нельзя. Но теперь оно видимое и дешёвое:
@@ -217,7 +217,7 @@ BotObject = namedtuple('BotObject', active_bots_dicts[0].keys())
 
 ## 8. Баланс копибота всегда 1000
 
-`demo_test_bot.py:169`: `balance=1000` жёстко в коде при сборке конфига
+`demo_test_bot.py:363`: `balance=1000` жёстко в коде при сборке конфига
 донора. `balance` самого копибота из БД игнорируется. Сравнивая PnL
 копиботов и обычных ботов, следите, чтобы у обычных тоже был баланс 1000
 (`new_bots.py` ставит `1000.0` — совпадает).
@@ -232,7 +232,7 @@ BotObject = namedtuple('BotObject', active_bots_dicts[0].keys())
 
 Чего копибот не получает и сейчас (осознанно):
 
-* `balance` — всегда 1000 (`demo_test_bot.py:169`), см. пункт 8;
+* `balance` — всегда 1000 (`demo_test_bot.py:363`), см. пункт 8;
 * `is_active`, `total_profit`, `copybot_*` — к стратегии не относятся.
 
 `time_to_wait_for_entry_price_to_open_order_in_seconds` переносится
@@ -260,7 +260,7 @@ BotObject = namedtuple('BotObject', active_bots_dicts[0].keys())
 
 ## 10. `close_fee` считался неправильно (ИСПРАВЛЕНО 2026-08-26)
 
-`general/app/bots/demo_test_bot.py:532`
+`general/app/bots/demo_test_bot.py:740`
 
 Было: `close_fee = order.open_price * COMMISSION_CLOSE` — цена, умноженная на
 ставку комиссии, а не комиссия от объёма позиции. Значение выходило заниженным
@@ -313,7 +313,7 @@ python-binance подписывает запрос до percent-encoding, и д�
 
 ## 10b. Копибот v2 пересчитывал лидеров запросами в БД (ИСПРАВЛЕНО 2026-08-27)
 
-`general/app/bots/demo_test_bot.py:139`
+`general/app/bots/demo_test_bot.py:337`
 
 Было: в `update_config_from_referral_bot` стояла развилка — копибот v1 читал
 готовый конфиг донора из Redis, а v2 вместо этого заново гонял тяжёлые
@@ -336,7 +336,7 @@ v2 — это копибот v1, значит его ключ уже есть.
 
 ## 10c. Воркер падал при добавлении копибота на ходу (ИСПРАВЛЕНО 2026-08-27)
 
-`general/app/workers/profitable_bot_updater.py:265`
+`general/app/workers/profitable_bot_updater.py:390`
 
 Было: словарь `bot_profitability_params` заполнялся только на первом проходе
 (`if not first_run_completed`). Копибот, заведённый после запуска воркера,
@@ -356,7 +356,7 @@ v2 — это копибот v1, значит его ключ уже есть.
 
 ## 12. `close_price` — не цена срабатывания
 
-`demo_test_bot.py:503`: после выхода из цикла цена запрашивается заново.
+`demo_test_bot.py:725`: после выхода из цикла цена запрашивается заново.
 Записанный `close_price` может быть по другую сторону от TP/SL, и сделка
 с `stop-won` может иметь отрицательный `profit_loss`. Это осознанная
 имитация проскальзывания, но она ломает наивную проверку
@@ -364,7 +364,7 @@ v2 — это копибот v1, значит его ключ уже есть.
 
 ## 13. `TRUNCATE ... CASCADE` в `new_bots.py` стирает и `test_orders`
 
-`new_bots.py:340`. `test_orders.bot_id` — FK на `test_bots`, поэтому
+`new_bots.py:355`. `test_orders.bot_id` — FK на `test_bots`, поэтому
 `CASCADE` вычищает и всю историю сделок. Единственная защита — дамп
 перед запуском.
 
@@ -396,7 +396,7 @@ v2 — это копибот v1, значит его ключ уже есть.
 `session.rollback()` — иначе сломанная транзакция валила бы и следующие батчи.
 
 **Возврат ограничен потолком** `QUEUE_MAX_LENGTH = 200_000`
-(`bulk_insert_orders.py:24`). Без него долгий простой БД съел бы всю память
+(`bulk_insert_orders.py:29`). Без него долгий простой БД съел бы всю память
 Redis: одна сделка в очереди — ~626 байт, при 15 000 активных ботов очередь
 растёт примерно на 900 МБ в час, а `maxmemory` в `docker-compose.yml` не
 задан. 200 000 записей — это ~125 МБ, порядка 8 минут запаса при полной
@@ -412,7 +412,7 @@ Redis: одна сделка в очереди — ~626 байт, при 15 000 
 
 ## 17. `deactivate_not_profit_bots` падал на пустой статистике (ИСПРАВЛЕНО 2026-08-26)
 
-`general/app/scripts/new_bots.py:293`
+`general/app/scripts/new_bots.py:295`
 
 Было: `sorted_data[0][1]` без проверки на пустой список. Функция берёт лучшего
 бота по прибыли за 12 часов и отключает пару, если даже у лучшего меньше 100.
@@ -425,7 +425,7 @@ Redis: одна сделка в очереди — ~626 байт, при 15 000 
 могли только что завести или симулятор мог стоять.
 
 Функция по-прежнему вызывается только из закомментированного блока
-`create_bots` (`new_bots.py:444`).
+`create_bots` (`new_bots.py:525`).
 
 ## 18. Волатильный режим: код живой, ботов нет (УТОЧНЕНО 2026-09-09)
 

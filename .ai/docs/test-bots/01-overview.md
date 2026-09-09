@@ -64,8 +64,8 @@ N минут. Сами сделки живут 72 часа, статистика
 | `general/app/workers/profitable_bot_updater.py` | подбор реферального бота для копиботов, пересчёт процентов в тики (:131) |
 | `general/app/crud/test_bot.py` | запросы к `test_bots`, главный — `get_sorted_by_profit` (:29) |
 | `general/app/crud/test_orders.py` | запросы к `test_orders`, `bulk_create` |
-| `general/app/db/models.py:430` | модель `TestBot` |
-| `general/app/db/models.py:339` | модель `TestOrder` |
+| `general/app/db/models.py:461` | модель `TestBot` |
+| `general/app/db/models.py:370` | модель `TestOrder` |
 
 ### Обвязка
 
@@ -82,7 +82,7 @@ N минут. Сами сделки живут 72 часа, статистика
 | `general/app/db/base.py` | синглтоны движка SQLAlchemy и пула Redis |
 | `general/app/sub_services/notifications/factory.py` | Telegram-уведомления об упавших ботах |
 
-## Как работает бутстрап (`demo_test_bot.py:51-116`)
+## Как работает бутстрап (`demo_test_bot.py:73-150`)
 
 ```python
 command(session, redis, bot_crud)          # всё через DI из app/utils.py:Command

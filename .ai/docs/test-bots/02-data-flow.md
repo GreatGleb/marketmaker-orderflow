@@ -47,9 +47,9 @@
 
 | Ключ | Тип | Пишет | Читает | Смысл |
 |---|---|---|---|---|
-| `price:{SYMBOL}` | string | `watch_ws_and_save.py:121` (`MSET`) | `PriceProvider.get_price` (`price_provider.py:14`) | последняя цена. **Без него симулятор висит молча** |
+| `price:{SYMBOL}` | string | `watch_ws_and_save.py:131` (пайплайн `SET` с TTL) | `PriceProvider.get_price` (`price_provider.py:119`) | последняя цена. **Без него симулятор висит молча** |
 | `candles:{SYMBOL}` | string (JSON-массив цен закрытия) | `watch_binance_candles.py:41` | `BinanceBot.get_prev_minutes_ma` (`binance_bot.py:1673`) | закрытия минутных свечей для MA |
-| `order_queue` | list | `demo_test_bot.py:544` (`RPUSH`) | `bulk_insert_orders.py` (`LPOP`) | завершённые виртуальные сделки. Константа — `app/constants/order.py` |
+| `order_queue` | list | `demo_test_bot.py:771` (`RPUSH`) | `bulk_insert_orders.py` (`LPOP`) | завершённые виртуальные сделки. Константа — `app/constants/order.py` |
 | `copy_bot_{bot_id}` | string (JSON конфига) | `profitable_bot_updater.py:420` | `demo_test_bot.py:342` | конфиг реферального бота для копибота v1 |
 | `asset_history:stop` | string (флаг) | вручную / служебные скрипты | `watch_ws_and_save.py` | пауза записи в `asset_history` (обслуживание таблицы) |
 | `most_volatile_symbol_{tf}` | string | `app/workers/volatile_pair.py` (TTL 60 с) | `demo_test_bot.py:486` | пара для бота с заполненным `min_timeframe_asset_volatility`. Код живой, но в нынешнем парке таких ботов нет |
@@ -60,12 +60,12 @@
 
 ## Таблицы
 
-### `test_bots` — конфигурации (модель `general/app/db/models.py:430`)
+### `test_bots` — конфигурации (модель `general/app/db/models.py:461`)
 
 Одна строка = один вариант стратегии. Заполняется `new_bots.py`.
-Симулятор читает только `is_active = true` (`test_bot.py:17`).
+Симулятор читает только `is_active = true` (`test_bot.py:50`).
 
-### `test_orders` — результаты (модель `general/app/db/models.py:339`)
+### `test_orders` — результаты (модель `general/app/db/models.py:370`)
 
 Одна строка = одна закрытая виртуальная сделка. Пишется **только** через
 `order_queue` → `bulk_insert_orders`. Ключевые поля:
@@ -87,18 +87,18 @@
 
 `asset_history` — история тиков; из неё `MarketDataBuilder` берёт список
 «активных пар» (`asset_history.event_time` за последние 5 минут,
-`asset_history.py:117`). `asset_exchange_specs.filters` — JSON фильтров
+`asset_history.py:358`). `asset_exchange_specs.filters` — JSON фильтров
 Binance, откуда берётся `tick_size` (`PRICE_FILTER.tickSize`,
-`exchange_pair_spec.py:33`).
+`exchange_pair_spec.py:34`).
 
 Итог: **пара попадёт в `shared_data` только если по ней есть и свежие
 тики в `asset_history`, и запись в `asset_exchange_specs`.**
 
 ## Формат сообщения в `order_queue`
 
-`demo_test_bot.py:521-543`. Все Decimal сериализуются в строки,
+`demo_test_bot.py:748-770`. Все Decimal сериализуются в строки,
 datetime — через `json_serializer` (:191) в ISO. Потребитель разбирает
-даты обратно списком `DATETIME_FIELDS` (`bulk_insert_orders.py:45`).
+даты обратно списком `DATETIME_FIELDS` (`bulk_insert_orders.py:52`).
 
 ```json
 {
@@ -114,8 +114,8 @@ datetime — через `json_serializer` (:191) в ISO. Потребитель 
 ```
 
 **Добавляете поле в `TestOrder`** — надо трогать три места: миграцию,
-словарь `order_data` (`demo_test_bot.py:521`) и, если это дата,
-`DATETIME_FIELDS` в `bulk_insert_orders.py:45`.
+словарь `order_data` (`demo_test_bot.py:748`) и, если это дата,
+`DATETIME_FIELDS` в `bulk_insert_orders.py:52`.
 
 ## Потребитель очереди (`bulk_insert_orders.py`)
 
