@@ -64,7 +64,7 @@ class FakeCrud:
             balance=Decimal("1000"),
             copy_bot_min_time_profitability_min=Decimal("30"),
             copybot_v1_check_for_24h_profitability=False,
-            copybot_v1_check_for_referral_bot_profitability=False,
+            copybot_v1_exclude_losing_donors=False,
         )
         self.donor = TestBot(
             id=101,

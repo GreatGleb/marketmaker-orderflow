@@ -31,6 +31,7 @@ show_help() {
     echo "  watch         - app.scripts.watch_ws_and_save"
     echo "  demo          - app.bots.demo_test_bot"
     echo "  report        - app.scripts.top_bots_report"
+    echo "  refmatch      - app.scripts.referral_match_report (совпадал ли донор копибота)"
     echo "  seed_data     - app.scripts.seed_binance_data"
     echo "  seed_pairs    - app.scripts.seed_watched_pairs (топ пар по резким скачкам)"
     echo "  commissions   - app.scripts.seed_commission_rates (ставки maker/taker по парам)"
@@ -128,6 +129,9 @@ case "$1" in
                 ;;
             report | top_bots_report)
                 run_script_in_container "app.scripts.top_bots_report"
+                ;;
+            refmatch | referral_match_report)
+                run_script_in_container "app.scripts.referral_match_report"
                 ;;
             seed_data | seed_binance_data)
                 run_script_in_container "app.scripts.seed_binance_data"

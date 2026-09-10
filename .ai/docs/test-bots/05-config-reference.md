@@ -1,35 +1,33 @@
 # 05. Справочник полей
 
-## `TestBot` — `general/app/db/models.py:461`, таблица `test_bots`
+## `TestBot` — `general/app/db/models.py:453`, таблица `test_bots`
 
 | Поле | Тип | Где читается | Смысл |
 |---|---|---|---|
-| `id` | int | `demo_test_bot.py:756` | под этим ID пишутся сделки (`test_orders.bot_id`) |
-| `symbol` | str NOT NULL | `demo_test_bot.py:497` | торговая пара. У копиботов `''` — берётся у донора |
-| `balance` | numeric NOT NULL | `demo_test_bot.py:751` | виртуальный размер позиции. Влияет на PnL и `open_fee`. У копиботов подменяется на 1000 (`:363`) |
+| `id` | int | `demo_test_bot.py:735` | под этим ID пишутся сделки (`test_orders.bot_id`) |
+| `symbol` | str NOT NULL | `demo_test_bot.py:476` | торговая пара. У копиботов `''` — берётся у донора |
+| `balance` | numeric NOT NULL | `demo_test_bot.py:730` | виртуальный размер позиции. Влияет на PnL и `open_fee`. У копиботов подменяется на 1000 (`:386`) |
 | `is_active` | bool | `test_bot.py:50` | берётся в работу симулятором. Читается **один раз на старте** |
-| `start_updown_ticks` | int | `demo_test_bot.py:540-545` | отступ уровней входа от текущей цены, в тиках |
+| `start_updown_ticks` | int | `demo_test_bot.py:519-524` | отступ уровней входа от текущей цены, в тиках |
 | `stop_loss_ticks` | int | `price_calculator.py:59` | стоп-лосс в тиках от цены открытия |
 | `stop_success_ticks` | int | `price_calculator.py:10` / `:38` | тейк-профит в тиках (или дистанция трейлинга) |
-| `time_to_wait_for_entry_price_to_open_order_in_seconds` | numeric | `demo_test_bot.py:563` | таймаут ожидания входа. У MA-ботов игнорируется |
-| `use_trailing_stop` | bool NULL | `demo_test_bot.py:385`, `:610` | трейлинговый TP вместо фиксированного |
-| `stop_win_percents` | numeric NULL | `profitable_bot_updater.py:219` | TP в процентах от цены (нужны все три `*_percents`) |
+| `time_to_wait_for_entry_price_to_open_order_in_seconds` | numeric | `demo_test_bot.py:542` | таймаут ожидания входа. У MA-ботов игнорируется |
+| `use_trailing_stop` | bool NULL | `demo_test_bot.py:408`, `:613` | трейлинговый TP вместо фиксированного |
+| `stop_win_percents` | numeric NULL | `profitable_bot_updater.py:224` | TP в процентах от цены (нужны все три `*_percents`) |
 | `stop_loss_percents` | numeric NULL | там же | SL в процентах |
 | `start_updown_percents` | numeric NULL | там же | отступ входа в процентах |
 | `consider_ma_for_open_order` | bool | `price_provider.py:172` | вход по пересечению MA |
-| `consider_ma_for_close_order` | bool | `demo_test_bot.py:603`, `:666` | выход по MA (уровни SL/TP обнуляются) |
+| `consider_ma_for_close_order` | bool | `demo_test_bot.py:606`, `:669` | выход по MA (уровни SL/TP обнуляются) |
 | `ma_number_of_candles_for_open_order` | numeric NULL | `price_provider.py:173` | период одной MA |
 | `ma_number_of_candles_for_close_order` | numeric NULL | там же | период второй MA. Быстрая/медленная определяются сравнением, а не именами полей |
-| `copy_bot_min_time_profitability_min` | numeric NULL | `demo_test_bot.py:466` | **признак копибота v1** + окно оценки прибыльности донора, минуты |
-| `copybot_v1_check_for_24h_profitability` | bool | `profitable_bot_updater.py:355` | доп. фильтр донора: прибылен и за 24 ч |
-| `copybot_v1_check_for_referral_bot_profitability` | bool | там же | доп. фильтр: прибылен как донор копиботов |
-| `copybot_v2_time_in_minutes` | numeric NULL | `demo_test_bot.py:445` | **признак копибота v2** + окно оценки прибыльности копибота-донора |
-| `min_timeframe_asset_volatility` | numeric NULL | `demo_test_bot.py:486` | окно в минутах, за которое берётся самая волатильная пара. Заполнено → пара из Redis вместо `symbol`. В нынешнем парке не заполнено ни у кого |
-| `copy_bot_max_time_profitability_min` | numeric NULL | — | **не используется** |
-| `total_profit` | numeric NOT NULL | — | **не используется**: не пишется и не читается |
+| `copy_bot_min_time_profitability_min` | numeric NULL | `demo_test_bot.py:445` | **признак копибота v1** + окно оценки прибыльности донора, минуты |
+| `copybot_v1_check_for_24h_profitability` | bool | `profitable_bot_updater.py:421` | доп. фильтр донора: прибылен и за 24 ч |
+| `copybot_v1_exclude_losing_donors` | bool | там же | доп. фильтр: выбросить донора, у которого копиры за сутки в минусе. Отсутствие истории копирования — не причина выбрасывать |
+| `copybot_v2_time_in_minutes` | numeric NULL | `demo_test_bot.py:425` | **признак копибота v2** + окно оценки прибыльности копибота-донора |
+| `min_timeframe_asset_volatility` | numeric NULL | `demo_test_bot.py:465` | окно в минутах, за которое берётся самая волатильная пара. Заполнено → пара из Redis вместо `symbol`. В нынешнем парке не заполнено ни у кого |
 | `created_at` / `updated_at` | timestamptz | — | из `BaseId` |
 
-Метод `TestBot.clone()` (`models.py:566`) — копия строки как нового объекта;
+Метод `TestBot.clone()` (`models.py:555`) — копия строки как нового объекта;
 нужен `update_config_for_percentage`, чтобы не мутировать общий конфиг.
 
 ## Конфиг донора в Redis — `copy_bot_{id}`
@@ -74,7 +72,6 @@
 | `referral_bot_id` | ID донора (только у копиботов), иначе `NULL` |
 | `start_updown_ticks`, `stop_loss_ticks`, `stop_success_ticks` | фактические тики этой сделки (у процентных ботов — уже пересчитанные) |
 | `stop_reason_event` | `stop-won` / `stop-loosed` / `stop-long-lose` (`app/enums/event_type.py`) |
-| `referral_bot_from_profit_func` | всегда `NULL`, запись закомментирована |
 
 ## Константы
 
@@ -83,10 +80,10 @@
 | `COMMISSION_OPEN` | `app/constants/commissions.py` | `0.0005` (0.05 %) — только запасное значение |
 | `COMMISSION_CLOSE` | там же | `0.0005` — только запасное значение |
 | `ORDER_QUEUE_KEY` | `app/constants/order.py` | `"order_queue"` |
-| шаг цикла удержания |  `demo_test_bot.py:720` | `0.1` с |
+| шаг цикла удержания |  `demo_test_bot.py:699` | `0.1` с |
 | стартовая задержка | `demo_test_bot.py:93` | `60` с |
-| правило «30 секунд» | `demo_test_bot.py:711` | 30 с / 10 тиков |
-| интервал `set_profitable_bot` | `profitable_bot_updater.py:436` | `30` с |
+| правило «30 секунд» | `demo_test_bot.py:690` | 30 с / 10 тиков |
+| интервал `set_profitable_bot` | `profitable_bot_updater.py:506` | `30` с |
 
 Комиссии — единственное, что делает симуляцию нетривиальной: `take_profit`
 и `close_not_lose_price` считаются так, чтобы после обеих комиссий сделка
@@ -94,7 +91,7 @@
 
 **Ставка берётся по паре, а не из константы.** Симулятор читает
 `asset_exchange_specs.taker_commission_rate` (через `shared_data`,
-`demo_test_bot.py:515`) и передаёт её во все расчёты: безубыток, тейк-профит,
+`demo_test_bot.py:494`) и передаёт её во все расчёты: безубыток, тейк-профит,
 `open_fee`, `close_fee`, `profit_loss`. Taker применяется с обеих сторон —
 и вход по пробою, и выход по стопу в реальности исполняются по рынку.
 

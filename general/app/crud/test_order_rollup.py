@@ -3,6 +3,10 @@ from datetime import datetime, timedelta
 from sqlalchemy import func, select, text, union_all
 
 from app.config import settings
+from app.constants.copybot import (
+    DONOR_HISTORY_MINUTES,
+    PROFITABILITY_CHECK_MINUTES,
+)
 from app.db.models import TestOrder, TestOrderRollup
 from app.crud.base import BaseCrud
 from app.crud.test_bot import active_bots_subquery
@@ -340,6 +344,179 @@ class TestOrderRollupCrud(BaseCrud[TestOrderRollup]):
             .where(key.in_(bots), TestOrder.created_at >= start)
             .group_by(key)
         )
+
+    DONOR_MATCH_SQL = """
+        with
+        -- Кандидаты в доноры — те же, кого перебирает воркер:
+        -- profitable_bot_ids_for_window ходит с just_not_copy_bots=True.
+        non_copy as (
+            select id from test_bots
+            where is_active
+              and copy_bot_min_time_profitability_min is null
+              and copybot_v2_time_in_minutes is null
+        ),
+        -- Что копиботы этой комбинации параметров делали на самом деле.
+        -- Строка свёртки — на (блок, бот, донор, пара), донор нас интересует
+        -- целиком по паре, поэтому пары схлопываем.
+        used as (
+            select
+                r.bucket_start,
+                r.bot_id,
+                r.referral_bot_id,
+                sum(r.orders_count) as orders_count,
+                sum(r.profit_loss_sum) as profit_loss
+            from test_order_rollups r
+            join test_bots b on b.id = r.bot_id
+            where b.is_active
+              and b.copy_bot_min_time_profitability_min = :tf
+              and b.copybot_v1_check_for_24h_profitability = :check_24h
+              and b.copybot_v1_exclude_losing_donors = :exclude_losing
+              and r.referral_bot_id is not null
+              and r.bucket_start >= :since
+              and r.bucket_start < :until
+            group by 1, 2, 3
+        ),
+        -- Считаем не на каждый блок подряд, а только там, где копиботы этой
+        -- комбинации торговали: в тихие блоки заглядывать незачем.
+        points as (select distinct bucket_start from used),
+        candidates as (
+            select
+                p.bucket_start,
+                e.bot_id,
+                e.pnl_tf,
+                e.pnl_long,
+                d.pnl_as_donor
+            from points p
+            cross join lateral (
+                -- Оба окна одним проходом: длинное задаёт границу выборки,
+                -- короткое вырезается из неё через filter. Второй скан по
+                -- тем же строкам ради 24 часов не нужен.
+                select
+                    r.bot_id,
+                    sum(r.profit_loss_sum) filter (
+                        where r.bucket_start
+                              >= p.bucket_start - make_interval(mins => (:tf)::int)
+                    ) as pnl_tf,
+                    sum(r.profit_loss_sum) as pnl_long
+                from test_order_rollups r
+                join non_copy nc on nc.id = r.bot_id
+                where r.bucket_start
+                      >= p.bucket_start - make_interval(mins => (:long_minutes)::int)
+                  and r.bucket_start < p.bucket_start
+                group by r.bot_id
+            ) e
+            left join lateral (
+                -- Чем кончилось копирование этого бота у других: столько
+                -- заработали те, кто за ним копировал. Окно фиксированное и
+                -- не равно окну копибота — плохой перенос конфига свойство
+                -- устойчивое, за десять минут его не увидеть.
+                select sum(r.profit_loss_sum) as pnl_as_donor
+                from test_order_rollups r
+                where r.referral_bot_id = e.bot_id
+                  and r.bucket_start
+                      >= p.bucket_start
+                         - make_interval(mins => (:donor_minutes)::int)
+                  and r.bucket_start < p.bucket_start
+            ) d on true
+        ),
+        -- Те же три условия, что у filter_profitable_bots_id, и тот же
+        -- порядок: по сумме P/L за окно, от большего к меньшему.
+        eligible as (
+            select
+                bucket_start,
+                bot_id,
+                pnl_tf,
+                rank() over (
+                    partition by bucket_start order by pnl_tf desc
+                ) as rnk
+            from candidates
+            where pnl_tf > 0
+              and (:check_24h = false or coalesce(pnl_long, 0) > 0)
+              -- `>= 0`, а не `> 0`: фильтр выбрасывает донора, у которого
+              -- копиры ушли в минус, но не требует, чтобы копиры вообще
+              -- были. NULL при отсутствии истории даёт 0 и проходит.
+              and (:exclude_losing = false
+                   or coalesce(pnl_as_donor, 0) >= 0)
+        )
+        select
+            u.bucket_start,
+            u.bot_id as copy_bot_id,
+            u.referral_bot_id,
+            u.orders_count,
+            u.profit_loss,
+            e.rnk as donor_rank,
+            top.bot_id as expected_bot_id,
+            (
+                select count(*) from eligible x
+                where x.bucket_start = u.bucket_start
+            ) as eligible_count
+        from used u
+        left join eligible e
+            on e.bucket_start = u.bucket_start
+           and e.bot_id = u.referral_bot_id
+        left join lateral (
+            select x.bot_id from eligible x
+            where x.bucket_start = u.bucket_start
+            order by x.rnk
+            limit 1
+        ) top on true
+        order by u.bucket_start, u.bot_id
+    """
+
+    async def donor_match(
+        self, tf, check_24h: bool, exclude_losing: bool,
+        since: datetime, until: datetime,
+    ):
+        """Кого копибот взял в доноры против того, кого должен был.
+
+        Отвечает на вопрос, ради которого когда-то заводили колонку
+        `test_orders.referral_bot_from_profit_func`: сходится ли донор,
+        прочитанный из Redis, с тем, кого даёт функция отбора. Только
+        постфактум и по свёрткам, а не пересчётом на каждое открытие сделки —
+        последнее и было причиной, по которой ту проверку выключили через
+        четыре дня после появления (08-gotchas.md, пункт 10b).
+
+        Отбор воспроизводится ровно тот же, что у воркера
+        (`ProfitableBotUpdaterCommand.filter_profitable_bots_id`): среди
+        некопиботов берутся прибыльные за окно бота, при `check_24h` — ещё и
+        прибыльные за сутки, при `exclude_losing` — из них выбрасываются те,
+        у кого копиры за сутки ушли в минус; победитель первый по сумме P/L.
+        Расходиться этим двум определениям нельзя: разойдутся — отчёт начнёт
+        мерить сам себя.
+
+        Возвращает строку на (блок, копибот, донор) с местом взятого донора в
+        этом рейтинге. `donor_rank = 1` — попали точно, `None` — взятый донор
+        в тот момент вообще не проходил отбор.
+
+        Две неточности, обе известные и обе меньше блока:
+
+        * блок — десять минут, а воркер считает от точного `now()`. Место
+          донора поэтому даётся на начало блока, а не на секунду открытия
+          сделки; окна копиботов кратны десяти минутам, так что грубее самого
+          отбора отчёт не становится;
+        * свёртки бьются по `created_at`, то есть по закрытию сделки, а
+          донора выбирают на открытии. Сделки живут до 30 секунд, внутри
+          блока это не видно.
+        """
+        rows = await self.session.execute(
+            text(self.DONOR_MATCH_SQL),
+            {
+                "tf": int(tf),
+                "check_24h": bool(check_24h),
+                "exclude_losing": bool(exclude_losing),
+                # При выключенном флаге сутки не нужны: короткое окно тогда
+                # и задаёт границу выборки.
+                "long_minutes": (
+                    max(int(tf), PROFITABILITY_CHECK_MINUTES)
+                    if check_24h else int(tf)
+                ),
+                "donor_minutes": DONOR_HISTORY_MINUTES,
+                "since": since,
+                "until": until,
+            },
+        )
+
+        return rows.all()
 
     async def delete_older_than(self, cutoff: datetime) -> int:
         """Чистка самих свёрток.

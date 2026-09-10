@@ -420,25 +420,6 @@ class StartTestBotsCommand(Command):
             )),
         )
 
-        # for test if copy_bot use right refer_bot
-        # tf_bot_ids = (
-        #     await ProfitableBotUpdaterCommand.get_profitable_bots_id_by_timeframes(
-        #         bot_crud=bot_crud,
-        #         bot_profitability_timeframes=[
-        #             bot_config.copy_bot_min_time_profitability_min
-        #         ],
-        #     )
-        # )
-        #
-        # refer_bot = await ProfitableBotUpdaterCommand.get_bot_config_by_params(
-        #     bot_crud=bot_crud,
-        #     tf_bot_ids=tf_bot_ids,
-        #     copy_bot_min_time_profitability_min=bot_config.copy_bot_min_time_profitability_min,
-        # )
-        #
-        # if refer_bot:
-        #     bot_config.referral_bot_from_profit_func = refer_bot["id"]
-
         return {
             'config': ref_bot_config,
             'referral_bot_id': refer_bot['id']
@@ -460,7 +441,6 @@ class StartTestBotsCommand(Command):
         binance_bot,
     ):
         while not stop_event.is_set():
-            # setattr(bot_config, "referral_bot_from_profit_func", None)
             referral_bot_id = None
             bot_id = original_bot_config.id
             bot_config = None
@@ -787,7 +767,6 @@ class StartTestBotsCommand(Command):
                 "stop_success_ticks": int(order.stop_success_ticks),
                 "stop_reason_event": order.stop_reason_event,
                 "referral_bot_id": referral_bot_id,
-                # "referral_bot_from_profit_func": bot_config.referral_bot_from_profit_func,
                 "created_at": datetime.now(UTC),
                 "updated_at": datetime.now(UTC),
             }

@@ -37,9 +37,9 @@ def build_params():
 
     for window in WINDOWS:
         for check_24h in (False, True):
-            for by_ref in (False, True):
+            for no_losing in (False, True):
                 params[bot_id] = {"tf": window, "24h": check_24h,
-                                  "by_ref": by_ref}
+                                  "no_losing_donors": no_losing}
                 bot_id += 1
 
     return params

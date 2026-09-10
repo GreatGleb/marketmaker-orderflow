@@ -38,9 +38,9 @@ async def main():
     cache = WindowCache()
     crud = CountingCrud()
     params = {
-        1: {"tf": 10, "24h": False, "by_ref": False},
-        2: {"tf": 720, "24h": False, "by_ref": False},
-        3: {"tf": 2880, "24h": False, "by_ref": False},
+        1: {"tf": 10, "24h": False, "no_losing_donors": False},
+        2: {"tf": 720, "24h": False, "no_losing_donors": False},
+        3: {"tf": 2880, "24h": False, "no_losing_donors": False},
     }
 
     # Часы с нуля: у настоящего monotonic значение порядка миллионов, и

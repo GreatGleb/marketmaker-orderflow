@@ -10,6 +10,10 @@ from fastapi import Depends
 from redis.asyncio import Redis
 
 from app.config import settings
+from app.constants.copybot import (
+    DONOR_HISTORY_MINUTES,
+    PROFITABILITY_CHECK_MINUTES,
+)
 from app.crud.test_bot import TestBotCrud
 from app.db.base import DatabaseSessionManager
 from app.db.models import TestBot
@@ -291,10 +295,63 @@ class ProfitableBotUpdaterCommand(Command):
         return bot_ids
 
     @staticmethod
+    async def losing_donor_ids(bot_crud, window_cache=None):
+        """Боты, за которыми копировали в убыток, за фиксированное окно.
+
+        Это не «кто плохой», а «кто уже проверен и провалился». Разница
+        принципиальная. Раньше фильтр требовал **положительной** донорской
+        прибыли, и тогда «истории нет» приравнивалось к «плохой»: донорская
+        история есть только у тех, кого уже выбирали донором, то есть у
+        нескольких десятков ботов из пятнадцати тысяч. Фильтр резал пул в
+        двести раз и запирал отбор на инкумбентах, вместо того чтобы
+        проверять качество.
+
+        Теперь наоборот: возвращается множество тех, у кого копиры **ушли в
+        минус**, и вызывающий их выбрасывает. Бот без истории проходит —
+        предъявить ему нечего.
+
+        Зачем фильтр вообще нужен, если конфиг переносится корректно: он
+        сигнализация на регресс. Поле стратегии добавляется в три места
+        (словарь здесь, сборка в `demo_test_bot`, такая же в `binance_bot`),
+        и потеря одного из них ничем больше не ловится — так уже терялись
+        `use_trailing_stop` и `ma_number_of_candles_*`. Если параметр
+        потерялся, копиры торгуют не тем конфигом и уходят в минус, а донор
+        по своим сделкам выглядит прекрасно. Видно это только отсюда.
+        """
+        minutes = DONOR_HISTORY_MINUTES
+        key = ("losing_donors", float(minutes))
+
+        if window_cache is not None:
+            cached = window_cache.get(key, minutes)
+
+            if cached is not None:
+                return cached
+
+        rows = await bot_crud.get_sorted_by_profit(
+            since=timedelta(minutes=float(minutes)),
+            just_not_copy_bots=True,
+            by_referral_bot_id=True,
+        )
+        losing = {
+            row[0] for row in rows
+            if row[1] is not None and row[1] < 0
+        }
+
+        logging.info(
+            f'донорское окно {minutes} мин: '
+            f'ботов с убыточными копирами {len(losing)}'
+        )
+
+        if window_cache is not None:
+            window_cache.set(key, losing)
+
+        return losing
+
+    @staticmethod
     async def get_profitable_bots_id_by_timeframes(
         bot_crud, bot_profitability_timeframes,
         check_24h_profitability=False,
-        by_referral_bot_id=False,
+        exclude_losing_donors=False,
     ):
         window_cache = WindowCache()
         tf_bot_ids = {}
@@ -304,7 +361,7 @@ class ProfitableBotUpdaterCommand(Command):
                 bot_crud=bot_crud,
                 timeframe=tf,
                 check_24h_profitability=check_24h_profitability,
-                by_referral_bot_id=by_referral_bot_id,
+                exclude_losing_donors=exclude_losing_donors,
                 window_cache=window_cache,
             )
 
@@ -328,7 +385,7 @@ class ProfitableBotUpdaterCommand(Command):
                 bot_crud=bot_crud,
                 timeframe=parameters["tf"],
                 check_24h_profitability=parameters["24h"],
-                by_referral_bot_id=parameters["by_ref"],
+                exclude_losing_donors=parameters["no_losing_donors"],
                 window_cache=window_cache,
             )
 
@@ -339,9 +396,22 @@ class ProfitableBotUpdaterCommand(Command):
         bot_crud,
         timeframe,
         check_24h_profitability=False,
-        by_referral_bot_id=False,
+        exclude_losing_donors=False,
         window_cache=None,
     ):
+        """Кандидаты в доноры для одного копибота, лучший первым.
+
+        Порядок задаёт первый шаг — собственная прибыль бота за его окно.
+        Оба флага дальше только выбрасывают строки и порядок не трогают:
+        побеждает самый прибыльный сам по себе среди уцелевших.
+
+        Ранжировать по донорской прибыли нельзя, хотя соблазн есть: она
+        существует только у тех, кого уже выбирали донором, а выбирают тех,
+        кто первый по собственной. Получилась бы защёлка — кто выиграл
+        первым, тот и донор навсегда. Собственная прибыль от этого свободна:
+        она есть у всех пятнадцати тысяч кандидатов, независимо от того,
+        трогали их раньше или нет.
+        """
         get_ids = ProfitableBotUpdaterCommand.profitable_bot_ids_for_window
 
         tf_ids = await get_ids(
@@ -350,18 +420,18 @@ class ProfitableBotUpdaterCommand(Command):
 
         if check_24h_profitability:
             ids_24h = set(await get_ids(
-                bot_crud=bot_crud, minutes=24 * 60, window_cache=window_cache
+                bot_crud=bot_crud, minutes=PROFITABILITY_CHECK_MINUTES,
+                window_cache=window_cache,
             ))
             # set, а не list: на тысячах ботов проверка вхождения в список
             # превращала фильтр в квадрат.
             tf_ids = [bot_id for bot_id in tf_ids if bot_id in ids_24h]
 
-        if by_referral_bot_id:
-            ids_by_referral = set(await get_ids(
-                bot_crud=bot_crud, minutes=timeframe,
-                by_referral_bot_id=True, window_cache=window_cache,
-            ))
-            tf_ids = [bot_id for bot_id in tf_ids if bot_id in ids_by_referral]
+        if exclude_losing_donors:
+            losing = await ProfitableBotUpdaterCommand.losing_donor_ids(
+                bot_crud=bot_crud, window_cache=window_cache
+            )
+            tf_ids = [bot_id for bot_id in tf_ids if bot_id not in losing]
 
         return tf_ids
 
@@ -400,7 +470,7 @@ class ProfitableBotUpdaterCommand(Command):
                     bot.id: {
                         'tf': bot.copy_bot_min_time_profitability_min,
                         '24h': bot.copybot_v1_check_for_24h_profitability,
-                        'by_ref': bot.copybot_v1_check_for_referral_bot_profitability,
+                        'no_losing_donors': bot.copybot_v1_exclude_losing_donors,
                     }
                     for bot in bots
                 }

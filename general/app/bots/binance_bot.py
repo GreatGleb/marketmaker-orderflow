@@ -143,7 +143,7 @@ class BinanceBot(Command):
                     bot_crud=bot_crud,
                     bot_profitability_timeframes=[copy_bot.copy_bot_min_time_profitability_min],
                     check_24h_profitability=copy_bot.copybot_v1_check_for_24h_profitability,
-                    by_referral_bot_id=copy_bot.copybot_v1_check_for_referral_bot_profitability,
+                    exclude_losing_donors=copy_bot.copybot_v1_exclude_losing_donors,
                 )
 
                 logging.info(f'profitability_min {copy_bot.copy_bot_min_time_profitability_min}')

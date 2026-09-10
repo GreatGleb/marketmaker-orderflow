@@ -115,141 +115,6 @@ async def get_average_percentage_for_minimum_tick():
 
     return average_percent
 
-async def get_most_volatile_symbol():
-    logging.info(f'started getting')
-
-    result = None
-
-    dsm = DatabaseSessionManager.create(settings.DB_URL)
-    async with (dsm.get_session() as session):
-        asset_crud = AssetHistoryCrud(session)
-
-        UTC = timezone.utc
-        now = datetime.now(UTC)
-        days7_ago = now - timedelta(days=7)
-        since = days7_ago
-        active_symbols = await asset_crud.get_all_active_pairs(since=since, only_symbols_in_period=True, timeout=None)
-
-        logging.info(f'finished getting')
-        print(len(active_symbols))
-
-        if not active_symbols:
-            logging.info(f'error not active_symbols')
-            return result
-
-        # stmt_active_symbols = (
-        #     select(AssetExchangeSpec.symbol)
-        #     .where(AssetExchangeSpec.symbol.in_(active_symbols))
-        # )
-        # result_symbols = await session.execute(stmt_active_symbols)
-        # actual_active_symbols = {s[0] for s in result_symbols.all()}
-        #
-        # print(actual_active_symbols)
-        # print(len(actual_active_symbols))
-        jumps_sum_by_symbol = {}
-        JUMP_THRESHOLD = Decimal('0.5')
-
-        i = 0
-        for target_symbol in active_symbols:
-            # logging.info(f'started get history_records for {target_symbol}')
-            stmt_single_symbol_history = (
-                select(
-                    AssetHistory.symbol,
-                    AssetHistory.created_at,
-                    AssetHistory.last_price
-                )
-                .where(AssetHistory.symbol == target_symbol)
-                .order_by(AssetHistory.created_at.asc())
-            )
-
-            result = await session.execute(stmt_single_symbol_history)
-            history_records = result.all()
-
-            all_candidate_jumps = []
-            left = 0
-
-            for right in range(len(history_records)):
-                while (history_records[right][1] - history_records[left][1]).total_seconds() > 1.0:
-                    left += 1
-
-                window_records = history_records[left: right + 1]
-                if not window_records:
-                    continue
-
-                prices_in_window = [rec[2] for rec in window_records]
-                min_price = min(prices_in_window)
-                max_price = max(prices_in_window)
-
-                if min_price > 0:
-                    jump = max_price - min_price
-                    percentage_jump = (jump / min_price) * 100
-
-                    if percentage_jump > JUMP_THRESHOLD:
-                        candidate = {
-                            "symbol": target_symbol,
-                            "start_time": window_records[0][1],
-                            "end_time": window_records[-1][1],
-                            "min_price": min_price,
-                            "max_price": max_price,
-                            "percentage_jump": percentage_jump
-                        }
-                        all_candidate_jumps.append(candidate)
-
-            if not all_candidate_jumps:
-                # logging.info(f"No significant jumps found for {target_symbol}.")
-                if i == 0:
-                    logging.info(f'history_records 1 item:')
-                    logging.info(f'{history_records[0]}')
-                    logging.info(f'{history_records[-1]}')
-                i += 1
-                print(f'got {i} from {len(active_symbols)}')
-                continue
-
-            # logging.info(f"Found {len(all_candidate_jumps)} candidate jumps for {target_symbol}. Filtering...")
-
-            sorted_candidates = sorted(all_candidate_jumps, key=lambda x: x['start_time'])
-
-            final_jumps = []
-            current_best_event = sorted_candidates[0]
-
-            for j in range(1, len(sorted_candidates)):
-                next_jump = sorted_candidates[j]
-
-                if next_jump['start_time'] <= current_best_event['end_time']:
-                    if next_jump['percentage_jump'] > current_best_event['percentage_jump']:
-                        current_best_event = next_jump
-                else:
-                    final_jumps.append(current_best_event)
-                    current_best_event = next_jump
-
-            final_jumps.append(current_best_event)
-
-            # logging.info(f"Filtered down to {len(final_jumps)} unique jumps for {target_symbol}.")
-
-            for jump in final_jumps:
-                symbol = jump['symbol']
-                percentage = jump['percentage_jump']
-
-                jumps_sum_by_symbol[symbol] = jumps_sum_by_symbol.get(symbol, Decimal('0')) + percentage
-
-            # logging.info("\n--- Analysis Complete ---")
-            if i == 0:
-                logging.info(f'history_records 1 item:')
-                logging.info(f'{history_records[0]}')
-                logging.info(f'{history_records[-1]}')
-            # logging.info(f'history_records for {target_symbol}: {len(history_records)}')
-            i += 1
-            logging.info(f'got {i} from {len(active_symbols)}')
-
-    sorted_jumps_sum = sorted(jumps_sum_by_symbol.items(), key=lambda item: item[1], reverse=True)
-
-    logging.info("\nSorted sums (Array of tuples):")
-    for index, (symbol, total_jump) in enumerate(sorted_jumps_sum, start=1):
-        log_message = f"{index}. {symbol}: {total_jump:.2f}%"
-        print(log_message)
-
-    return result
-
 async def get_volatile_symbols(session):
     asset_crud = AssetHistoryCrud(session)
     active_symbols = await asset_crud.get_all_active_pairs(is_need_full_info=True)
@@ -342,8 +207,6 @@ async def deactivate_not_profit_bots(bot_crud):
 
 
 async def create_bots():
-    # await get_most_volatile_symbol()
-
     symbol = "BIOUSDT"
 
     dsm = DatabaseSessionManager.create(settings.DB_URL)
@@ -432,7 +295,7 @@ async def create_bots():
                                 "balance": Decimal("1000.0"),
                                 "copy_bot_min_time_profitability_min": min_time,
                                 "copybot_v1_check_for_24h_profitability": filter_24h,
-                                "copybot_v1_check_for_referral_bot_profitability": filter_ref,
+                                "copybot_v1_exclude_losing_donors": filter_ref,
                                 # "consider_ma_for_open_order": True,
                                 # "consider_ma_for_close_order": True,
                             }

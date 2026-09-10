@@ -13,6 +13,14 @@ $2M за сутки и не меньше двух подтверждённых �
 битый тик). После них пар набирается меньше, чем просили, и остаток
 добирается по суточному размаху — см. top_up_from_binance.
 
+Ещё до всяких отсечек круг сужается до инструментов, которыми мы умеем
+торговать: бессрочные контракты с котировкой в USDT или USDC
+(`app/constants/markets.py`). Это примерно четверть суточной статистики
+Binance — в основном полторы сотни токенизированных акций (AAPLUSDT,
+NVDAUSDT), которые котируются в USDT, по имени от крипты неотличимы и при
+этом стоят большую часть суток. Плюс поставочные квартальные и мелочь
+в чужой котировке (ETHBTC, BTCUSD1).
+
 Курица и яйцо: скачки считаются по локальной истории, а история собирается
 только по watched-парам. На чистой базе истории нет вообще, поэтому там
 работает разгон:
@@ -42,6 +50,10 @@ import httpx
 from sqlalchemy import delete, func, select
 
 from app.config import settings
+from app.constants.markets import (
+    TRADABLE_CONTRACT_TYPES,
+    TRADABLE_QUOTE_ASSETS,
+)
 # Тот же порог оборота, что и у отбора волатильной пары: держать два своих
 # понятия неликвида в одном проекте — верный способ их разъехать.
 from app.constants.volatility import MIN_QUOTE_VOLUME_24H
@@ -77,12 +89,83 @@ async def paused_simulator():
         yield
 
 
+async def symbol_reference(session):
+    """Справочник пар двумя множествами: (все символы, торгуемые из них).
+
+    Оба нужны порознь, потому что кандидат отваливается по двум разным
+    причинам, и путать их нельзя: «пара не в USDT/USDC» — это норма, а «пары
+    нет в справочнике» означает, что asset_exchange_specs протух и
+    seed_binance_data пора выполнить заново. В слитом виде вторая причина
+    молчала бы за первой.
+
+    Одним запросом на весь прогон: строк меньше тысячи, и держать их
+    множеством дешевле, чем гонять `in_` со списком кандидатов на каждом
+    этапе отбора.
+
+    Что именно считается торгуемым — в app/constants/markets.py.
+    """
+    rows = (
+        await session.execute(
+            select(
+                AssetExchangeSpec.symbol,
+                AssetExchangeSpec.quote_asset,
+                AssetExchangeSpec.contract_type,
+            )
+        )
+    ).all()
+
+    known = {row.symbol for row in rows}
+    tradable = {
+        row.symbol for row in rows
+        if row.quote_asset in TRADABLE_QUOTE_ASSETS
+        and row.contract_type in TRADABLE_CONTRACT_TYPES
+    }
+
+    return known, tradable
+
+
+async def tradable_symbols(session):
+    """Только торгуемые символы — когда причина отсева не важна."""
+    _, tradable = await symbol_reference(session)
+
+    return tradable
+
+
+def keep_tradable(symbols, allowed, stage):
+    """Оставляет только торгуемые символы, сохраняя порядок отбора.
+
+    Отсеянное не молчит: список пар — то, по чему потом идут сделки, и
+    «пропало пятнадцать пар неизвестно почему» здесь дороже лишней строки
+    в логе.
+    """
+    kept = [symbol for symbol in symbols if symbol in allowed]
+    dropped = [symbol for symbol in symbols if symbol not in allowed]
+
+    if dropped:
+        logging.info(
+            f"{stage}: отброшено {len(dropped)} пар — не бессрочные "
+            f"контракты в {'/'.join(TRADABLE_QUOTE_ASSETS)} либо нет записи "
+            f"в asset_exchange_specs: {', '.join(dropped[:10])}"
+            f"{' и другие' if len(dropped) > 10 else ''}."
+        )
+
+    return kept
+
+
 async def rank_by_jumps(session, hours, top, jump_threshold):
     """Топ пар по резким движениям в локальной истории цен."""
     since = datetime.now(UTC) - timedelta(hours=hours)
     rows = await AssetHistoryCrud(session).get_top_jumpy_symbols(
         since=since, limit=top, jump_threshold=jump_threshold
     )
+
+    # Обычно тут не отсекается ничего: история собирается только по
+    # watched-парам, а они уже прошли этот фильтр при прошлой пересборке.
+    # Нужно для случая, когда в watched_pair попало что-то мимо скрипта —
+    # руками или запросом.
+    allowed = await tradable_symbols(session)
+    kept = set(keep_tradable([row.symbol for row in rows], allowed, "Скачки"))
+    rows = [row for row in rows if row.symbol in kept]
 
     if not rows:
         # Скачков не нашлось. Если истории тоже нет — это случай разгона. А
@@ -97,7 +180,7 @@ async def rank_by_jumps(session, hours, top, jump_threshold):
             f"но тики идут — беру суточный размах."
         )
 
-        return await top_up_from_binance([], top=top)
+        return await top_up_from_binance(session, [], top=top)
 
     logging.info(f"Топ по скачкам за {hours} ч (порог {jump_threshold}% за секунду):")
     for i, row in enumerate(rows[:15], start=1):
@@ -108,7 +191,9 @@ async def rank_by_jumps(session, hours, top, jump_threshold):
     if len(rows) > 15:
         logging.info(f"  ... и ещё {len(rows) - 15}")
 
-    return await top_up_from_binance([row.symbol for row in rows], top=top)
+    return await top_up_from_binance(
+        session, [row.symbol for row in rows], top=top
+    )
 
 
 async def has_ticks(session, since):
@@ -121,7 +206,7 @@ async def has_ticks(session, since):
     ).scalar())
 
 
-async def top_up_from_binance(chosen, top):
+async def top_up_from_binance(session, chosen, top):
     """Добирает список до top парами из суточной статистики Binance.
 
     После отсечек по обороту и числу фронтов отбор по скачкам отдаёт заметно
@@ -145,7 +230,7 @@ async def top_up_from_binance(chosen, top):
     )
 
     try:
-        candidates = await rank_from_binance(top=top + len(chosen))
+        candidates = await rank_from_binance(session, top=top + len(chosen))
     except Exception as error:
         # Сеть отвалилась — это не повод терять уже отобранное.
         logging.info(f"Добрать не удалось ({error}), оставляю {len(chosen)} пар.")
@@ -160,14 +245,29 @@ async def top_up_from_binance(chosen, top):
     return chosen + added
 
 
-async def rank_from_binance(top):
+async def rank_from_binance(session, top, reference=None):
     """Запасной отбор, когда локальной истории ещё нет.
 
     Суточная статистика скачков не показывает, поэтому берём размах
     (high-low)/low среди достаточно ликвидных пар. Это грубее, но позволяет
     начать собирать цены — а через сутки список стоит пересчитать по истории.
+
+    Что торгуемо, решает справочник, а не имя символа: у токенизированных
+    акций оно кончается на USDT ровно так же, как у крипты, и отличить
+    AAPLUSDT от AAVEUSDT по суффиксу нельзя.
     """
     logging.info(f"Беру суточную статистику Binance, топ-{top} по размаху.")
+
+    known, allowed = reference or await symbol_reference(session)
+
+    if not allowed:
+        # Пустой справочник — не «ничего не подошло», а несделанный шаг
+        # установки. Без него отбор молча вернул бы ноль пар.
+        logging.info(
+            "В asset_exchange_specs нет ни одной подходящей пары. "
+            "Сначала выполните app.scripts.seed_binance_data."
+        )
+        return []
 
     async with httpx.AsyncClient(timeout=30) as client:
         response = await client.get(BINANCE_24H_URL)
@@ -175,11 +275,17 @@ async def rank_from_binance(top):
         tickers = response.json()
 
     candidates = []
+    untradable = 0
+    unknown = []
 
     for ticker in tickers:
         symbol = ticker.get("symbol", "")
 
-        if not symbol.endswith("USDT"):
+        if symbol not in allowed:
+            if symbol in known:
+                untradable += 1
+            else:
+                unknown.append(symbol)
             continue
 
         try:
@@ -194,7 +300,27 @@ async def rank_from_binance(top):
         candidates.append((symbol, (high - low) / low * 100, volume))
 
     candidates.sort(key=lambda item: item[1], reverse=True)
+    # Отсев идёт до среза по top, иначе нетоварные пары занимали бы места в
+    # топе и список выходил бы короче запрошенного.
     chosen = candidates[:top]
+
+    logging.info(
+        f"Из {len(tickers)} пар Binance пропущено {untradable} не бессрочных "
+        f"в {'/'.join(TRADABLE_QUOTE_ASSETS)}, по обороту и размаху отобрано "
+        f"{len(chosen)}."
+    )
+
+    if unknown:
+        # Не отсев по нашим правилам, а расхождение со справочником: Binance
+        # знает пару, а мы нет. Одна-две — свежие листинги, много — значит
+        # seed_binance_data не гоняли давно, и отбор идёт по устаревшему
+        # кругу кандидатов.
+        logging.info(
+            f"Ещё {len(unknown)} пар Binance нет в asset_exchange_specs, "
+            f"например: {', '.join(unknown[:10])}"
+            f"{' и другие' if len(unknown) > 10 else ''}. "
+            f"Если их много — выполните app.scripts.seed_binance_data."
+        )
 
     logging.info(f"Топ по суточному размаху (оборот от {MIN_QUOTE_VOLUME_24H:,}):")
     for i, (symbol, spread, volume) in enumerate(chosen[:15], start=1):
@@ -283,7 +409,7 @@ async def watch_and_rank(candidates, top, watch_minutes, jump_threshold):
 
 async def bootstrap(session, top, candidates_count, watch_minutes, jump_threshold):
     """Разгон на чистой базе: кандидаты → 5 минут наблюдения → топ по скачкам."""
-    candidates = await rank_from_binance(top=candidates_count)
+    candidates = await rank_from_binance(session, top=candidates_count)
 
     if not candidates:
         return None
@@ -318,7 +444,16 @@ async def apply_watched_pairs(session, symbols, replace):
     При replace=True сначала досыпает пары активных ботов: удалять их нельзя,
     поэтому итоговый список может оказаться чуть длиннее запрошенного топа.
     Так честнее, чем тратить на них места в рейтинге.
+
+    Здесь же последняя проверка на торгуемость. Отбор её уже прошёл, но это
+    единственная запись в watched_pair во всём проекте, и держать проверку
+    на входе в неё дешевле, чем полагаться на то, что все вызывающие
+    отфильтровали список сами.
     """
+    symbols = keep_tradable(
+        symbols, await tradable_symbols(session), "Запись в watched_pair"
+    )
+
     if replace:
         pinned = await get_pinned_symbols(session)
         missing_pinned = [s for s in pinned if s not in set(symbols)]

@@ -55,7 +55,7 @@ bot_config = None                     # конфиг ПАРАМЕТРОВ — м
    Оттуда же берётся **ставка комиссии по паре** —
    `taker_commission_rate` (:515). `NULL` → константа `COMMISSION_OPEN`.
    Дальше она передаётся во все расчёты: безубыток, тейк-профит, комиссии, PnL.
-7. `update_config_for_percentage` (:523, реализация `profitable_bot_updater.py:216`):
+7. `update_config_for_percentage` (:526, реализация `profitable_bot_updater.py:216`):
    если у бота заданы все три процента — переводит их в тики по текущей цене
    (`round(price * pct/100 / tick_size)`, минимум 1) и возвращает **клон**
    конфига. Иначе возвращает конфиг как есть.

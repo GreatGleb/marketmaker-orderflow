@@ -453,9 +453,6 @@ class TestOrder(BigId):
     referral_bot_id: Mapped[int] = mapped_column(
         ForeignKey("test_bots.id"), nullable=True
     )
-    referral_bot_from_profit_func: Mapped[int] = mapped_column(
-        ForeignKey("test_bots.id"), nullable=True
-    )
 
 
 class TestBot(BaseId):
@@ -478,13 +475,6 @@ class TestBot(BaseId):
     is_active: Mapped[bool] = mapped_column(
         types.Boolean, default=True, nullable=False, comment="Is active bot"
     )
-    total_profit: Mapped[float] = mapped_column(
-        types.Numeric(precision=20, scale=10),
-        default=0,
-        server_default="0",
-        nullable=False,
-        comment="Total profit",
-    )
     start_updown_ticks: Mapped[Optional[int]] = mapped_column(
         types.Integer,
         default=0,
@@ -495,11 +485,6 @@ class TestBot(BaseId):
         types.Numeric(precision=10, scale=2),
         nullable=True,
         comment="Duration of the time window (in minutes) over which asset volatility is measured",
-    )
-    copy_bot_max_time_profitability_min: Mapped[float] = mapped_column(
-        types.Numeric(precision=10, scale=2),
-        nullable=True,
-        comment="For copy bot the maximum time it takes for the original bot being monitored to be profitable",
     )
     copy_bot_min_time_profitability_min: Mapped[float] = mapped_column(
         types.Numeric(precision=10, scale=2),
@@ -557,10 +542,14 @@ class TestBot(BaseId):
         default=False,
         comment="Checks whether bots are profitable over the last 24 hours",
     )
-    copybot_v1_check_for_referral_bot_profitability: Mapped[bool] = mapped_column(
+    copybot_v1_exclude_losing_donors: Mapped[bool] = mapped_column(
         types.Boolean,
         default=False,
-        comment="Checks whether bots are profitable when working from copybots",
+        comment=(
+            "Skip donors whose copybots lost money over the last 24 hours. "
+            "No copy history is not a reason to skip: the filter excludes "
+            "the proven-bad, it does not require the proven-good"
+        ),
     )
 
     def clone(self):

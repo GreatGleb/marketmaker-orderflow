@@ -64,7 +64,7 @@ N минут. Сами сделки живут 72 часа, статистика
 | `general/app/workers/profitable_bot_updater.py` | подбор реферального бота для копиботов, пересчёт процентов в тики (:131) |
 | `general/app/crud/test_bot.py` | запросы к `test_bots`, главный — `get_sorted_by_profit` (:29) |
 | `general/app/crud/test_orders.py` | запросы к `test_orders`, `bulk_create` |
-| `general/app/db/models.py:461` | модель `TestBot` |
+| `general/app/db/models.py:453` | модель `TestBot` |
 | `general/app/db/models.py:370` | модель `TestOrder` |
 
 ### Обвязка

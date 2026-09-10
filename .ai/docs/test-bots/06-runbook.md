@@ -11,10 +11,19 @@ cp general/.env.example general/.env      # прописать BINANCE_* и TELE
 ./run.sh init                             # сид пар и спецификаций Binance
 ```
 
-`./run.sh init` выполняет `seed_binance_data`, `seed_watched_pairs_usdt`,
-`set_isolate_mode_and_leverage_for_binance_pairs`. Без `seed_binance_data`
+`./run.sh init` идёт через `app.scripts.init_setup` и делает пять шагов:
+`seed_binance_data` → `seed_watched_pairs` → `seed_commission_rates` →
+ожидание цен → `create_bots_safely`. Без `seed_binance_data`
 в `asset_exchange_specs` не будет `filters`, а значит не будет `tick_size`
 и `shared_data` окажется пустым.
+
+`seed_watched_pairs` отбирает пары по резким скачкам и берёт только
+инструменты, которыми подсистема умеет торговать: бессрочные контракты
+с котировкой в USDT или USDC (`app/constants/markets.py`). Токенизированные
+акции (`AAPLUSDT`, `NVDAUSDT` — 174 штуки на фьючерсах Binance) в список
+не попадают: они котируются в USDT и по имени неотличимы от крипты, но
+торгуются в часы американской биржи, и гэп на открытии рынка выглядит для
+детектора скачков как идеальный кандидат.
 
 Отдельно — ставки комиссии по парам (в `init` не входят, нужны боевые ключи):
 
@@ -111,11 +120,11 @@ docker exec -it orderflow_general python -m app.scripts.new_bots
 ```
 
 ⚠️ **Скрипт начинается с `TRUNCATE TABLE test_bots RESTART IDENTITY CASCADE`**
-(`new_bots.py:356`). `CASCADE` затрагивает и `test_orders` (там FK на
+(`new_bots.py:218`). `CASCADE` затрагивает и `test_orders` (там FK на
 `test_bots`) — **вся накопленная статистика стирается**. Перед запуском
 делайте дамп или закомментируйте блок `if 1:` с TRUNCATE.
 
-Что создаётся текущей версией (`create_bots`, `new_bots.py:344`):
+Что создаётся текущей версией (`create_bots`, `new_bots.py:208`):
 
 * пара жёстко задана в коде: `symbol = "BIOUSDT"` (:347) — менять здесь;
 * ~15 120 тиковых ботов: перебор `start × stop_lose × stop_win × trailing × wait`
@@ -151,7 +160,22 @@ docker exec -it orderflow_general python -m app.scripts.top_bots_report -d 7 -re
 
 # за всю сохранённую историю
 docker exec -it orderflow_general python -m app.scripts.top_bots_report -all
+
+# брал ли копибот того донора, которого дал бы отбор
+docker exec -it orderflow_general python -m app.scripts.referral_match_report
+docker exec -it orderflow_general python -m app.scripts.referral_match_report --details
 ```
+
+Второй отчёт отвечает на отдельный вопрос: сходится ли донор, прочитанный
+копиботом из Redis, с тем, кого выбрала бы функция отбора на тот момент.
+Ключ `copy_bot_*` обновляется раз в 30 секунд, и цена этого отставания до
+сих пор не мерена (пункт 10b в [08-gotchas.md](08-gotchas.md)). Места
+читаются так: 1 — попали точно, 2-3 — обычная цена отставания, «не в
+отборе» — взятый донор в тот момент был убыточен, «донора не было» — воркер
+по устройству оставил прежний ключ. Считается по свёрткам, поэтому окно
+глубже суток тоже работает; глубже рождения нынешнего парка отчёт не идёт —
+`new_bots.py` выдаёт номера ботов заново, и старые свёртки указывали бы на
+других ботов.
 
 Флаги `-just_copy` / `-just_copy_v2` / `-just_not_copy` — строковые,
 значение не важно, важно наличие (проверка на truthy), и взаимоисключающие:
