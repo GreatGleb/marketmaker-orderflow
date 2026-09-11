@@ -692,10 +692,82 @@ Redis, «не в отборе» — взятый донор был убыточ�
 
     docker exec -it orderflow_general python -m app.scripts.referral_match_report --details
 
-### 4.6. Адрес Redis захардкожен
+### 4.6. Адрес Redis захардкожен (СДЕЛАНО 2026-09-11)
 
-`app/dependencies.py`, два места: `redis://:@redis:6379/0`. Вне
-docker-compose не подключится.
+**Было.** `REDIS_URL = "redis://:@redis:6379/0"` — константа в
+`app/dependencies.py`, которую читали `get_redis`, `redis_context` и (импортом
+оттуда) `simulator_flag`. Имя `redis` — это DNS сервиса в сети
+docker-compose, поэтому запуск снаружи требовал правки файла.
+
+**Стало.** `Settings.REDIS_URL` (`app/config.py`), умолчание прежнее —
+`redis://redis:6379/0`. Константы в `dependencies.py` больше нет, все три
+потребителя читают настройку.
+
+* пустые логин и пароль (`:@`) из адреса убраны: `redis.connection.parse_url`
+  даёт для обоих вариантов одно и то же `{'host': 'redis', 'port': 6379,
+  'db': 0}` — проверено, — а с ними адрес нельзя было отдать celery, который
+  разбирает URL своим кодом;
+* `CELERY_BROKER` теперь по умолчанию **пуст** и подставляется из `REDIS_URL`
+  (`_celery_broker_defaults_to_redis`). Два адреса, которые почти всегда
+  совпадают, — это один переезд, после которого celery молча остался бы на
+  старом Redis. Явное значение в `.env` по-прежнему выигрывает: брокер иногда
+  уносят на свой инстанс;
+* **и сам `CELERY_BROKER` до этой правки не работал.** Celery 5.5 разрешает
+  адрес как `os.environ.get("CELERY_BROKER_URL") or conf.first("broker_url",
+  ...)` (`celery/app/utils.py`, свойства `broker_url` и `result_backend`) —
+  то есть переменная окружения сильнее аргумента `broker=`. А
+  `CELERY_BROKER_URL` и `CELERY_RESULT_BACKEND` стояли и в `general/.env`, и
+  в `docker-compose.yml` у обоих celery-контейнеров. Совпадали они с
+  настройкой буквально, поэтому заметить было не на чем. Обе переменные
+  убраны из наших файлов, `backend` теперь тоже приезжает из
+  `settings.CELERY_BROKER` (`app/tasks.py`). У контейнера `flower`
+  переменные свои и остались на месте: это отдельный процесс со своим
+  адресом;
+* **и `tasks.py` теперь сам перезаписывает обе переменные** значением
+  `settings.CELERY_BROKER` перед сборкой `Celery`. Убрать их из наших файлов
+  было мало: `general/.env` лежит в `.gitignore`, у каждого сервера он свой,
+  и забытая там строка пережила бы выкатку и продолжила тихо перебивать
+  `REDIS_URL` — причём незаметно, потому что адрес в ней «почти правильный».
+  Теперь источник адреса ровно один, и `.env` на сервере править не
+  обязательно (старые строки можно удалить для порядка, вреда от них уже
+  нет);
+* `simulator_flag` импортировал `REDIS_URL` из `app.dependencies`; теперь
+  берёт `settings` напрямую. Своё соединение (а не пул `RedisSessionManager`)
+  он держит по-прежнему — причина в 4.4;
+* в `Dockerfile` переменная не нужна: там `ENV` стоит только у
+  `TEST_BOTS_SHARDS`, потому что его читает сам supervisord. Адрес Redis
+  читает Python, которому хватает умолчания в `config.py`.
+
+**Проверить после выкатки** (ручных шагов не нужно, но убедиться дёшево):
+
+    docker exec orderflow_celery_worker python -c \
+      "from app.tasks import app; print(app.conf.broker_url)"
+
+**Где смотреть.** `app/config.py` (`REDIS_URL`, `CELERY_BROKER`),
+`app/dependencies.py` (`get_redis`, `redis_context`),
+`app/scripts/simulator_flag.py`, `app/tasks.py` (сборка `Celery`),
+`general/.env.example` (блок `--- Redis ---`), `docker-compose.yml`
+(`general-celery-worker`, `general-celery-beat`).
+
+**Проверки.** `tests/test_redis_url_setting.py` — переменная из окружения,
+умолчание, три ветки `CELERY_BROKER`, сборка самого объекта `Celery` из
+настройки, отсутствие `redis://` в коде обоих модулей, один и тот же адрес у
+всех потребителей и сценарий сервера — протухшие `CELERY_BROKER_URL` и
+`CELERY_RESULT_BACKEND` в окружении настройку не перебивают. Отдельная
+проверка стоит наоборот — она **ждёт**, что голый `Celery(broker=...)`
+предпочитает переменную окружения: изменится это в новой версии celery —
+тест скажет, и перезапись в `tasks.py` можно будет убрать.
+
+**Прогнано живьём.** Контейнер в `--network host` с
+`REDIS_URL=redis://localhost:6380/0` читает живой Redis (761 ключ
+`price:*`); внутри compose адрес остаётся `redis://redis:6379/0`.
+`celery -A app.tasks worker` без переменных окружения поднимается с
+`transport: redis://redis:6379/0`, `results: redis://redis:6379/0` и
+`Connected`; с `REDIS_URL=redis://elsewhere:7777/5` — идёт стучаться именно
+туда, то есть настройка доходит до воркера. Отдельно проверен сценарий
+сервера: воркер, которому в окружение положили старые `CELERY_BROKER_URL` и
+`CELERY_RESULT_BACKEND` вместе с новым `REDIS_URL`, поднялся на новом
+адресе, а не на старом.
 
 ### 4.7. Симулятор держал транзакцию всё время работы процесса (СДЕЛАНО 2026-09-09)
 

@@ -88,8 +88,8 @@ services:
     volumes:
       - ./general:/opt/services/app/src:Z
     environment:
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      # Адрес брокера тут не задаётся: он приезжает из настройки
+      # CELERY_BROKER (по умолчанию — REDIS_URL). См. app/tasks.py.
       - C_FORCE_ROOT=true
     depends_on:
       - redis
@@ -106,8 +106,8 @@ services:
     volumes:
       - ./general:/opt/services/app/src:Z
     environment:
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      # Адрес брокера тут не задаётся: он приезжает из настройки
+      # CELERY_BROKER (по умолчанию — REDIS_URL). См. app/tasks.py.
       - C_FORCE_ROOT=true
     depends_on:
       - redis

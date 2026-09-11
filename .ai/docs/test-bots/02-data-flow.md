@@ -54,9 +54,9 @@
 | `asset_history:stop` | string (флаг) | вручную / служебные скрипты | `watch_ws_and_save.py` | пауза записи в `asset_history` (обслуживание таблицы) |
 | `most_volatile_symbol_{tf}` | string | `app/workers/volatile_pair.py` (TTL 60 с) | `demo_test_bot.py:465` | пара для бота с заполненным `min_timeframe_asset_volatility`. Код живой, но в нынешнем парке таких ботов нет |
 
-Адрес Redis захардкожен в `general/app/dependencies.py` как
-`redis://:@redis:6379/0` — это DNS-имя сервиса в сети docker-compose.
-Вне контейнера код в таком виде не подключится.
+Адрес Redis — `Settings.REDIS_URL` (`general/app/config.py`). Умолчание
+`redis://redis:6379/0` — это DNS-имя сервиса в сети docker-compose; вне неё
+задаётся переменной окружения, например `REDIS_URL=redis://localhost:6380/0`.
 
 ## Таблицы
 

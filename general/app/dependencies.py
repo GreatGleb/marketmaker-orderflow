@@ -12,12 +12,6 @@ from starlette import status
 from app.config import Settings, settings
 from app.db.base import DatabaseSessionManager, RedisSessionManager
 
-# Адрес Redis. Захардкожен, потому что вне docker-сети проект и так не
-# поднимется (имя `redis` — из docker-compose); в настройки он не вынесен —
-# это пункт 4.6 в .ai/docs/test-bots/09-roadmap.md. Пока держим его в одном
-# месте, чтобы два потребителя не разъехались.
-REDIS_URL = "redis://:@redis:6379/0"
-
 
 async def get_session():
     dsm = DatabaseSessionManager.create(settings.DB_URL)
@@ -32,7 +26,7 @@ CrudT = TypeVar("CrudT")
 
 
 async def get_redis() -> redis.asyncio.client.Redis:
-    rsm = RedisSessionManager.create(REDIS_URL)
+    rsm = RedisSessionManager.create(settings.REDIS_URL)
     async with rsm as r:
         yield r.connection
 
@@ -59,6 +53,6 @@ async def api_key_auth(x_api_key: str = Header(...)):
 
 @asynccontextmanager
 async def redis_context():
-    rsm = RedisSessionManager.create(REDIS_URL)
+    rsm = RedisSessionManager.create(settings.REDIS_URL)
     async with rsm as manager:
         yield manager.connection

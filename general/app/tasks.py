@@ -1,5 +1,6 @@
-from typing import Any, Callable, Optional
+import os
 import traceback
+from typing import Any, Callable, Optional
 
 from celery import Celery
 from celery.schedules import crontab
@@ -10,7 +11,27 @@ from app.workers.retention import RetentionCommand
 from app.workers.test_order_rollup import TestOrderRollupCommand
 from app.sub_services.notifications.factory import NotificationServiceFactory
 
-app = Celery("tasks", broker=settings.CELERY_BROKER)
+# Celery 5.5 разрешает адрес как
+# `os.environ.get("CELERY_BROKER_URL") or conf.first("broker_url", ...)`
+# (`celery/app/utils.py`, свойства `broker_url` и `result_backend`), то есть
+# переменная окружения выигрывает у аргументов `broker=` и `backend=`. Так
+# `settings.CELERY_BROKER` уже один раз молча не применялся: `.env` и
+# docker-compose ставили `CELERY_BROKER_URL` с тем же адресом, и подмены
+# было не видно, пока адрес не разъехался.
+#
+# Поэтому переменные не «не ставим», а приводим к настройке: `general/.env`
+# лежит в `.gitignore`, на каждом сервере он свой, и забытая там строка
+# иначе продолжала бы тихо перебивать `REDIS_URL`. Единственный источник
+# адреса — `settings.CELERY_BROKER` (по умолчанию — `REDIS_URL`); менять
+# брокер надо им, а не этими переменными.
+os.environ["CELERY_BROKER_URL"] = settings.CELERY_BROKER
+os.environ["CELERY_RESULT_BACKEND"] = settings.CELERY_BROKER
+
+app = Celery(
+    "tasks",
+    broker=settings.CELERY_BROKER,
+    backend=settings.CELERY_BROKER,
+)
 # app.conf.update(task_always_eager=True)
 
 # Чистка идёт каждый час, а не раз в сутки. Суточный проход означал бы, что к

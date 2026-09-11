@@ -62,7 +62,7 @@ from datetime import datetime, timezone
 
 import redis
 
-from app.dependencies import REDIS_URL
+from app.config import settings
 
 UTC = timezone.utc
 
@@ -189,7 +189,7 @@ def live_simulators(client=None) -> list[Simulator]:
 
     if client is None:
         own_client = client = redis.Redis.from_url(
-            REDIS_URL,
+            settings.REDIS_URL,
             decode_responses=True,
             socket_connect_timeout=CONNECT_TIMEOUT_SECONDS,
             socket_timeout=CONNECT_TIMEOUT_SECONDS,
@@ -264,7 +264,7 @@ async def hold(shard: int = 0, shards: int = 1, client=None):
         # синглтон, который закрывает первый же вышедший из него потребитель,
         # а флаг должен жить ровно столько, сколько процесс.
         own_client = client = redis.asyncio.Redis.from_url(
-            REDIS_URL, decode_responses=True
+            settings.REDIS_URL, decode_responses=True
         )
 
     await _touch(client, key, value)

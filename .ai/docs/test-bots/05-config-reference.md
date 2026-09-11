@@ -114,5 +114,5 @@
 | `BINANCE_API_KEY` / `BINANCE_SECRET_KEY` | нужны конструктору `BinanceBot`, реально используются только для `get_klines` в питателе свечей |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `TELEGRAM_TEST_BOT_TOPIC_ID` | уведомления об упавших ботах; без токена фабрика вернёт `None` и уведомления просто не уйдут |
 | `MARKET_DATA_SOURCE` | режим питателя цен: `ws` / `rest` / `spot_ws` |
-
-Адрес Redis в `.env` **не задаётся** — он захардкожен в `app/dependencies.py`.
+| `REDIS_URL` | цены, очередь сделок, ключи копиботов, флаги симуляторов. Умолчание `redis://redis:6379/0` — имя сервиса в сети docker-compose; менять только при запуске вне неё |
+| `CELERY_BROKER` | брокер celery и backend результатов. Пусто (умолчание) — тот же `REDIS_URL`. `CELERY_BROKER_URL` и `CELERY_RESULT_BACKEND` в `.env` ни на что не влияют: `app/tasks.py` перезаписывает их этой настройкой |

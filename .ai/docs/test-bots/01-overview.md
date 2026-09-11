@@ -80,7 +80,7 @@ N минут. Сами сделки живут 72 часа, статистика
 | `general/app/scripts/supervisor_control.py` | `paused()` — остановить процессы supervisord на время опасной операции и вернуть как было |
 | `general/app/scripts/simulator_flag.py` | флаг «симулятор работает» в Redis: по нему `paused()` видит процесс, запущенный руками, и отказывается работать под ним |
 | `general/app/utils.py` | `Command` — базовый класс: прогоняет метод `command()` через DI FastAPI вне HTTP-запроса |
-| `general/app/dependencies.py` | `get_session`, `get_redis` (адрес Redis захардкожен в константе `REDIS_URL`: `redis://:@redis:6379/0`) |
+| `general/app/dependencies.py` | `get_session`, `get_redis` (адрес Redis — `settings.REDIS_URL`, умолчание `redis://redis:6379/0`) |
 | `general/app/db/base.py` | синглтоны движка SQLAlchemy и пула Redis |
 | `general/app/sub_services/notifications/factory.py` | Telegram-уведомления об упавших ботах |
 

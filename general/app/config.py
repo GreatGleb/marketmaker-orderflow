@@ -1,4 +1,4 @@
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -7,7 +7,22 @@ class Settings(BaseSettings):
         "postgresql+asyncpg://postgres:secret@localhost:5432/postgres"
     )
 
-    CELERY_BROKER: str = "redis://redis:6379/0"
+    # Адрес Redis: цены, очередь сделок, ключи копиботов, флаги симулятора.
+    # Умолчание — имя сервиса из docker-compose, то есть работает только
+    # внутри его сети. Запуск снаружи (отладка с хоста, Redis на отдельной
+    # машине) задаётся здесь, а не правкой кода:
+    #   REDIS_URL=redis://localhost:6380/0
+    REDIS_URL: str = "redis://redis:6379/0"
+
+    # Брокер celery (он же backend результатов). Пусто — тот же Redis, что
+    # и у всего остального. Отдельная переменная оставлена потому, что
+    # брокер иногда уносят на свой инстанс, чтобы очередь задач не делила
+    # память с ценами.
+    #
+    # Celery предпочёл бы этой настройке переменные окружения
+    # `CELERY_BROKER_URL` и `CELERY_RESULT_BACKEND`, поэтому `app/tasks.py`
+    # перезаписывает их отсюда. Единственный источник адреса — эта строка.
+    CELERY_BROKER: str = ""
 
     # Источник рыночных данных: "ws" — поток Binance (как было),
     # "rest" — поллинг /fapi/v1/ticker/24hr (когда push-поток недоступен).
@@ -106,6 +121,19 @@ class Settings(BaseSettings):
 
     TELEGRAM_TEST_BOT_TOPIC_ID: str = ""
     TELEGRAM_CELERY_TOPIC_ID: str = ""
+
+    @model_validator(mode="after")
+    def _celery_broker_defaults_to_redis(self):
+        """Не задан брокер — берём общий Redis.
+
+        Два адреса, которые почти всегда совпадают, — это один переезд,
+        после которого половина системы смотрит в новый Redis, а celery
+        молча продолжает стучаться в старый.
+        """
+        if not self.CELERY_BROKER.strip():
+            self.CELERY_BROKER = self.REDIS_URL
+
+        return self
 
     @field_validator("RETENTION_ROLLUP_DAYS", mode="before")
     @classmethod
