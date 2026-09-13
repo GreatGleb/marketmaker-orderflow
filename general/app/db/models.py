@@ -551,6 +551,42 @@ class TestBot(BaseId):
             "the proven-bad, it does not require the proven-good"
         ),
     )
+    # Копибот v3 — третий уровень копирования: он выбирает лучшего копибота v2,
+    # тот лучшего v1, а тот уже обычного бота. Той же цепочкой ходит боевой
+    # `binance_bot` (`_get_best_copy_bot`), поэтому сделки такого бота — прогноз
+    # результата реальной торговли.
+    copybot_v3_time_in_minutes: Mapped[Optional[Decimal]] = mapped_column(
+        types.Numeric,
+        nullable=True,
+        comment=(
+            "For copy bot version 3 the time window over which copy bots v2 "
+            "are ranked. Not null marks the bot as a copybot v3"
+        ),
+    )
+    # Ботов v3 заводят парой. Без флага баланс всегда 1000, как у всего парка,
+    # и бот сравним с остальными в общих отчётах. С флагом он ведёт счёт: в
+    # позицию идёт 99% баланса, количество округляется по шагу лота. Разница не
+    # сводится к множителю — PnL линеен по балансу, а минимальный лот нет.
+    copybot_v3_compound_balance: Mapped[bool] = mapped_column(
+        types.Boolean,
+        default=False,
+        comment=(
+            "Reinvest profit and trade 99% of the running balance with lot "
+            "size rounding, mirroring the live bot. False keeps the fixed "
+            "1000 balance used by the rest of the park"
+        ),
+    )
+    # Не `is_active = false`: `active_bots_subquery` отбирает только активных,
+    # и снятие флага убрало бы бота из всех отчётов — ровно там, где факт
+    # остановки важнее всего.
+    copybot_v3_stopped_at: Mapped[Optional[datetime]] = mapped_column(
+        types.DateTime(timezone=True),
+        nullable=True,
+        comment=(
+            "When the balance stopped covering the minimum lot. The bot stays "
+            "active so that it keeps showing up in reports"
+        ),
+    )
 
     def clone(self):
         mapper = inspect(self).mapper

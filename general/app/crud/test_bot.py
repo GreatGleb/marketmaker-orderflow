@@ -9,9 +9,24 @@ from app.crud.base import BaseCrud
 UTC = timezone.utc
 
 
+# Колонки-маркеры: тип бота не хранится отдельным полем, он выводится из того,
+# какая из них не NULL. Заводя следующую версию копибота, добавьте её сюда —
+# `just_not_copy_bots` строится перебором этого списка, и забытая колонка
+# означает, что новый копибот попадёт в пул доноров обычных ботов. Цепочка
+# отбора замкнётся в кольцо (v3 → v2 → v1 → v3), а собственных торговых
+# параметров у копибота нет: донор соберётся из нулей, и это не упадёт и никак
+# не проявится в логах.
+COPYBOT_MARKER_COLUMNS = (
+    "copy_bot_min_time_profitability_min",
+    "copybot_v2_time_in_minutes",
+    "copybot_v3_time_in_minutes",
+)
+
+
 def active_bots_subquery(
     just_copy_bots=False,
     just_copy_bots_v2=False,
+    just_copy_bots_v3=False,
     just_not_copy_bots=False,
     symbol=None,
 ):
@@ -30,11 +45,13 @@ def active_bots_subquery(
         )
     elif just_copy_bots_v2:
         query = query.where(TestBot.copybot_v2_time_in_minutes.is_not(None))
+    elif just_copy_bots_v3:
+        query = query.where(TestBot.copybot_v3_time_in_minutes.is_not(None))
     elif just_not_copy_bots:
-        query = query.where(
-            TestBot.copy_bot_min_time_profitability_min.is_(None),
-            TestBot.copybot_v2_time_in_minutes.is_(None),
-        )
+        query = query.where(*(
+            getattr(TestBot, column).is_(None)
+            for column in COPYBOT_MARKER_COLUMNS
+        ))
 
     if symbol:
         query = query.where(TestBot.symbol == symbol)
@@ -74,13 +91,15 @@ class TestBotCrud(BaseCrud[TestBot]):
 
     async def get_sorted_by_profit(
         self, since=None,
-        just_copy_bots=False, just_copy_bots_v2=False, just_not_copy_bots=False,
+        just_copy_bots=False, just_copy_bots_v2=False,
+        just_copy_bots_v3=False, just_not_copy_bots=False,
         symbol=None,
         by_referral_bot_id=False,
     ):
         active_bots = active_bots_subquery(
             just_copy_bots=just_copy_bots,
             just_copy_bots_v2=just_copy_bots_v2,
+            just_copy_bots_v3=just_copy_bots_v3,
             just_not_copy_bots=just_not_copy_bots,
             symbol=symbol,
         )
@@ -141,6 +160,51 @@ class TestBotCrud(BaseCrud[TestBot]):
         )
         result = await self.session.execute(stmt)
         return result.scalars().all()
+
+    async def get_copybots_v3(self, compound: bool = None):
+        """Боты v3, опционально только компаундирующие.
+
+        Нужен и симулятору (через него бот узнаёт свой стартовый баланс после
+        перезапуска), и отчёту: тот показывает обе кривые рядом.
+        """
+        stmt = select(TestBot).where(
+            TestBot.copybot_v3_time_in_minutes.is_not(None)
+        )
+
+        if compound is not None:
+            stmt = stmt.where(
+                TestBot.copybot_v3_compound_balance.is_(compound)
+            )
+
+        result = await self.session.execute(stmt)
+        return result.scalars().all()
+
+    async def set_balance(self, bot_id: int, balance) -> None:
+        """Текущий баланс компаундирующего бота v3.
+
+        Пишется после каждой сделки, потому что иначе кривая счёта не
+        переживёт перезапуск симулятора. Прочитать своё состояние из
+        `test_orders` бот не может: сделки уезжают в очередь Redis и
+        вставляются пачками, то есть с задержкой.
+        """
+        await self.session.execute(
+            update(TestBot).where(TestBot.id == bot_id).values(balance=balance)
+        )
+        await self.session.commit()
+
+    async def mark_v3_stopped(self, bot_id: int, stopped_at=None) -> None:
+        """Отметить, что на балансе перестал набираться минимальный лот.
+
+        `is_active` намеренно остаётся `true`: `active_bots_subquery` отбирает
+        только активных, и снятие флага убрало бы бота из всех отчётов — ровно
+        там, где факт остановки важнее всего.
+        """
+        await self.session.execute(
+            update(TestBot)
+            .where(TestBot.id == bot_id)
+            .values(copybot_v3_stopped_at=stopped_at or datetime.now(UTC))
+        )
+        await self.session.commit()
 
     async def get_bot_with_volatility_by_id(self, bot_id: int):
         stmt = select(TestBot).where(

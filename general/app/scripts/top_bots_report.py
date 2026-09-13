@@ -117,6 +117,7 @@ async def run(
     all_history: bool = False,
     just_copy_bots: str = None,
     just_copy_bots_v2: str = None,
+    just_copy_bots_v3: str = None,
     just_not_copy_bots: str = None,
     by_referral: bool = False,
     top_count: int = 10,
@@ -135,6 +136,7 @@ async def run(
         filters = {
             "just_copy_bots": just_copy_bots,
             "just_copy_bots_v2": just_copy_bots_v2,
+            "just_copy_bots_v3": just_copy_bots_v3,
             "just_not_copy_bots": just_not_copy_bots,
             "by_referral_bot_id": by_referral,
         }
@@ -202,6 +204,8 @@ def main():
                         help="Только копиботы v1")
     parser.add_argument('-just_copy_v2', '--just_copy_bots_v2', type=str,
                         help="Только копиботы v2")
+    parser.add_argument('-just_copy_v3', '--just_copy_bots_v3', type=str,
+                        help="Только копиботы v3")
     parser.add_argument('-just_not_copy', '--just_not_copy_bots', type=str,
                         help="Только обычные боты")
     parser.add_argument('-ref', '--by_referral', action='store_true',
@@ -220,6 +224,7 @@ def main():
             all_history=args.all_history,
             just_copy_bots=args.just_copy_bots,
             just_copy_bots_v2=args.just_copy_bots_v2,
+            just_copy_bots_v3=args.just_copy_bots_v3,
             just_not_copy_bots=args.just_not_copy_bots,
             by_referral=args.by_referral,
             top_count=args.top_count,

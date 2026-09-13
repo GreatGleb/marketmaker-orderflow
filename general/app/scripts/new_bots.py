@@ -5,6 +5,7 @@ from decimal import Decimal
 
 from sqlalchemy import select, func, text
 
+from app.constants.copybot import copybot_v3_rows
 from app.crud.asset_history import AssetHistoryCrud
 from app.db.base import DatabaseSessionManager
 from app.crud.test_bot import TestBotCrud
@@ -319,6 +320,16 @@ async def create_bots():
                 await bot_crud.bulk_create(new_bots)
                 await session.commit()
                 print(f"✅ Копиботов v2 создано: {len(new_bots)}")
+
+                # Зеркало боевого бота: пара ботов v3 с одним окном,
+                # различает их флаг компаундинга. Состав — в
+                # app/constants/copybot.py, оттуда же его берёт точечный
+                # досев seed_copybot_v3.
+                new_bots = copybot_v3_rows()
+
+                await bot_crud.bulk_create(new_bots)
+                await session.commit()
+                print(f"✅ Копиботов v3 создано: {len(new_bots)}")
             except Exception as e:
                 print(f"❌ Ошибка при создании копиботов: {e}")
 

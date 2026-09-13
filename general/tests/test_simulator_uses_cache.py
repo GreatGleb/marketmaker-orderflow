@@ -21,6 +21,8 @@ FIELDS = [
     "use_trailing_stop", "stop_win_percents", "stop_loss_percents",
     "start_updown_percents", "copybot_v2_time_in_minutes",
     "copy_bot_min_time_profitability_min", "min_timeframe_asset_volatility",
+    "copybot_v3_time_in_minutes", "copybot_v3_compound_balance",
+    "copybot_v3_stopped_at",
 ]
 Bot = namedtuple("Bot", FIELDS)
 
@@ -34,6 +36,8 @@ BOT = Bot(
     start_updown_percents=None, copybot_v2_time_in_minutes=None,
     copy_bot_min_time_profitability_min=None,
     min_timeframe_asset_volatility=None,
+    copybot_v3_time_in_minutes=None, copybot_v3_compound_balance=False,
+    copybot_v3_stopped_at=None,
 )
 
 SHARED = {

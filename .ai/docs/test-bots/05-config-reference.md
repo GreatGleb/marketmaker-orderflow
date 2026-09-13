@@ -24,6 +24,9 @@
 | `copybot_v1_check_for_24h_profitability` | bool | `profitable_bot_updater.py:421` | доп. фильтр донора: прибылен и за 24 ч |
 | `copybot_v1_exclude_losing_donors` | bool | там же | доп. фильтр: выбросить донора, у которого копиры за сутки в минусе. Отсутствие истории копирования — не причина выбрасывать |
 | `copybot_v2_time_in_minutes` | numeric NULL | `demo_test_bot.py:425` | **признак копибота v2** + окно оценки прибыльности копибота-донора |
+| `copybot_v3_time_in_minutes` | numeric NULL | `simulate_bot`, ветка перед v2 | **признак копибота v3** + окно, за которое ранжируются копиботы v2. У обоих ботов `720` — те же 12 часов, что зашиты в боевом `_get_best_copy_bot` |
+| `copybot_v3_compound_balance` | bool | `simulate_bot`, `compound_order_size` | различает пару ботов v3. `false` — баланс всегда 1000, как у парка; `true` — бот ведёт счёт, в позицию идёт 99% баланса, количество округляется по шагу лота |
+| `copybot_v3_stopped_at` | timestamptz NULL | `_v3_stop`, `_v3_is_stopped` | когда на балансе перестал набираться минимальный лот. Бот остаётся `is_active`, иначе выпал бы из отчётов вместе с фактом остановки |
 | `min_timeframe_asset_volatility` | numeric NULL | `demo_test_bot.py:465` | окно в минутах, за которое берётся самая волатильная пара. Заполнено → пара из Redis вместо `symbol`. В нынешнем парке не заполнено ни у кого |
 | `created_at` / `updated_at` | timestamptz | — | из `BaseId` |
 

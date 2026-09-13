@@ -194,6 +194,7 @@ class TestOrderRollupCrud(BaseCrud[TestOrderRollup]):
         since: datetime,
         just_copy_bots=False,
         just_copy_bots_v2=False,
+        just_copy_bots_v3=False,
         just_not_copy_bots=False,
         symbol=None,
         by_referral_bot_id=False,
@@ -225,6 +226,7 @@ class TestOrderRollupCrud(BaseCrud[TestOrderRollup]):
         bots = active_bots_subquery(
             just_copy_bots=just_copy_bots,
             just_copy_bots_v2=just_copy_bots_v2,
+            just_copy_bots_v3=just_copy_bots_v3,
             just_not_copy_bots=just_not_copy_bots,
             symbol=symbol,
         )
@@ -257,6 +259,85 @@ class TestOrderRollupCrud(BaseCrud[TestOrderRollup]):
         rows = (await self.session.execute(stmt)).all()
 
         return rows, rollup_from or raw_from, watermark
+
+    async def profit_series(self, bot_id: int, since: datetime) -> list[tuple]:
+        """Результат бота по блокам времени, от старых к свежим.
+
+        `profit_by_bot` отвечает «сколько всего», а для кривой счёта и
+        просадки нужно «когда сколько». Источники те же два и стыкуются так
+        же: свёртки до watermark, сырьё после. Сырой хвост группируется по
+        блокам той же длины, иначе последние строки ряда были бы мельче
+        остальных и просадка на них считалась бы по другой сетке.
+
+        Возвращает `[(начало блока, прибыль, сделок), ...]`.
+        """
+        bucket = timedelta(minutes=settings.ROLLUP_BUCKET_MINUTES)
+        watermark = await self.rollup_watermark()
+
+        rollup_from, rollup_to, raw_from = split_window(
+            since=since, watermark=watermark, bucket=bucket
+        )
+
+        parts = []
+
+        if rollup_from is not None:
+            parts.append(
+                select(
+                    TestOrderRollup.bucket_start.label("bucket_start"),
+                    # В свёртке колонка называется `profit_loss_sum`, в сырье
+                    # — `profit_loss`; ярлык приводит обе ветки к одному имени.
+                    func.sum(
+                        func.coalesce(TestOrderRollup.profit_loss_sum, 0)
+                    ).label("profit_loss"),
+                    func.sum(TestOrderRollup.orders_count).label(
+                        "orders_count"
+                    ),
+                )
+                .where(
+                    TestOrderRollup.bot_id == bot_id,
+                    TestOrderRollup.bucket_start >= rollup_from,
+                    TestOrderRollup.bucket_start < rollup_to,
+                )
+                .group_by(TestOrderRollup.bucket_start)
+            )
+
+        # Та же сетка, что у build_range: интервал из настроек и origin
+        # 'epoch'. Сдвинь origin — и блоки сырого хвоста встанут между
+        # блоками свёрток, а ряд поедет ровно на границе свёрнутого.
+        raw_bucket = func.date_bin(
+            func.make_interval(0, 0, 0, 0, 0, settings.ROLLUP_BUCKET_MINUTES),
+            TestOrder.created_at,
+            text("TIMESTAMPTZ 'epoch'"),
+        )
+
+        parts.append(
+            select(
+                raw_bucket.label("bucket_start"),
+                func.sum(func.coalesce(TestOrder.profit_loss, 0)).label(
+                    "profit_loss"
+                ),
+                func.count(TestOrder.id).label("orders_count"),
+            )
+            .where(
+                TestOrder.bot_id == bot_id,
+                TestOrder.created_at >= raw_from,
+            )
+            .group_by(raw_bucket)
+        )
+
+        combined = union_all(*parts).subquery()
+
+        stmt = (
+            select(
+                combined.c.bucket_start,
+                func.sum(combined.c.profit_loss).label("profit_loss"),
+                func.sum(combined.c.orders_count).label("orders_count"),
+            )
+            .group_by(combined.c.bucket_start)
+            .order_by(combined.c.bucket_start)
+        )
+
+        return (await self.session.execute(stmt)).all()
 
     @classmethod
     def rollup_part(cls, bots, start: datetime, end: datetime, by_referral):
@@ -349,11 +430,15 @@ class TestOrderRollupCrud(BaseCrud[TestOrderRollup]):
         with
         -- Кандидаты в доноры — те же, кого перебирает воркер:
         -- profitable_bot_ids_for_window ходит с just_not_copy_bots=True.
+        -- Список колонок обязан совпадать с COPYBOT_MARKER_COLUMNS в
+        -- app/crud/test_bot.py: там он перебирается кодом, здесь написан
+        -- руками, и разойтись они могут только молча.
         non_copy as (
             select id from test_bots
             where is_active
               and copy_bot_min_time_profitability_min is null
               and copybot_v2_time_in_minutes is null
+              and copybot_v3_time_in_minutes is null
         ),
         -- Что копиботы этой комбинации параметров делали на самом деле.
         -- Строка свёртки — на (блок, бот, донор, пара), донор нас интересует

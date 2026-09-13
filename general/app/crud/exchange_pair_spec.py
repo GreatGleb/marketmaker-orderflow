@@ -30,15 +30,25 @@ class AssetExchangeSpecCrud(BaseCrud[AssetExchangeSpec]):
         self.session.add(spec)
         return spec, True
 
+    # Границы лота и цены нужны копиботу v3 с компаундингом: он торгует не
+    # условной тысячей, а своим счётом, и когда на балансе перестаёт набираться
+    # minQty, реальный ордер биржа не примет. Остальным ботам парка они не
+    # нужны — те считают на фиксированный баланс и в лот не упираются.
+    EMPTY_MARKET_DATA = {
+        "tick_size": None,
+        "step_size": None,
+        "market_step_size": None,
+        "min_qty": None,
+        "max_qty": None,
+        "min_price": None,
+        "max_price": None,
+    }
+
     @staticmethod
     def extract_step_sizes(filters) -> dict[str, float | None]:
-        """Шаги цены и лота из JSON-фильтров Binance."""
+        """Шаги и границы цены и лота из JSON-фильтров Binance."""
         if not filters:
-            return {
-                "tick_size": None,
-                "step_size": None,
-                "market_step_size": None,
-            }
+            return dict(AssetExchangeSpecCrud.EMPTY_MARKET_DATA)
 
         price_filter = next(
             (f for f in filters if f.get("filterType") == "PRICE_FILTER"), None
@@ -52,18 +62,17 @@ class AssetExchangeSpecCrud(BaseCrud[AssetExchangeSpec]):
             None,
         )
 
+        def _from(source, key):
+            return float(source[key]) if source else None
+
         return {
-            "tick_size": (
-                float(price_filter["tickSize"]) if price_filter else None
-            ),
-            "step_size": (
-                float(lot_size_filter["stepSize"]) if lot_size_filter else None
-            ),
-            "market_step_size": (
-                float(market_lot_filter["stepSize"])
-                if market_lot_filter
-                else None
-            ),
+            "tick_size": _from(price_filter, "tickSize"),
+            "step_size": _from(lot_size_filter, "stepSize"),
+            "market_step_size": _from(market_lot_filter, "stepSize"),
+            "min_qty": _from(lot_size_filter, "minQty"),
+            "max_qty": _from(lot_size_filter, "maxQty"),
+            "min_price": _from(price_filter, "minPrice"),
+            "max_price": _from(price_filter, "maxPrice"),
         }
 
     async def get_step_size_by_symbol(

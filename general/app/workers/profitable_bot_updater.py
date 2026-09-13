@@ -104,15 +104,29 @@ class ProfitableBotUpdaterCommand(Command):
 
     @staticmethod
     async def get_copybot_config(
-            bot_crud, copybot_v2_time_in_minutes = 60
+            bot_crud, copybot_v2_time_in_minutes = 60, donor_version = 1
     ):
+        """Самый прибыльный копибот нужной версии за окно.
+
+        `donor_version` — на кого смотрим: 1 — копиботы v1 (так ходит копибот
+        v2), 2 — копиботы v2 (так ходит копибот v3). Версия-донор всегда ровно
+        на ступень ниже, поэтому один и тот же шаг годится обоим уровням, и
+        копии логики не появляется.
+
+        Себя в пул бот не берёт: `just_copy_bots*` отбирают по колонке-маркеру
+        своей версии, и уровни не пересекаются.
+        """
         copy_bot = None
         copy_bot_id = None
 
         copybot_v2_time_in_minutes = int(copybot_v2_time_in_minutes)
 
         try:
-            profits_data = await bot_crud.get_sorted_by_profit(since=timedelta(minutes=copybot_v2_time_in_minutes), just_copy_bots=True)
+            profits_data = await bot_crud.get_sorted_by_profit(
+                since=timedelta(minutes=copybot_v2_time_in_minutes),
+                just_copy_bots=donor_version == 1,
+                just_copy_bots_v2=donor_version == 2,
+            )
             profits_data_filtered_sorted = sorted([item for item in profits_data if item[1] > 0], key=lambda x: x[1], reverse=True)
 
             try:

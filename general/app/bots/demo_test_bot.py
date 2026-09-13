@@ -6,7 +6,7 @@ import traceback
 from collections import namedtuple
 
 from datetime import datetime, timezone
-from decimal import Decimal
+from decimal import Decimal, ROUND_DOWN
 
 from fastapi import Depends
 
@@ -24,7 +24,10 @@ from app.db.base import DatabaseSessionManager
 from app.constants.commissions import COMMISSION_OPEN
 from app.enums.event_type import StopReasonEvent
 from app.enums.trade_type import TradeType
-from app.sub_services.logic.market_setup import MarketDataBuilder
+from app.sub_services.logic.market_setup import (
+    LOT_DATA_KEYS,
+    MarketDataBuilder,
+)
 from app.sub_services.logic.price_calculator import PriceCalculator
 from app.sub_services.watchers.price_provider import (
     PriceCache,
@@ -37,6 +40,31 @@ from app.workers.profitable_bot_updater import ProfitableBotUpdaterCommand
 from app.sub_services.notifications.factory import NotificationServiceFactory
 
 UTC = timezone.utc
+
+
+class Refusal:
+    """Почему компаундирующий копибот v3 не может поставить ордер.
+
+    Вид важнее текста. `shortage` — на счёте не набирается лот, и только это
+    говорит что-то о состоянии бота. `pair` и `data` — про конкретную пару:
+    копибот торгует парой донора, донор меняется от сделки к сделке, поэтому
+    отказ на одной паре ничего не значит для следующей.
+
+    Без этого различения бот останавливался бы навсегда из-за одной экзотической
+    пары или незасеянных спеков, а прогноз обрывался бы на ровном месте — и
+    выглядело бы это как настоящий слив счёта.
+    """
+
+    def __init__(self, kind: str, text: str):
+        self.kind = kind
+        self.text = text
+
+    @property
+    def is_shortage(self) -> bool:
+        return self.kind == "shortage"
+
+    def __str__(self) -> str:
+        return self.text
 
 
 class StartTestBotsCommand(Command):
@@ -60,6 +88,15 @@ class StartTestBotsCommand(Command):
         self.stop_event = stop_event
         self.shard = shard
         self.shards = shards
+        # Счета компаундирующих ботов v3 и те из них, кому уже не хватает на
+        # минимальный лот. В конфиге их держать нельзя: `_to_bot_objects`
+        # отдаёт namedtuple. Состояние дублируется в `test_bots`, чтобы
+        # пережить перезапуск процесса.
+        self._v3_balances: dict[int, Decimal] = {}
+        self._v3_stopped: set[int] = set()
+        # Сколько попыток подряд упёрлись в нехватку. Обнуляется удачной
+        # сделкой: подряд — значит подряд.
+        self._v3_shortages: dict[int, int] = {}
         # Логи всех шардов лежат в разных файлах, но при чтении их вместе
         # (или в консоли ручного запуска) без пометки не разобрать, чей это.
         self.log_prefix = f'[шард {shard}/{shards}] ' if shards > 1 else ''
@@ -144,6 +181,23 @@ class StartTestBotsCommand(Command):
                     # Пока сессия жива: дальше боты работают на копиях
                     # конфига, а не на ORM-объектах, привязанных к ней.
                     active_bots_tuples = self._to_bot_objects(active_bots)
+
+                    # Остановленные боты v3 остаются активными, чтобы не
+                    # выпасть из отчётов, — значит после перезапуска они снова
+                    # попадут в парк. Отметку времени читаем сразу, иначе
+                    # такой бот молча возобновил бы торговлю с нуля.
+                    self._v3_stopped = {
+                        bot.id
+                        for bot in active_bots_tuples
+                        if getattr(bot, 'copybot_v3_stopped_at', None)
+                    }
+
+                    if self._v3_stopped:
+                        logging.info(
+                            f'{self.log_prefix}Копиботы v3 остановлены ранее '
+                            f'и торговать не будут: '
+                            f'{sorted(self._v3_stopped)}.'
+                        )
 
                     shared_data = await MarketDataBuilder(session).build()
 
@@ -350,6 +404,17 @@ class StartTestBotsCommand(Command):
                 "tick_size": Decimal(str(market_data["tick_size"])),
                 "maker_commission_rate": market_data["maker_commission_rate"],
                 "taker_commission_rate": market_data["taker_commission_rate"],
+                # Те же ключи, что кладёт MarketDataBuilder.build на старте:
+                # пара, догруженная на ходу, должна выглядеть так же, иначе
+                # копибот v3 упал бы на отсутствующем ключе именно на ней.
+                **{
+                    key: (
+                        Decimal(str(market_data[key]))
+                        if market_data.get(key) is not None
+                        else None
+                    )
+                    for key in LOT_DATA_KEYS
+                },
             }
             shared_data[symbol] = data
             cls._market_data_misses.pop(symbol, None)
@@ -431,6 +496,166 @@ class StartTestBotsCommand(Command):
             return obj.isoformat()
         raise TypeError(f"Type {type(obj)} not serializable")
 
+    # --- копибот v3 с компаундингом ---------------------------------------
+    #
+    # Единственный бот парка, который ведёт счёт, а не считает на условную
+    # тысячу: прибыль реинвестируется, в позицию идёт доля баланса, количество
+    # округляется по шагу лота. Первые два — множители, и их можно было бы
+    # получить пересчётом задним числом; лот — нет. Именно он показывает, где
+    # реальный бот перестанет торговать, потому что на счёте не набирается
+    # minQty.
+
+    # Столько же берёт боевой бот (`balanceUSDT099` в binance_bot): остаток —
+    # запас на комиссию и на движение цены между расчётом и постановкой ордера.
+    COMPOUND_BALANCE_SHARE = Decimal("0.99")
+
+    # Сколько попыток подряд должны упереться в нехватку, прежде чем считать
+    # счёт слитым. Одной мало: копибот торгует парой донора, а у пар разные
+    # minQty — на дорогой монете лот набирается, на дешёвой нет. Остановка по
+    # первой же неудаче означала бы, что прогноз обрывается из-за одной
+    # неудачной пары, и выглядело бы это неотличимо от настоящего слива.
+    #
+    # Между попытками бот заново подбирает донора (и вместе с ним пару), так
+    # что десять подряд — это десять разных шансов, а не один повторённый.
+    COMPOUND_SHORTAGE_LIMIT = 10
+
+    def _v3_balance(self, bot_config) -> Decimal:
+        """Текущий счёт бота v3, начиная со значения из `test_bots`.
+
+        Живёт в словаре на команде, а не в конфиге: `_to_bot_objects` отдаёт
+        namedtuple, присвоить в него нельзя. В базу значение уезжает после
+        каждой сделки, поэтому перезапуск симулятора кривую не рвёт.
+        """
+        return self._v3_balances.setdefault(
+            bot_config.id, Decimal(str(bot_config.balance))
+        )
+
+    def _v3_is_stopped(self, bot_id: int) -> bool:
+        return bot_id in self._v3_stopped
+
+    async def _v3_note_shortage(self, bot_id: int, refusal) -> None:
+        """Учесть неудачу и остановить бота, если их накопилось достаточно.
+
+        Нехватка средств — единственный отказ, который что-то говорит о самом
+        боте. Остальные привязаны к паре, и их сюда приносить нельзя.
+        """
+        if not refusal.is_shortage:
+            logging.info(
+                f'копибот v3 {bot_id}: пропускаем сделку на паре — {refusal}'
+            )
+            return
+
+        count = self._v3_shortages.get(bot_id, 0) + 1
+        self._v3_shortages[bot_id] = count
+
+        if count < self.COMPOUND_SHORTAGE_LIMIT:
+            logging.info(
+                f'копибот v3 {bot_id}: не хватает на лот ({refusal}), '
+                f'попытка {count} из {self.COMPOUND_SHORTAGE_LIMIT}'
+            )
+            return
+
+        await self._v3_stop(bot_id=bot_id, reason=str(refusal))
+
+    async def _v3_stop(self, bot_id: int, reason: str) -> None:
+        """Остановить бота: на балансе больше не набирается лот.
+
+        `is_active` не трогаем — `active_bots_subquery` отбирает только
+        активных, и снятие флага убрало бы бота из всех отчётов ровно там, где
+        факт остановки важнее всего. Вместо этого проставляется
+        `copybot_v3_stopped_at`, и он же переживает перезапуск процесса.
+        """
+        if bot_id in self._v3_stopped:
+            return
+
+        self._v3_stopped.add(bot_id)
+
+        logging.info(
+            f"🛑 Копибот v3 {bot_id} остановлен: {reason}. "
+            f"Дальше он не торгует; в отчёте останется с датой остановки."
+        )
+
+        dsm = DatabaseSessionManager.create(settings.DB_URL)
+
+        async with dsm.get_session() as session:
+            await TestBotCrud(session).mark_v3_stopped(bot_id=bot_id)
+
+    @classmethod
+    def compound_order_size(cls, balance, price, market_data):
+        """(количество, номинал, отказ) для компаундирующего бота.
+
+        Количество округляется вниз по шагу лота — именно так считает биржа, и
+        именно поэтому номинал позиции не равен доле баланса. PnL потом
+        считается от номинала, а не от счёта: `calculate_pnl` внутри делает
+        `amount = balance / open_price`, так что номинал даёт ровно то
+        количество, которое получилось после округления.
+
+        Отказ — объект `Refusal`, а не просто текст: вызывающий код обязан
+        различать нехватку средств от всего остального. Копибот торгует парой
+        донора, а донор меняется, поэтому «на этой паре лот не набрался» и
+        «счёт кончился» — разные утверждения.
+        """
+        step = market_data.get("step_size")
+        min_qty = market_data.get("min_qty")
+        max_qty = market_data.get("max_qty")
+
+        if not step:
+            return None, None, Refusal(
+                "data", "нет шага лота в asset_exchange_specs"
+            )
+
+        if not price or price <= 0:
+            return None, None, Refusal("data", "нет цены")
+
+        amount = Decimal(str(balance)) * cls.COMPOUND_BALANCE_SHARE
+        step = Decimal(str(step))
+        quantity = (
+            Decimal(amount / Decimal(str(price)) / step).to_integral_value(
+                rounding=ROUND_DOWN
+            )
+            * step
+        )
+
+        if quantity <= 0:
+            return None, None, Refusal(
+                "shortage", "на баланс не набирается ни одного шага лота"
+            )
+
+        if min_qty is not None and quantity < Decimal(str(min_qty)):
+            return None, None, Refusal(
+                "shortage",
+                f"количество {quantity} меньше минимального {min_qty}",
+            )
+
+        if max_qty is not None and quantity > Decimal(str(max_qty)):
+            # Не нехватка, а наоборот: на этой паре позиция слишком крупная.
+            # На следующей паре донора всё сойдётся, поэтому это пропуск.
+            return None, None, Refusal(
+                "pair",
+                f"количество {quantity} больше максимального {max_qty}",
+            )
+
+        return quantity, quantity * Decimal(str(price)), None
+
+    @staticmethod
+    def is_price_within_bounds(price, market_data) -> bool:
+        """Цена входа в границах пары.
+
+        В отличие от лота это состояние рынка, а не счёта: бот не
+        останавливается, а пропускает попытку — так же, как боевой отменяет
+        ордер и заходит на новый круг.
+        """
+        min_price = market_data.get("min_price")
+        max_price = market_data.get("max_price")
+
+        if min_price is not None and price < Decimal(str(min_price)):
+            return False
+
+        if max_price is not None and price > Decimal(str(max_price)):
+            return False
+
+        return True
+
     async def simulate_bot(
         self,
         redis,
@@ -445,7 +670,56 @@ class StartTestBotsCommand(Command):
             bot_id = original_bot_config.id
             bot_config = None
 
-            if original_bot_config.copybot_v2_time_in_minutes:
+            is_compound_v3 = bool(
+                original_bot_config.copybot_v3_time_in_minutes
+                and original_bot_config.copybot_v3_compound_balance
+            )
+
+            if is_compound_v3 and self._v3_is_stopped(bot_id):
+                # Баланса уже не хватает на минимальный лот. Проверка стоит
+                # до отбора донора: считать рейтинги ради бота, который всё
+                # равно не поставит ордер, незачем.
+                await asyncio.sleep(60)
+                return
+
+            if original_bot_config.copybot_v3_time_in_minutes:
+                # Третий уровень: копибот v3 берёт лучшего копибота v2, а тот
+                # выбирает лучшего v1. Спуск на два шага здесь и заканчивается
+                # — дальше `is_it_copy` дочитает конфиг реального бота из
+                # Redis, ровно как для v1 и v2.
+                dsm = DatabaseSessionManager.create(settings.DB_URL)
+                async with dsm.get_session() as session:
+                    bot_crud = TestBotCrud(session)
+
+                    copybot_v2 = (
+                        await ProfitableBotUpdaterCommand.get_copybot_config(
+                            bot_crud=bot_crud,
+                            copybot_v2_time_in_minutes=(
+                                original_bot_config.copybot_v3_time_in_minutes
+                            ),
+                            donor_version=2,
+                        )
+                    )
+
+                    if copybot_v2:
+                        bot_config = (
+                            await ProfitableBotUpdaterCommand.get_copybot_config(
+                                bot_crud=bot_crud,
+                                copybot_v2_time_in_minutes=(
+                                    copybot_v2.copybot_v2_time_in_minutes
+                                ),
+                                donor_version=1,
+                            )
+                        )
+
+                if not bot_config:
+                    # Заглушки у v3 нет намеренно: торговать конфигом, который
+                    # никто не выбирал, — это не прогноз. Ждём и пробуем снова;
+                    # `return` отдаёт управление внешнему циклу `_run_loop`.
+                    logging.info(f'there no copybot_v3 ref {bot_id}')
+                    await asyncio.sleep(60)
+                    return
+            elif original_bot_config.copybot_v2_time_in_minutes:
                 dsm = DatabaseSessionManager.create(settings.DB_URL)
                 async with dsm.get_session() as session:
                     bot_crud = TestBotCrud(session)
@@ -546,6 +820,39 @@ class StartTestBotsCommand(Command):
                 entry_price_sell = (
                     initial_price - bot_config.start_updown_ticks * tick_size
                 )
+
+                if is_compound_v3:
+                    # Проверяем до ожидания входа, как это делает боевой бот в
+                    # `_get_order_params`: ждать пробоя уровня ради ордера,
+                    # который биржа не примет, незачем.
+                    _, _, refusal = self.compound_order_size(
+                        balance=self._v3_balance(original_bot_config),
+                        price=initial_price,
+                        market_data=data,
+                    )
+
+                    if not refusal and not all(
+                        self.is_price_within_bounds(price, data)
+                        for price in (entry_price_buy, entry_price_sell)
+                    ):
+                        refusal = Refusal(
+                            "pair", f'цена входа вне границ пары {symbol}'
+                        )
+
+                    if refusal:
+                        await self._v3_note_shortage(
+                            bot_id=bot_id, refusal=refusal
+                        )
+
+                        if self._v3_is_stopped(bot_id):
+                            return
+
+                        # Выходим из ожидания входа, а не крутимся здесь:
+                        # и пара, и её границы приходят от донора, поэтому
+                        # шанс на следующей попытке даёт только переподбор
+                        # донора во внешнем цикле.
+                        await asyncio.sleep(60)
+                        return
 
                 is_timeout_occurred = False
 
@@ -729,6 +1036,29 @@ class StartTestBotsCommand(Command):
 
             balance = bot_config.balance
 
+            if is_compound_v3:
+                # В расчёт уходит номинал позиции, а не счёт: количество уже
+                # округлено по шагу лота, и `calculate_pnl` с
+                # `amount = balance / open_price` даёт ровно его. Иначе PnL
+                # считался бы по дробному количеству, которого на бирже не
+                # бывает.
+                account_balance = self._v3_balance(original_bot_config)
+                _, notional, refusal = self.compound_order_size(
+                    balance=account_balance,
+                    price=open_price,
+                    market_data=data,
+                )
+
+                if refusal:
+                    # Цена ушла между проверкой и входом. Сделку не пишем:
+                    # реальный ордер такого размера биржа не приняла бы.
+                    await self._v3_note_shortage(
+                        bot_id=bot_id, refusal=refusal
+                    )
+                    continue
+
+                balance = notional
+
             pnl = PriceCalculator.calculate_pnl(
                 balance=balance,
                 close_price=close_price,
@@ -774,3 +1104,25 @@ class StartTestBotsCommand(Command):
                 ORDER_QUEUE_KEY,
                 json.dumps(order_data, default=self.json_serializer),
             )
+
+            if is_compound_v3:
+                # Счёт растёт и падает на результат сделки — в этом и смысл
+                # компаундирующего варианта. Пишем сразу в `test_bots`:
+                # прочитать своё состояние из `test_orders` бот не может,
+                # сделки уезжают в очередь и вставляются пачками.
+                account_balance = account_balance + pnl
+                self._v3_balances[bot_id] = account_balance
+                # Сделка прошла — значит серия неудач прервана.
+                self._v3_shortages.pop(bot_id, None)
+
+                dsm = DatabaseSessionManager.create(settings.DB_URL)
+
+                async with dsm.get_session() as session:
+                    await TestBotCrud(session).set_balance(
+                        bot_id=bot_id, balance=account_balance
+                    )
+
+                logging.info(
+                    f'копибот v3 {bot_id}: счёт {account_balance:.4f} '
+                    f'после сделки на {pnl:.4f}'
+                )

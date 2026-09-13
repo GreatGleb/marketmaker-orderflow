@@ -15,7 +15,7 @@
 | [01-overview.md](01-overview.md) | Что это, из каких процессов состоит, карта файлов |
 | [02-data-flow.md](02-data-flow.md) | Redis-ключи, таблицы БД, кто пишет / кто читает |
 | [03-simulation-loop.md](03-simulation-loop.md) | Построчный разбор `simulate_bot` — главный цикл |
-| [04-bot-types.md](04-bot-types.md) | 5 типов ботов: тиковый, процентный, MA, copybot v1, copybot v2 |
+| [04-bot-types.md](04-bot-types.md) | Типы ботов: тиковый, процентный, MA, copybot v1/v2/v3 |
 | [05-config-reference.md](05-config-reference.md) | Все поля `TestBot` и `TestOrder` и что они делают |
 | [06-runbook.md](06-runbook.md) | Запуск, остановка, создание ботов, отчёты |
 | [07-modify-guide.md](07-modify-guide.md) | Рецепты типовых изменений — читать перед правкой кода |

@@ -131,6 +131,9 @@ docker exec -it orderflow_general python -m app.scripts.new_bots
   (:363-367);
 * 80 копиботов v1 (20 окон × 24h-фильтр × ref-фильтр) (:420-444);
 * 20 копиботов v2 (:446-463);
+* 2 копибота v3 — зеркало боевого бота (`copybot_v3_rows` в
+  `app/constants/copybot.py`): один с фиксированным балансом, второй с
+  компаундингом;
 * 2016 волатильных процентных ботов (8 × 9 × 7 × 4 окна `min_timeframe`)
   (`:469`) — но только если посчитался средний процент за тик; иначе блок
   напечатает `❌ Ошибка после 0 созданных волатильных ботов` и парк выйдет
@@ -139,6 +142,20 @@ docker exec -it orderflow_general python -m app.scripts.new_bots
 
 После пересоздания перезапустите симулятор — иначе он работает по старому
 снимку: `supervisorctl restart test_bots:*`.
+
+### Завести копиботов v3, не трогая парк
+
+`new_bots.py` умеет только пересоздать парк целиком. Чтобы добавить ботов v3 к
+уже работающему парку, есть идемпотентный сид — повторный запуск ничего не
+дублирует:
+
+```bash
+docker exec -it orderflow_general python -m app.scripts.seed_copybot_v3 --dry-run
+docker exec -it orderflow_general python -m app.scripts.seed_copybot_v3
+```
+
+Он гасит шарды симулятора на время вставки и поднимает обратно (`paused`), так
+что отдельный перезапуск не нужен.
 
 ## Отчёты
 
@@ -155,6 +172,9 @@ docker exec -it orderflow_general python -m app.scripts.top_bots_report -m 30 -j
 # две недели по копиботам v2
 docker exec -it orderflow_general python -m app.scripts.top_bots_report -d 14 -just_copy_v2 1
 
+# только копиботы v3
+docker exec -it orderflow_general python -m app.scripts.top_bots_report -d 7 -just_copy_v3 1
+
 # кто из доноров кормит копиботов — считать по referral_bot_id
 docker exec -it orderflow_general python -m app.scripts.top_bots_report -d 7 -ref
 
@@ -163,6 +183,10 @@ docker exec -it orderflow_general python -m app.scripts.top_bots_report -all
 
 # брал ли копибот того донора, которого дал бы отбор
 docker exec -it orderflow_general python -m app.scripts.referral_match_report
+
+# прогноз результата боевого бота: обе кривые v3, просадка, остановка
+docker exec -it orderflow_general python -m app.scripts.v3_forecast_report
+docker exec -it orderflow_general python -m app.scripts.v3_forecast_report -d 3
 docker exec -it orderflow_general python -m app.scripts.referral_match_report --details
 ```
 
