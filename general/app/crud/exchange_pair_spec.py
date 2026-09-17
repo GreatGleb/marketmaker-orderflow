@@ -24,6 +24,9 @@ class AssetExchangeSpecCrud(BaseCrud[AssetExchangeSpec]):
         # spec = result.scalar_one_or_none()
 
         if spec:
+            # Обновляем биржевые ограничения; комиссии в spec_data не входят.
+            for key, value in spec_data.items():
+                setattr(spec, key, value)
             return spec, False
 
         spec = AssetExchangeSpec(**spec_data)

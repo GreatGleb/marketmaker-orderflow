@@ -14,6 +14,7 @@ AAPLUSDT, NVDAUSDT, ANTHROPICUSDT — по суффиксу они неотли�
     python -m tests.test_tradable_pairs
 """
 import asyncio
+from unittest.mock import AsyncMock, patch
 
 from app.constants.markets import (
     TRADABLE_CONTRACT_TYPES,
@@ -192,9 +193,10 @@ async def check_binance_candidates_drop_stocks():
         print(f"    по суффиксу прошли бы {by_suffix}: первой акция, "
               f"а ETHUSDC не прошла бы вовсе")
 
-        chosen = await sw.rank_from_binance(
-            session=None, top=2, reference=(KNOWN, ALLOWED)
-        )
+        with patch.object(sw, "affordable_symbols", AsyncMock(side_effect=lambda session, symbols: symbols)):
+            chosen = await sw.rank_from_binance(
+                session=None, top=2, reference=(KNOWN, ALLOWED)
+            )
     finally:
         sw.httpx = original
 

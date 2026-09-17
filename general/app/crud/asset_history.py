@@ -66,7 +66,7 @@ class AssetHistoryCrud(BaseCrud[AssetHistory]):
         return rows[0] if rows else None
 
     async def get_top_jumpy_symbols(
-        self, since: datetime, limit: int = 50, jump_threshold: float = 0.5,
+        self, since: datetime, limit: int | None = 50, jump_threshold: float = 0.5,
         window_seconds: int = 1,
         min_quote_volume_24h: int = MIN_QUOTE_VOLUME_24H,
         min_jumps: int = MIN_JUMPS,

@@ -17,13 +17,15 @@ async def fetch_binance_data():
         return response.json()
 
 
-async def seed_binance_data():
+async def seed_binance_data(data=None):
+    """Создаёт и обновляет спецификации; data позволяет переиспользовать снимок."""
     dsm = DatabaseSessionManager.create(settings.DB_URL)
     async with dsm.get_session() as session:
         asset_crud = AssetPairCrud(session)
         spec_crud = AssetExchangeSpecCrud(session)
 
-        data = await fetch_binance_data()
+        if data is None:
+            data = await fetch_binance_data()
         symbols = data.get("symbols", [])
 
         newly_added_count = 0
@@ -67,7 +69,7 @@ async def seed_binance_data():
                 "settle_plan": s.get("settlePlan"),
                 "trigger_protect": s.get("triggerProtect"),
                 "filters": s.get("filters"),
-                "order_type": s.get("orderType"),
+                "order_type": s.get("orderTypes"),
                 "time_in_force": s.get("timeInForce"),
                 "liquidation_fee": s.get("liquidationFee"),
                 "market_take_bound": s.get("marketTakeBound"),
@@ -78,7 +80,7 @@ async def seed_binance_data():
                 newly_added_count += 1
 
         await session.commit()
-        print(f"✅ Seeded {newly_added_count} pairs from Binance.")
+        print(f"✅ Спецификации Binance обновлены: {len(symbols)}, новых: {newly_added_count}.")
 
 
 if __name__ == "__main__":

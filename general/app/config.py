@@ -1,4 +1,6 @@
-from pydantic import field_validator, model_validator
+from decimal import Decimal
+
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -23,6 +25,11 @@ class Settings(BaseSettings):
     # `CELERY_BROKER_URL` и `CELERY_RESULT_BACKEND`, поэтому `app/tasks.py`
     # перезаписывает их отсюда. Единственный источник адреса — эта строка.
     CELERY_BROKER: str = ""
+
+    # Максимальный номинал покупки при отборе пар, без плеча и комиссий.
+    WATCHED_PAIR_MAX_BUY_NOTIONAL_USDT: Decimal = Field(
+        default=Decimal("9"), gt=0, allow_inf_nan=False
+    )
 
     # Источник рыночных данных: "ws" — поток Binance (как было),
     # "rest" — поллинг /fapi/v1/ticker/24hr (когда push-поток недоступен).

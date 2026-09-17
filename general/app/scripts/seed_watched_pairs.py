@@ -50,6 +50,7 @@ import httpx
 from sqlalchemy import delete, func, select
 
 from app.config import settings
+from app.services.watched_affordability import affordable_symbols
 from app.constants.markets import (
     TRADABLE_CONTRACT_TYPES,
     TRADABLE_QUOTE_ASSETS,
@@ -156,7 +157,7 @@ async def rank_by_jumps(session, hours, top, jump_threshold):
     """Топ пар по резким движениям в локальной истории цен."""
     since = datetime.now(UTC) - timedelta(hours=hours)
     rows = await AssetHistoryCrud(session).get_top_jumpy_symbols(
-        since=since, limit=top, jump_threshold=jump_threshold
+        since=since, limit=None, jump_threshold=jump_threshold
     )
 
     # Обычно тут не отсекается ничего: история собирается только по
@@ -165,7 +166,8 @@ async def rank_by_jumps(session, hours, top, jump_threshold):
     # руками или запросом.
     allowed = await tradable_symbols(session)
     kept = set(keep_tradable([row.symbol for row in rows], allowed, "Скачки"))
-    rows = [row for row in rows if row.symbol in kept]
+    kept = set(await affordable_symbols(session, kept))
+    rows = [row for row in rows if row.symbol in kept][:top]
 
     if not rows:
         # Скачков не нашлось. Если истории тоже нет — это случай разгона. А
@@ -302,7 +304,8 @@ async def rank_from_binance(session, top, reference=None):
     candidates.sort(key=lambda item: item[1], reverse=True)
     # Отсев идёт до среза по top, иначе нетоварные пары занимали бы места в
     # топе и список выходил бы короче запрошенного.
-    chosen = candidates[:top]
+    affordable = set(await affordable_symbols(session, [s for s, _, _ in candidates]))
+    chosen = [row for row in candidates if row[0] in affordable][:top]
 
     logging.info(
         f"Из {len(tickers)} пар Binance пропущено {untradable} не бессрочных "
@@ -333,8 +336,8 @@ def restart_price_feed() -> None:
     """Перезапускает питатель цен, чтобы он подхватил новый список пар.
 
     В режиме spot_ws подписка на стримы формируется один раз при подключении
-    (watch_ws_and_save.py:313), поэтому без перезапуска новые пары останутся
-    без котировок. В режимах ws и rest фильтр перечитывается на каждом сбросе
+    (watch_ws_and_save.py, run_spot_ws_listener), поэтому без перезапуска
+    новые пары останутся без котировок. В режимах ws и rest фильтр перечитывается на каждом сбросе
     в БД, и перезапуск там просто безвреден.
     """
     restart("symbols_history")
@@ -380,8 +383,13 @@ async def watch_and_rank(candidates, top, watch_minutes, jump_threshold):
 
     async with dsm.get_session() as session:
         rows = await AssetHistoryCrud(session).get_top_jumpy_symbols(
-            since=started_at, limit=top, jump_threshold=jump_threshold
+            since=started_at, limit=None, jump_threshold=jump_threshold
         )
+        allowed = set(await affordable_symbols(
+            session, list(dict.fromkeys([*(row.symbol for row in rows), *candidates]))
+        ))
+        rows = [row for row in rows if row.symbol in allowed][:top]
+        candidates = [symbol for symbol in candidates if symbol in allowed]
 
     if rows:
         logging.info(f"Скачки за {watch_minutes} мин (порог {jump_threshold}%):")
@@ -429,7 +437,7 @@ async def bootstrap(session, top, candidates_count, watch_minutes, jump_threshol
 
 
 async def get_pinned_symbols(session):
-    """Пары, которые нельзя убирать из watched_pair ни при какой пересборке.
+    """Пары активных ботов, сохраняемые при условии доступности покупки.
 
     Это пары активных ботов с закреплённым символом: пропадёт пара — пропадут
     цены по ней, и боты просто встанут. Волатильных ботов это не касается,
@@ -441,7 +449,7 @@ async def get_pinned_symbols(session):
 async def apply_watched_pairs(session, symbols, replace):
     """Кладёт выбранные пары в watched_pair. Возвращает (добавлено, удалено).
 
-    При replace=True сначала досыпает пары активных ботов: удалять их нельзя,
+    При replace=True досыпает допустимые пары активных ботов,
     поэтому итоговый список может оказаться чуть длиннее запрошенного топа.
     Так честнее, чем тратить на них места в рейтинге.
 
@@ -450,20 +458,22 @@ async def apply_watched_pairs(session, symbols, replace):
     на входе в неё дешевле, чем полагаться на то, что все вызывающие
     отфильтровали список сами.
     """
+    if replace:
+        pinned = await get_pinned_symbols(session)
+        symbols = list(dict.fromkeys([*symbols, *pinned]))
+    else:
+        # Защита короткого топа сохраняет лишь всё ещё доступные старые пары.
+        existing_symbols = (await session.execute(
+            select(AssetExchangeSpec.symbol).join(
+                WatchedPair, WatchedPair.asset_exchange_id == AssetExchangeSpec.id
+            )
+        )).scalars().all()
+        symbols = list(dict.fromkeys([*symbols, *existing_symbols]))
+
+    symbols = await affordable_symbols(session, symbols)
     symbols = keep_tradable(
         symbols, await tradable_symbols(session), "Запись в watched_pair"
     )
-
-    if replace:
-        pinned = await get_pinned_symbols(session)
-        missing_pinned = [s for s in pinned if s not in set(symbols)]
-
-        if missing_pinned:
-            logging.info(
-                f"Досыпаю пары активных ботов, их нельзя терять: "
-                f"{missing_pinned}"
-            )
-            symbols = list(symbols) + missing_pinned
 
     spec_rows = (
         await session.execute(
@@ -489,16 +499,12 @@ async def apply_watched_pairs(session, symbols, replace):
 
     removed = 0
 
-    if replace:
-        to_remove = existing_ids - wanted_ids
-
-        if to_remove:
-            await session.execute(
-                delete(WatchedPair).where(
-                    WatchedPair.asset_exchange_id.in_(to_remove)
-                )
-            )
-            removed = len(to_remove)
+    to_remove = existing_ids - wanted_ids
+    if to_remove:
+        await session.execute(
+            delete(WatchedPair).where(WatchedPair.asset_exchange_id.in_(to_remove))
+        )
+        removed = len(to_remove)
 
     added = 0
 
@@ -526,6 +532,8 @@ async def seed_watched_pairs(
     dsm = DatabaseSessionManager.create(settings.DB_URL)
 
     async with paused_simulator(), dsm.get_session() as session:
+        # Обновляем справочник до ранжирования; затем используем общий снимок.
+        await affordable_symbols(session, [])
         symbols = None
 
         if not bootstrap_mode:
@@ -547,17 +555,18 @@ async def seed_watched_pairs(
             replace = True
 
         if not symbols:
-            logging.info("❌ Не удалось отобрать ни одной пары.")
-            return
+            logging.info("Не найдено кандидатов; проверяю доступность старого списка.")
+            symbols = []
+            replace = False
 
         # Список вышел вдвое короче запрошенного — значит что-то не сложилось:
-        # сорвался добор (сеть), или рынок стоит. Удалять в этом случае нельзя:
+        # сорвался добор (сеть), или рынок стоит. Доступные старые пары сохраняем:
         # питатель начнёт собирать историю только по остатку, и следующий отбор
         # замкнётся на нём же. Лучше оставить старые пары и разобраться.
         if replace and len(symbols) * 2 < top:
             logging.info(
                 f"⚠️ Отобрано всего {len(symbols)} пар из {top} — только "
-                f"пополняю список, не заменяю: иначе watched_pair схлопнется "
+                f"сохраняю доступные старые пары: иначе watched_pair схлопнется "
                 f"до остатка. Разберитесь с причиной и запустите снова."
             )
             replace = False
