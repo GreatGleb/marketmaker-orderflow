@@ -1,5 +1,6 @@
 import asyncio, logging
 from decimal import Decimal
+from tests.price_fixtures import price_snapshot
 from app.sub_services.watchers.price_provider import PriceCache, PriceProvider, PriceWatcher
 
 logging.basicConfig(format='  %(message)s', level=logging.INFO)
@@ -15,7 +16,7 @@ class FakeRedis:
 
 async def main():
     print("=== 1. кэш отдаёт цену, боты не ходят в Redis ===")
-    r = FakeRedis({"price:AUSDT": "1.5", "price:BUSDT": "2.5"})
+    r = FakeRedis({"price_snapshot:AUSDT": price_snapshot("1.5"), "price_snapshot:BUSDT": price_snapshot("2.5")})
     cache = PriceCache(redis=r)
     cache.start()
     provider = PriceProvider(redis=r, cache=cache)
@@ -26,7 +27,7 @@ async def main():
     assert set(prices) == {Decimal("1.5")} and r.gets == 0
 
     print("\n=== 2. ключ протух -> бот ждёт, а не берёт старую цену ===")
-    r.store.pop("price:AUSDT")
+    r.store.pop("price_snapshot:AUSDT")
     await asyncio.sleep(0.15)
     print(f"  в кэше после протухания: {cache.get('AUSDT')}")
     assert cache.get("AUSDT") is None
@@ -36,11 +37,11 @@ async def main():
     print(f"  бот всё ещё ждёт: {not waiting.done()}")
     assert not waiting.done()
 
-    r.store["price:AUSDT"] = "9.9"
+    r.store["price_snapshot:AUSDT"] = price_snapshot("9.9")
     print(f"  после возврата цены: {await asyncio.wait_for(waiting, 3)}")
 
     print("\n=== 3. новая пара подхватывается на ходу ===")
-    r.store["price:NEWUSDT"] = "7.7"
+    r.store["price_snapshot:NEWUSDT"] = price_snapshot("7.7")
     price = await asyncio.wait_for(provider.get_price("NEWUSDT"), 3)
     print(f"  NEWUSDT = {price}")
     assert price == Decimal("7.7")
@@ -75,6 +76,6 @@ async def main():
     print(f"  попыток обновления: {broken.mgets}, таск жив: {not c2._task.done()}")
     assert broken.mgets > 2 and not c2._task.done()
 
-    print("\nOK: кэш работает, TTL уважается, старый путь не задет")
+    print("\nOK: кэш работает, TTL уважается, прямое чтение проверено")
 
 asyncio.run(main())

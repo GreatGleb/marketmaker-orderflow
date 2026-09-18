@@ -7,6 +7,7 @@ import asyncio
 import json
 from collections import namedtuple
 from decimal import Decimal
+from tests.price_fixtures import price_snapshot
 from unittest.mock import patch
 
 import app.bots.demo_test_bot as m
@@ -51,7 +52,7 @@ SHARED = {
 
 class FakeRedis:
     def __init__(self):
-        self.store = {"price:BMTUSDT": "0.09"}
+        self.store = {"price_snapshot:BMTUSDT": price_snapshot("0.09")}
         self.direct_gets = []
         self.mgets = 0
         self.pushed = []
@@ -92,7 +93,7 @@ async def main():
             binance_bot=None,
         )
 
-    price_gets = [k for k in redis.direct_gets if k.startswith("price:")]
+    price_gets = [k for k in redis.direct_gets if k.startswith(("price:", "price_snapshot:"))]
 
     print(f"  сделок записано: {len(redis.pushed)}")
     print(f"  обновлений кэша (MGET): {redis.mgets}")

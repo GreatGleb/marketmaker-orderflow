@@ -13,7 +13,10 @@ from app.crud.exchange_pair_spec import AssetExchangeSpecCrud
 # Список общий с `StartTestBotsCommand.get_market_data`, который догружает пару
 # на ходу: собранная там запись обязана выглядеть так же, иначе копибот v3
 # упал бы на отсутствующем ключе именно на догруженной паре.
-LOT_DATA_KEYS = ("step_size", "min_qty", "max_qty", "min_price", "max_price")
+LOT_DATA_KEYS = (
+    "step_size", "min_qty", "max_qty", "min_price", "max_price",
+    "market_step_size", "market_min_qty", "market_max_qty", "min_notional",
+)
 
 
 class MarketDataBuilder:

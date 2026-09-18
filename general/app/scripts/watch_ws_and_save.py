@@ -16,6 +16,7 @@ from app.crud.watched_pair import WatchedPairCrud
 from app.crud.exchange_pair_spec import AssetExchangeSpecCrud
 from app.dependencies import redis_context
 from app.scripts.seed_binance_data import seed_binance_data
+from app.sub_services.watchers.price_snapshot import parse_snapshot, publish_prices
 
 WS_URL = "wss://fstream.binance.com/ws/!ticker@arr"
 REST_URL = "https://fapi.binance.com/fapi/v1/ticker/24hr"
@@ -24,11 +25,6 @@ SPOT_EXCHANGE_INFO_URL = "https://api.binance.com/api/v3/exchangeInfo"
 SUBSCRIBE_CHUNK = 150
 # Если БД не успевает, буфер не должен расти в память бесконечно.
 MAX_SPOT_BUFFER = 20000
-# TTL для ключей price:*. Без него цена живёт в Redis вечно: если пара выпала
-# из watched_pair или питатель встал, боты продолжают «торговать» по
-# замороженной цене и засоряют test_orders. С TTL они просто ждут (и пишут
-# об этом в лог — см. PriceProvider.get_price).
-PRICE_TTL_SECONDS = 120
 # Как часто перепроверять список пар, если подписываться пока не на что.
 EMPTY_SYMBOLS_RETRY_SECONDS = 30
 
@@ -69,10 +65,13 @@ async def save_filtered_assets(session: AsyncSession, redis, data: list[dict], i
         return
 
     records = []
-    latest_prices = {}
+    snapshots = []
+    rejected = 0
 
     for item in data:
         symbol = item.get("s")
+        if not isinstance(symbol, str):
+            continue
 
         if is_need_to_use_just_waiting_list_of_assets:
             if symbol not in symbols_set:
@@ -80,6 +79,14 @@ async def save_filtered_assets(session: AsyncSession, redis, data: list[dict], i
         else:
             if not symbol.endswith("USDT"):
                 continue
+
+        snapshot = {
+            "symbol": symbol, "price": item.get("c"),
+            "event_time_ms": item.get("E"), "source": source,
+        }
+        if parse_snapshot(snapshot) is None:
+            rejected += 1
+            continue
 
         try:
             asset_exchange_id = symbol_to_id[symbol]
@@ -119,19 +126,18 @@ async def save_filtered_assets(session: AsyncSession, redis, data: list[dict], i
         #     await redis.set(f"price:{symbol}", last_price)
 
         records.append(record_data)
+        snapshots.append(snapshot)
 
-        if last_price is not None:
-            latest_prices[f"price:{symbol}"] = last_price
-
-    # Пайплайн, а не mset: нужен TTL на каждый ключ, а mset его не умеет.
-    # Пайплайн уходит одним round-trip'ом, поэтому флашер по-прежнему
-    # укладывается в интервал — в отличие от последовательных set.
-    if latest_prices:
-        async with redis.pipeline(transaction=False) as pipe:
-            for price_key, price_value in latest_prices.items():
-                pipe.set(price_key, price_value, ex=PRICE_TTL_SECONDS)
-
-            await pipe.execute()
+    accepted = await publish_prices(redis, snapshots)
+    rejected += sum(not ok for ok in accepted)
+    records = [record for record, ok in zip(records, accepted) if ok]
+    if rejected:
+        logging.info(f"Котировки: отклонено {rejected} устаревших, повторных или неверных событий.")
+    if not records:
+        # Чтение списка пар тоже открывает транзакцию. При остановке
+        # обновлений биржи не держим её до следующей принятой котировки.
+        await session.rollback()
+        return
 
     is_stopped = await redis.get(f"asset_history:stop")
     if is_stopped:
@@ -218,15 +224,13 @@ _REST_TO_WS_FIELDS = {
 def _rest_tickers_to_ws_format(tickers: list[dict]) -> list[dict]:
     """Приводит ответ REST /fapi/v1/ticker/24hr к формату потока !ticker@arr,
     чтобы save_filtered_assets работала без изменений."""
-    now_ms = int(time.time() * 1000)
-
     data = []
     for ticker in tickers:
         item = {
             ws_key: ticker.get(rest_key)
             for rest_key, ws_key in _REST_TO_WS_FIELDS.items()
         }
-        item["E"] = ticker.get("closeTime") or now_ms
+        item["E"] = ticker.get("closeTime")
         data.append(item)
 
     return data
@@ -244,7 +248,6 @@ async def run_rest_poller():
             last_check_time = time.time()
             check_interval = 60
             is_need_to_use_just_waiting_list_of_assets = False
-            last_close_time = {}
 
             while True:
                 started_at = time.time()
@@ -269,25 +272,13 @@ async def run_rest_poller():
                     tickers = response.json()
 
                     if isinstance(tickers, list):
-                        # Binance кэширует общий ответ /ticker/24hr примерно на 5 с,
-                        # поэтому при опросе раз в 2 с одна и та же котировка приходит
-                        # несколько раз. Сохраняем только реально обновившиеся.
-                        fresh_tickers = [
-                            ticker for ticker in tickers
-                            if ticker.get("closeTime") != last_close_time.get(ticker.get("symbol"))
-                        ]
-
-                        for ticker in fresh_tickers:
-                            last_close_time[ticker.get("symbol")] = ticker.get("closeTime")
-
-                        if fresh_tickers:
-                            async with redis_context() as redis:
-                                await save_filtered_assets(
-                                    session,
-                                    redis,
-                                    _rest_tickers_to_ws_format(fresh_tickers),
-                                    is_need_to_use_just_waiting_list_of_assets
-                                )
+                        # Возраст и монотонность проверяются в общем пути
+                        # публикации, с сохранением метки времени в Redis.
+                        async with redis_context() as redis:
+                            await save_filtered_assets(
+                                session, redis, _rest_tickers_to_ws_format(tickers),
+                                is_need_to_use_just_waiting_list_of_assets,
+                            )
                 except Exception as e:
                     logging.info(f"❌ REST polling error: {e}. Повтор через {interval} с.")
 

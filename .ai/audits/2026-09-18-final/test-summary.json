@@ -1,0 +1,142 @@
+[
+  {
+    "test": "test_active_pairs_session",
+    "code": 0,
+    "seconds": 1.599
+  },
+  {
+    "test": "test_aggregate_dedup",
+    "code": 0,
+    "seconds": 1.943
+  },
+  {
+    "test": "test_aggregate_load",
+    "code": 0,
+    "seconds": 1.802
+  },
+  {
+    "test": "test_copybot_config_types",
+    "code": 0,
+    "seconds": 2.483
+  },
+  {
+    "test": "test_copybot_v3_chain",
+    "code": 0,
+    "seconds": 1.725
+  },
+  {
+    "test": "test_copybot_v3_compound",
+    "code": 0,
+    "seconds": 2.348
+  },
+  {
+    "test": "test_copybot_v3_series_db",
+    "code": 0,
+    "seconds": 1.56
+  },
+  {
+    "test": "test_copybot_v3_simulation",
+    "code": 0,
+    "seconds": 2.856
+  },
+  {
+    "test": "test_donor_filter",
+    "code": 0,
+    "seconds": 1.943
+  },
+  {
+    "test": "test_error_notify_throttle",
+    "code": 0,
+    "seconds": 2.707
+  },
+  {
+    "test": "test_price_cache",
+    "code": 0,
+    "seconds": 1.78
+  },
+  {
+    "test": "test_price_freshness",
+    "code": 0,
+    "seconds": 2.09
+  },
+  {
+    "test": "test_price_publication",
+    "code": 0,
+    "seconds": 1.993
+  },
+  {
+    "test": "test_redis_url_setting",
+    "code": 0,
+    "seconds": 2.185
+  },
+  {
+    "test": "test_referral_match",
+    "code": 0,
+    "seconds": 1.502
+  },
+  {
+    "test": "test_report_windows",
+    "code": 0,
+    "seconds": 1.408
+  },
+  {
+    "test": "test_retention_db",
+    "code": 0,
+    "seconds": 2.785
+  },
+  {
+    "test": "test_retention_windows",
+    "code": 0,
+    "seconds": 1.702
+  },
+  {
+    "test": "test_sharding",
+    "code": 0,
+    "seconds": 2.437
+  },
+  {
+    "test": "test_simulator_flag",
+    "code": 0,
+    "seconds": 0.595
+  },
+  {
+    "test": "test_simulator_session_release",
+    "code": 0,
+    "seconds": 2.395
+  },
+  {
+    "test": "test_simulator_uses_cache",
+    "code": 0,
+    "seconds": 2.452
+  },
+  {
+    "test": "test_tradable_pairs",
+    "code": 0,
+    "seconds": 1.702
+  },
+  {
+    "test": "test_volatile_pair_pick",
+    "code": 0,
+    "seconds": 1.623
+  },
+  {
+    "test": "test_watched_affordability",
+    "code": 0,
+    "seconds": 1.751
+  },
+  {
+    "test": "test_watched_pairs_pick",
+    "code": 0,
+    "seconds": 1.85
+  },
+  {
+    "test": "test_window_cache",
+    "code": 0,
+    "seconds": 1.727
+  },
+  {
+    "test": "test_worker_session_release",
+    "code": 0,
+    "seconds": 1.738
+  }
+]

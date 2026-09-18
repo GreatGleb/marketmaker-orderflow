@@ -21,6 +21,8 @@ import json
 
 from collections import namedtuple
 from decimal import Decimal
+from app.sub_services.logic.donor_selection import donor_payload
+from tests.price_fixtures import price_snapshot
 from unittest.mock import patch
 
 import app.bots.demo_test_bot as m
@@ -42,6 +44,10 @@ MARKET = {
     "maker_commission_rate": None,
     "taker_commission_rate": COMMISSION,
     "step_size": Decimal("0.1"),
+    "market_step_size": Decimal("0.1"),
+    "market_min_qty": Decimal("1"),
+    "market_max_qty": Decimal("100000"),
+    "min_notional": Decimal("5"),
     "min_qty": Decimal("1"),
     "max_qty": Decimal("1000"),
     "min_price": Decimal("0.01"),
@@ -165,8 +171,8 @@ class FakeSessionManager:
 class FakeRedis:
     def __init__(self):
         self.store = {
-            f"price:{SYMBOL}": str(PRICE),
-            f"copy_bot_{COPYBOT_V1_ID}": json.dumps(DONOR_CONFIG),
+            f"price_snapshot:{SYMBOL}": price_snapshot(str(PRICE)),
+            f"copy_bot_{COPYBOT_V1_ID}": json.dumps(donor_payload(DONOR_CONFIG)),
         }
         self.pushed = []
 
@@ -237,7 +243,7 @@ async def check_one_bad_pair_does_not_stop_the_bot():
     FakeCrud.saved_balances.clear()
 
     # minQty такая, что на тысячу не набирается ни при какой цене.
-    unreachable = dict(MARKET, min_qty=Decimal("10000"))
+    unreachable = dict(MARKET, min_qty=Decimal("10000"), max_qty=Decimal("100000"))
 
     redis, command = await run_once(V3_BOT, market=unreachable)
 

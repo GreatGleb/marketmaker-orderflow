@@ -7,6 +7,7 @@ from decimal import Decimal
 from sqlalchemy.orm import Mapped
 
 from app.enums.trade_type import TradeType
+from app.sub_services.watchers.price_snapshot import PRICE_MAX_AGE_MS, parse_snapshot
 
 
 class PriceCache:
@@ -29,6 +30,7 @@ class PriceCache:
     def __init__(self, redis):
         self.redis = redis
         self._prices: dict[str, Decimal] = {}
+        self._expires: dict[str, tuple[int, float]] = {}
         self._symbols: set[str] = set()
         self._task: asyncio.Task | None = None
 
@@ -38,6 +40,9 @@ class PriceCache:
 
     def get(self, symbol: str) -> Decimal | None:
         """Последняя известная цена. None — цены сейчас нет."""
+        expiry = self._expires.get(symbol)
+        if expiry is None or time.monotonic() >= expiry[1]:
+            return None
         return self._prices.get(symbol)
 
     def start(self) -> None:
@@ -50,6 +55,8 @@ class PriceCache:
                 await self._refresh_once()
                 delay = self.REFRESH_INTERVAL_SECONDS
             except Exception as e:
+                self._prices.clear()
+                self._expires.clear()
                 logging.info(f"Кэш цен: ошибка чтения из Redis: {e}")
                 delay = self.ERROR_RETRY_SECONDS
 
@@ -61,16 +68,24 @@ class PriceCache:
         if not symbols:
             return
 
-        values = await self.redis.mget([f"price:{s}" for s in symbols])
+        values = await self.redis.mget([f"price_snapshot:{s}" for s in symbols])
+        now_ms = int(time.time() * 1000)
+        now_monotonic = time.monotonic()
 
         for symbol, value in zip(symbols, values):
-            if value is None:
-                # Ключ протух (TTL 120 с в watch_ws_and_save) или пара выпала
-                # из watched_pair. Убираем из кэша, чтобы боты ждали, а не
-                # торговали по замороженной цене.
+            snapshot = parse_snapshot(value, now_ms)
+            if snapshot is None:
                 self._prices.pop(symbol, None)
-            else:
-                self._prices[symbol] = Decimal(value)
+                self._expires.pop(symbol, None)
+                continue
+            price, event_ms = snapshot
+            deadline = now_monotonic + (event_ms + PRICE_MAX_AGE_MS - now_ms) / 1000
+            previous = self._expires.get(symbol)
+            if previous and previous[0] == event_ms:
+                # Повтор и перевод системных часов назад не продлевают жизнь.
+                deadline = min(deadline, previous[1])
+            self._prices[symbol] = price
+            self._expires[symbol] = (event_ms, deadline)
 
 
 class PriceProvider:
@@ -100,7 +115,7 @@ class PriceProvider:
 
         cls._last_missing_log[symbol] = now
         logging.info(
-            f"⏳ Нет цены в Redis по ключу price:{symbol} "
+            f"⏳ Нет свежей цены в Redis по ключу price_snapshot:{symbol} "
             f"уже {waiting_seconds:.0f} с — боты на этой паре стоят. "
             f"Проверьте app.scripts.watch_ws_and_save."
         )
@@ -112,9 +127,9 @@ class PriceProvider:
 
             return self.cache.get(symbol)
 
-        price_str = await self.redis.get(f"price:{symbol}")
+        snapshot = parse_snapshot(await self.redis.get(f"price_snapshot:{symbol}"))
 
-        return Decimal(price_str) if price_str else None
+        return snapshot[0] if snapshot else None
 
     async def get_price(self, symbol: str) -> Decimal:
         # Ждём цену бесконечно: бросать открытую позицию из-за паузы в

@@ -6,7 +6,7 @@ import traceback
 from collections import namedtuple
 
 from datetime import datetime, timezone
-from decimal import Decimal, ROUND_DOWN
+from decimal import Decimal, DecimalException, ROUND_FLOOR, localcontext
 
 from fastapi import Depends
 
@@ -29,6 +29,8 @@ from app.sub_services.logic.market_setup import (
     MarketDataBuilder,
 )
 from app.sub_services.logic.price_calculator import PriceCalculator
+from app.sub_services.logic.quantity_grid import quantity_grid
+from app.sub_services.logic.donor_selection import DonorChanged, DonorGuard, read_donor
 from app.sub_services.watchers.price_provider import (
     PriceCache,
     PriceWatcher,
@@ -427,8 +429,7 @@ class StartTestBotsCommand(Command):
         # copy_bot_{id} (profitable_bot_updater.py:420). Для копибота v1 здесь
         # его собственный id, для v2 — id донора-копибота v1; ключ есть в обоих
         # случаях, поэтому отдельная ветка с пересчётом через БД не нужна.
-        refer_bot_js = await redis.get(f"copy_bot_{bot_config.id}")
-        refer_bot = json.loads(refer_bot_js) if refer_bot_js else None
+        refer_bot = await read_donor(redis, bot_config.id)
 
         if not refer_bot:
             logging.info(
@@ -487,7 +488,8 @@ class StartTestBotsCommand(Command):
 
         return {
             'config': ref_bot_config,
-            'referral_bot_id': refer_bot['id']
+            'referral_bot_id': refer_bot['id'],
+            'selection': refer_bot,
         }
 
     @staticmethod
@@ -595,47 +597,53 @@ class StartTestBotsCommand(Command):
         донора, а донор меняется, поэтому «на этой паре лот не набрался» и
         «счёт кончился» — разные утверждения.
         """
-        step = market_data.get("step_size")
-        min_qty = market_data.get("min_qty")
-        max_qty = market_data.get("max_qty")
+        try:
+            with localcontext() as ctx:
+                ctx.prec = 60
 
-        if not step:
-            return None, None, Refusal(
-                "data", "нет шага лота в asset_exchange_specs"
-            )
+                def number(value):
+                    value = Decimal(str(value))
+                    if not value.is_finite():
+                        raise ValueError("неконечное число")
+                    return value
 
-        if not price or price <= 0:
-            return None, None, Refusal("data", "нет цены")
-
-        amount = Decimal(str(balance)) * cls.COMPOUND_BALANCE_SHARE
-        step = Decimal(str(step))
-        quantity = (
-            Decimal(amount / Decimal(str(price)) / step).to_integral_value(
-                rounding=ROUND_DOWN
-            )
-            * step
-        )
-
-        if quantity <= 0:
-            return None, None, Refusal(
-                "shortage", "на баланс не набирается ни одного шага лота"
-            )
-
-        if min_qty is not None and quantity < Decimal(str(min_qty)):
-            return None, None, Refusal(
-                "shortage",
-                f"количество {quantity} меньше минимального {min_qty}",
-            )
-
-        if max_qty is not None and quantity > Decimal(str(max_qty)):
-            # Не нехватка, а наоборот: на этой паре позиция слишком крупная.
-            # На следующей паре донора всё сойдётся, поэтому это пропуск.
-            return None, None, Refusal(
-                "pair",
-                f"количество {quantity} больше максимального {max_qty}",
-            )
-
-        return quantity, quantity * Decimal(str(price)), None
+                price, balance = number(price), number(balance)
+                if price <= 0:
+                    raise ValueError("нет положительной цены")
+                lots = [tuple(number(market_data[key]) for key in keys) for keys in (
+                    ("min_qty", "max_qty", "step_size"),
+                    ("market_min_qty", "market_max_qty", "market_step_size"),
+                )]
+                minimum = number(market_data["min_notional"])
+                if minimum <= 0 or lots[0][2] <= 0 or any(
+                    lo < 0 or hi <= 0 or lo > hi or step < 0
+                    for lo, hi, step in lots
+                ):
+                    raise ValueError("некорректные границы лота/номинала")
+                lower, upper = max(l[0] for l in lots), min(l[1] for l in lots)
+                if lower > upper:
+                    raise ValueError("границы лотов не пересекаются")
+                origin, step = quantity_grid(lots)
+                amount = balance * cls.COMPOUND_BALANCE_SHARE
+                quantity = origin + ((amount / price - origin) / step).to_integral_value(
+                    rounding=ROUND_FLOOR
+                ) * step
+                notional = quantity * price
+                # Страховка от округления деления на самой границе бюджета.
+                if notional > amount:
+                    quantity -= step
+                    notional = quantity * price
+                if quantity <= 0 or quantity < lower:
+                    return None, None, Refusal("shortage", "не хватает на минимальный лот")
+                if quantity > upper:
+                    return None, None, Refusal("pair", f"количество {quantity} больше максимального {upper}")
+                if notional < minimum:
+                    return None, None, Refusal(
+                        "shortage", f"номинал {notional} меньше минимального {minimum}",
+                    )
+                return quantity, notional, None
+        except (KeyError, TypeError, ValueError, DecimalException) as error:
+            return None, None, Refusal("data", f"нет или некорректны ограничения/цена: {error}")
 
     @staticmethod
     def is_price_within_bounds(price, market_data) -> bool:
@@ -656,7 +664,45 @@ class StartTestBotsCommand(Command):
 
         return True
 
-    async def simulate_bot(
+    @staticmethod
+    async def select_copybot(original):
+        """Текущий v1 и вся цепочка выбора; сессия закрыта до ожидания цены."""
+        if not (original.copybot_v3_time_in_minutes or original.copybot_v2_time_in_minutes):
+            return original, ()
+        dsm = DatabaseSessionManager.create(settings.DB_URL)
+        async with dsm.get_session() as session:
+            crud = TestBotCrud(session)
+            parent = original
+            chain = []
+            if original.copybot_v3_time_in_minutes:
+                parent = await ProfitableBotUpdaterCommand.get_copybot_config(
+                    bot_crud=crud,
+                    copybot_v2_time_in_minutes=original.copybot_v3_time_in_minutes,
+                    donor_version=2,
+                )
+                if not parent:
+                    return None, ()
+                chain.append(parent.id)
+            selected = await ProfitableBotUpdaterCommand.get_copybot_config(
+                bot_crud=crud,
+                copybot_v2_time_in_minutes=parent.copybot_v2_time_in_minutes,
+                donor_version=1,
+            )
+            if not selected:
+                return None, ()
+            return selected, (*chain, selected.id)
+
+    async def simulate_bot(self, redis, original_bot_config, shared_data,
+                           stop_event, price_provider, binance_bot):
+        try:
+            await self._simulate_bot(redis, original_bot_config, shared_data,
+                                     stop_event, price_provider, binance_bot)
+        except DonorChanged:
+            # Позиция ещё не открыта. Следующий вызов из _run_loop заново
+            # выберет донора; старые уровни и ожидающие задачи не сохраняются.
+            logging.info("Выбор донора отозван для %s", original_bot_config.id)
+
+    async def _simulate_bot(
         self,
         redis,
         original_bot_config: TestBot,
@@ -682,65 +728,14 @@ class StartTestBotsCommand(Command):
                 await asyncio.sleep(60)
                 return
 
-            if original_bot_config.copybot_v3_time_in_minutes:
-                # Третий уровень: копибот v3 берёт лучшего копибота v2, а тот
-                # выбирает лучшего v1. Спуск на два шага здесь и заканчивается
-                # — дальше `is_it_copy` дочитает конфиг реального бота из
-                # Redis, ровно как для v1 и v2.
-                dsm = DatabaseSessionManager.create(settings.DB_URL)
-                async with dsm.get_session() as session:
-                    bot_crud = TestBotCrud(session)
-
-                    copybot_v2 = (
-                        await ProfitableBotUpdaterCommand.get_copybot_config(
-                            bot_crud=bot_crud,
-                            copybot_v2_time_in_minutes=(
-                                original_bot_config.copybot_v3_time_in_minutes
-                            ),
-                            donor_version=2,
-                        )
-                    )
-
-                    if copybot_v2:
-                        bot_config = (
-                            await ProfitableBotUpdaterCommand.get_copybot_config(
-                                bot_crud=bot_crud,
-                                copybot_v2_time_in_minutes=(
-                                    copybot_v2.copybot_v2_time_in_minutes
-                                ),
-                                donor_version=1,
-                            )
-                        )
-
-                if not bot_config:
-                    # Заглушки у v3 нет намеренно: торговать конфигом, который
-                    # никто не выбирал, — это не прогноз. Ждём и пробуем снова;
-                    # `return` отдаёт управление внешнему циклу `_run_loop`.
-                    logging.info(f'there no copybot_v3 ref {bot_id}')
-                    await asyncio.sleep(60)
-                    return
-            elif original_bot_config.copybot_v2_time_in_minutes:
-                dsm = DatabaseSessionManager.create(settings.DB_URL)
-                async with dsm.get_session() as session:
-                    bot_crud = TestBotCrud(session)
-
-                    copybot_v2_time_in_minutes = original_bot_config.copybot_v2_time_in_minutes
-                    bot_config = (
-                        await ProfitableBotUpdaterCommand.get_copybot_config(
-                            bot_crud=bot_crud,
-                            copybot_v2_time_in_minutes=copybot_v2_time_in_minutes
-                        )
-                    )
-
-                if not bot_config:
-                    logging.info(f'there no copybot_v2 ref {bot_id}')
-                    await asyncio.sleep(60)
-                    return
-
+            bot_config, chain = await self.select_copybot(original_bot_config)
             if not bot_config:
-                bot_config = original_bot_config
+                await asyncio.sleep(60)
+                return
 
             is_it_copy = bot_config.copy_bot_min_time_profitability_min
+            donor_guard = None
+            copybot_id = bot_config.id
 
             if is_it_copy:
                 # Сессия к БД здесь больше не нужна: конфиг донора берётся
@@ -757,6 +752,15 @@ class StartTestBotsCommand(Command):
                 if not bot_config:
                     await asyncio.sleep(60)
                     return
+
+                async def chain_is_current():
+                    selected, current_chain = await self.select_copybot(original_bot_config)
+                    return selected is not None and current_chain == chain
+
+                donor_guard = DonorGuard(
+                    redis, copybot_id, updating_config_res['selection'],
+                    chain_check=chain_is_current if chain else None,
+                )
 
                 logging.info(f'found ref for {bot_id}')
 
@@ -796,13 +800,18 @@ class StartTestBotsCommand(Command):
             if bot_id == 1:
                 logging.info('bot_id 1 started work')
 
+            async def before_entry(awaitable):
+                if donor_guard:
+                    return await donor_guard.wait(awaitable)
+                return await awaitable
+
             bot_config = (
-                await ProfitableBotUpdaterCommand.update_config_for_percentage(
+                await before_entry(ProfitableBotUpdaterCommand.update_config_for_percentage(
                     bot_config=bot_config,
                     price_provider=price_provider,
                     symbol=symbol,
                     tick_size=tick_size,
-                )
+                ))
             )
 
             # Один на сделку, а не на каждую попытку входа: он лёгкий, но
@@ -812,7 +821,7 @@ class StartTestBotsCommand(Command):
             )
 
             while True:
-                initial_price = await price_provider.get_price(symbol=symbol)
+                initial_price = await before_entry(price_provider.get_price(symbol=symbol))
 
                 entry_price_buy = (
                     initial_price + bot_config.start_updown_ticks * tick_size
@@ -876,7 +885,7 @@ class StartTestBotsCommand(Command):
 
                     timeout = int(wait_seconds)
 
-                    trade_type, entry_price = await asyncio.wait_for(
+                    trade_type, entry_price = await before_entry(asyncio.wait_for(
                         price_watcher.wait_for_entry_price(
                             symbol=symbol,
                             entry_price_buy=entry_price_buy,
@@ -885,7 +894,7 @@ class StartTestBotsCommand(Command):
                             bot_config=bot_config,
                         ),
                         timeout=timeout,
-                    )
+                    ))
                 except asyncio.TimeoutError:
                     is_timeout_occurred = True
 
@@ -896,6 +905,31 @@ class StartTestBotsCommand(Command):
                     continue
                 else:
                     break
+
+            if donor_guard:
+                await donor_guard.check(final=True)
+                # Проверка донора ждала Redis/SQL: за это время цена сигнала
+                # могла измениться или истечь. Старый сигнал не переносим
+                # на новую цену; следующий проход заново ждёт входа.
+                current_price = await price_provider._read_price(symbol)
+                if current_price is None or current_price != entry_price:
+                    logging.info("Цена сигнала изменилась до входа бота %s", bot_id)
+                    return
+
+            # Фиксируем объём до открытия, по фактической цене сигнала.
+            # В удержании и на закрытии его уже нельзя пересчитывать.
+            if is_compound_v3:
+                account_balance = self._v3_balance(original_bot_config)
+                _, notional, refusal = self.compound_order_size(
+                    account_balance, entry_price, data,
+                )
+                if not refusal and not self.is_price_within_bounds(entry_price, data):
+                    refusal = Refusal("pair", f"цена входа вне границ пары {symbol}")
+                if refusal:
+                    await self._v3_note_shortage(bot_id=bot_id, refusal=refusal)
+                    if not self._v3_is_stopped(bot_id):
+                        await asyncio.sleep(60)
+                    return
 
             open_price = entry_price
             price_from_previous_step = entry_price
@@ -1042,21 +1076,6 @@ class StartTestBotsCommand(Command):
                 # `amount = balance / open_price` даёт ровно его. Иначе PnL
                 # считался бы по дробному количеству, которого на бирже не
                 # бывает.
-                account_balance = self._v3_balance(original_bot_config)
-                _, notional, refusal = self.compound_order_size(
-                    balance=account_balance,
-                    price=open_price,
-                    market_data=data,
-                )
-
-                if refusal:
-                    # Цена ушла между проверкой и входом. Сделку не пишем:
-                    # реальный ордер такого размера биржа не приняла бы.
-                    await self._v3_note_shortage(
-                        bot_id=bot_id, refusal=refusal
-                    )
-                    continue
-
                 balance = notional
 
             pnl = PriceCalculator.calculate_pnl(

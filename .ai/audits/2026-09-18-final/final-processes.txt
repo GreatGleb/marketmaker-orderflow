@@ -1,0 +1,12 @@
+binance_bot                      STOPPED   Not started
+candles_history                  STOPPED   Not started
+fastapi                          RUNNING   pid 10, uptime 19:10:11
+insert_test_orders               STOPPED   Sep 18 03:50 PM
+rebuild_watched_pairs            STOPPED   Sep 18 03:49 PM
+script_for_tests                 STOPPED   Not started
+set_profitable_bot               STOPPED   Sep 18 03:49 PM
+set_volatile_pairs               STOPPED   Sep 18 03:49 PM
+symbols_history                  STOPPED   Sep 18 03:49 PM
+test_bots:test_bots_00           STOPPED   Sep 18 03:49 PM
+test_bots:test_bots_01           STOPPED   Sep 18 03:49 PM
+test_bots:test_bots_02           STOPPED   Sep 18 03:49 PM

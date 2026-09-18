@@ -1,0 +1,142 @@
+{
+  "total": 31,
+  "passed": 31,
+  "failed": 0,
+  "skipped": 0,
+  "database": "orderflow_audit_tests_20260918",
+  "redis": "orderflow_audit_redis_test",
+  "logs": "/tmp/orderflow-recheck-20260918/tests.jsonl",
+  "tests": [
+    {
+      "test": "test_active_pairs_session",
+      "seconds": 1.436
+    },
+    {
+      "test": "test_aggregate_dedup",
+      "seconds": 1.857
+    },
+    {
+      "test": "test_aggregate_load",
+      "seconds": 1.894
+    },
+    {
+      "test": "test_copybot_config_types",
+      "seconds": 2.568
+    },
+    {
+      "test": "test_copybot_v3_chain",
+      "seconds": 1.735
+    },
+    {
+      "test": "test_copybot_v3_compound",
+      "seconds": 2.414
+    },
+    {
+      "test": "test_copybot_v3_series_db",
+      "seconds": 1.507
+    },
+    {
+      "test": "test_copybot_v3_simulation",
+      "seconds": 2.659
+    },
+    {
+      "test": "test_donor_filter",
+      "seconds": 1.691
+    },
+    {
+      "test": "test_donor_freshness",
+      "seconds": 5.489
+    },
+    {
+      "test": "test_donor_publication",
+      "seconds": 2.525
+    },
+    {
+      "test": "test_error_notify_throttle",
+      "seconds": 2.771
+    },
+    {
+      "test": "test_price_cache",
+      "seconds": 1.901
+    },
+    {
+      "test": "test_price_freshness",
+      "seconds": 2.134
+    },
+    {
+      "test": "test_price_publication",
+      "seconds": 2.148
+    },
+    {
+      "test": "test_redis_url_setting",
+      "seconds": 2.202
+    },
+    {
+      "test": "test_referral_match",
+      "seconds": 1.522
+    },
+    {
+      "test": "test_report_windows",
+      "seconds": 1.47
+    },
+    {
+      "test": "test_retention_db",
+      "seconds": 2.68
+    },
+    {
+      "test": "test_retention_windows",
+      "seconds": 1.728
+    },
+    {
+      "test": "test_sharding",
+      "seconds": 2.439
+    },
+    {
+      "test": "test_simulator_flag",
+      "seconds": 0.604
+    },
+    {
+      "test": "test_simulator_session_release",
+      "seconds": 2.416
+    },
+    {
+      "test": "test_simulator_uses_cache",
+      "seconds": 2.541
+    },
+    {
+      "test": "test_tradable_pairs",
+      "seconds": 1.706
+    },
+    {
+      "test": "test_v3_market_limits",
+      "seconds": 2.421
+    },
+    {
+      "test": "test_volatile_pair_pick",
+      "seconds": 1.572
+    },
+    {
+      "test": "test_watched_affordability",
+      "seconds": 2.025
+    },
+    {
+      "test": "test_watched_pairs_pick",
+      "seconds": 1.943
+    },
+    {
+      "test": "test_window_cache",
+      "seconds": 1.91
+    },
+    {
+      "test": "test_worker_session_release",
+      "seconds": 1.88
+    }
+  ],
+  "source_sha256": {
+    "general/app/bots/demo_test_bot.py": "db7894c1c20f17ece9daebe65d4410b3ffb95578019ee6062a67427ae6a4ec88",
+    "general/app/sub_services/logic/donor_selection.py": "1a02710f99e3b1a991dbf30c73ba04ec8e1a48aaa7b310512267119b209db0be",
+    "general/app/sub_services/logic/quantity_grid.py": "0dca81919600a012302808f1fc0f6583356585bd12fd3d34536d72b80067999f",
+    "general/app/crud/exchange_pair_spec.py": "0c6aa114d8d839e52be457d8acd541d323de3b4f5f60a4756fbd86a218eedd12",
+    "general/app/workers/profitable_bot_updater.py": "97f6e0e01bc572ea78ecd3361f387c46e15150b9c71c1b25ce6cb2f09bd0c894"
+  }
+}

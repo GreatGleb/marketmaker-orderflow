@@ -29,6 +29,10 @@ from app.enums.trade_type import TradeType
 # Пара с крупным шагом лота: на ней округление видно глазами.
 MARKET = {
     "step_size": Decimal("0.1"),
+    "market_step_size": Decimal("0.1"),
+    "market_min_qty": Decimal("1"),
+    "market_max_qty": Decimal("100000"),
+    "min_notional": Decimal("5"),
     "min_qty": Decimal("1"),
     "max_qty": Decimal("1000"),
     "min_price": Decimal("0.01"),

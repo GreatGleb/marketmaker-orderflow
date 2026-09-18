@@ -92,7 +92,8 @@ class FakeRedis:
     def __init__(self):
         self.keys = {}
 
-    async def set(self, key, value):
+    async def set(self, key, value, ex):
+        assert ex == 90
         self.keys[key] = value
 
 

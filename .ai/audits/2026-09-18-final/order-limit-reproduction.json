@@ -1,0 +1,78 @@
+{
+  "live_pair": [
+    {
+      "balance": "10",
+      "price": "0.0189400",
+      "quantity": "522.0",
+      "notional": "9.88668000",
+      "minimum_notional": "5",
+      "refusal": null,
+      "accepted_below_minimum": false
+    },
+    {
+      "balance": "5",
+      "price": "0.0189400",
+      "quantity": "261.0",
+      "notional": "4.94334000",
+      "minimum_notional": "5",
+      "refusal": null,
+      "accepted_below_minimum": true
+    },
+    {
+      "balance": "4",
+      "price": "0.0189400",
+      "quantity": "209.0",
+      "notional": "3.95846000",
+      "minimum_notional": "5",
+      "refusal": null,
+      "accepted_below_minimum": true
+    },
+    {
+      "balance": "1",
+      "price": "0.0189400",
+      "quantity": "52.0",
+      "notional": "0.98488000",
+      "minimum_notional": "5",
+      "refusal": null,
+      "accepted_below_minimum": true
+    }
+  ],
+  "market_max_counterexamples": [
+    {
+      "symbol": "AVAXUSDT",
+      "quantity": "50001.0",
+      "market_max": "50000",
+      "lot_max": "500000",
+      "refusal": null
+    },
+    {
+      "symbol": "LRCUSDT",
+      "quantity": "2000001.0",
+      "market_max": "2000000",
+      "lot_max": "20000000",
+      "refusal": null
+    },
+    {
+      "symbol": "NFPUSDT",
+      "quantity": "5000000.1",
+      "market_max": "5000000",
+      "lot_max": "50000000",
+      "refusal": null
+    },
+    {
+      "symbol": "WIFUSDC",
+      "quantity": "600000.1",
+      "market_max": "600000",
+      "lot_max": "2000000",
+      "refusal": null
+    },
+    {
+      "symbol": "AAVEUSDC",
+      "quantity": "3000.1",
+      "market_max": "3000",
+      "lot_max": "10000",
+      "refusal": null
+    }
+  ],
+  "market_max_counterexample_count": 897
+}

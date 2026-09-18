@@ -15,6 +15,7 @@ Redis (`copy_bot_{id}`) и что из этого собирает
 import asyncio
 import json
 from decimal import Decimal
+from app.sub_services.logic.donor_selection import donor_payload
 
 from app.bots.demo_test_bot import StartTestBotsCommand
 from app.constants.volatility import most_volatile_symbol_key
@@ -144,7 +145,7 @@ def check_types(config):
 
 async def check_copybot_config(payload, donor):
     result = await StartTestBotsCommand.update_config_from_referral_bot(
-        bot_config=donor, redis=FakeRedis(json.dumps(payload))
+        bot_config=donor, redis=FakeRedis(json.dumps(donor_payload(payload)))
     )
     config = result["config"]
 
@@ -194,8 +195,8 @@ async def check_copybot_config(payload, donor):
 
 
 async def check_stale_key_format(donor):
-    # Ключ copy_bot_*, записанный прошлой версией воркера, живёт в Redis до
-    # его следующего цикла — до 30 секунд после обновления.
+    # Строковые числа совместимы при наличии свежей отметки публикации.
+    # Ключи без отметки отвергаются отдельно в test_donor_freshness.
     stale = {
         "id": 42,
         "symbol": "BMTUSDT",
@@ -215,7 +216,7 @@ async def check_stale_key_format(donor):
     }
 
     result = await StartTestBotsCommand.update_config_from_referral_bot(
-        bot_config=donor, redis=FakeRedis(json.dumps(stale))
+        bot_config=donor, redis=FakeRedis(json.dumps(donor_payload(stale)))
     )
     config = result["config"]
 

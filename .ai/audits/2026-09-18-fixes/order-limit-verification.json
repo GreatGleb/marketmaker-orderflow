@@ -1,0 +1,42 @@
+{
+  "live_pair": [
+    {
+      "balance": "10",
+      "price": "0.0189400",
+      "quantity": "522",
+      "notional": "9.8866800",
+      "minimum_notional": "5",
+      "refusal": null,
+      "accepted_below_minimum": false
+    },
+    {
+      "balance": "5",
+      "price": "0.0189400",
+      "quantity": null,
+      "notional": null,
+      "minimum_notional": "5",
+      "refusal": "номинал 4.9433400 меньше минимального 5",
+      "accepted_below_minimum": false
+    },
+    {
+      "balance": "4",
+      "price": "0.0189400",
+      "quantity": null,
+      "notional": null,
+      "minimum_notional": "5",
+      "refusal": "номинал 3.9584600 меньше минимального 5",
+      "accepted_below_minimum": false
+    },
+    {
+      "balance": "1",
+      "price": "0.0189400",
+      "quantity": null,
+      "notional": null,
+      "minimum_notional": "5",
+      "refusal": "номинал 0.9848800 меньше минимального 5",
+      "accepted_below_minimum": false
+    }
+  ],
+  "market_max_counterexamples": [],
+  "market_max_counterexample_count": 0
+}

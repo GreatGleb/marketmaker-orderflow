@@ -1,0 +1,140 @@
+{
+  "symbols_history.err": {
+    "bytes": 28293509,
+    "first": "2026-09-17 20:52:39,613 - INFO - Источник данных: REST https://fapi.binance.com/fapi/v1/ticker/24hr,",
+    "last": "2026-09-18 15:49:48,039 - INFO - Котировки: отклонено 51 устаревших, повторных или неверных событий.",
+    "counts": {
+      "REST polling error": 629
+    },
+    "samples": [
+      "2026-09-17 22:27:31,467 - INFO - ❌ REST polling error: . Повтор через 2.0 с.",
+      "2026-09-17 22:27:31,475 - INFO - ❌ REST polling error: [Errno -3] Temporary failure in name resolution. Повтор через 2.0 с.",
+      "2026-09-17 22:27:33,473 - INFO - ❌ REST polling error: [Errno -3] Temporary failure in name resolution. Повтор через 2.0 с.",
+      "2026-09-17 22:27:35,474 - INFO - ❌ REST polling error: [Errno -3] Temporary failure in name resolution. Повтор через 2.0 с.",
+      "2026-09-17 22:27:37,477 - INFO - ❌ REST polling error: [Errno -3] Temporary failure in name resolution. Повтор через 2.0 с.",
+      "2026-09-17 22:27:39,481 - INFO - ❌ REST polling error: [Errno -3] Temporary failure in name resolution. Повтор через 2.0 с.",
+      "2026-09-17 22:27:41,481 - INFO - ❌ REST polling error: [Errno -3] Temporary failure in name resolution. Повтор через 2.0 с.",
+      "2026-09-17 22:27:43,483 - INFO - ❌ REST polling error: [Errno -3] Temporary failure in name resolution. Повтор через 2.0 с.",
+      "2026-09-17 22:27:45,486 - INFO - ❌ REST polling error: [Errno -3] Temporary failure in name resolution. Повтор через 2.0 с.",
+      "2026-09-17 22:27:47,490 - INFO - ❌ REST polling error: [Errno -3] Temporary failure in name resolution. Повтор через 2.0 с.",
+      "2026-09-17 22:27:49,491 - INFO - ❌ REST polling error: [Errno -3] Temporary failure in name resolution. Повтор через 2.0 с.",
+      "2026-09-17 22:27:51,492 - INFO - ❌ REST polling error: [Errno -3] Temporary failure in name resolution. Повтор через 2.0 с.",
+      "2026-09-17 22:27:53,495 - INFO - ❌ REST polling error: [Errno -3] Temporary failure in name resolution. Повтор через 2.0 с.",
+      "2026-09-17 22:27:55,497 - INFO - ❌ REST polling error: [Errno -3] Temporary failure in name resolution. Повтор через 2.0 с.",
+      "2026-09-17 22:27:57,500 - INFO - ❌ REST polling error: [Errno -3] Temporary failure in name resolution. Повтор через 2.0 с.",
+      "2026-09-17 22:27:59,501 - INFO - ❌ REST polling error: [Errno -3] Temporary failure in name resolution. Повтор через 2.0 с.",
+      "2026-09-17 22:28:01,504 - INFO - ❌ REST polling error: [Errno -3] Temporary failure in name resolution. Повтор через 2.0 с.",
+      "2026-09-17 22:28:03,506 - INFO - ❌ REST polling error: [Errno -3] Temporary failure in name resolution. Повтор через 2.0 с.",
+      "2026-09-17 22:28:05,508 - INFO - ❌ REST polling error: [Errno -3] Temporary failure in name resolution. Повтор через 2.0 с.",
+      "2026-09-17 22:28:07,509 - INFO - ❌ REST polling error: [Errno -3] Temporary failure in name resolution. Повтор через 2.0 с."
+    ]
+  },
+  "insert_test_orders.err": {
+    "bytes": 90846,
+    "first": "2026-09-17 20:52:39,408 - INFO - Список заказов пуст. Ждем 1 минуту...",
+    "last": "2026-09-18 15:49:37,760 - INFO - Список заказов пуст. Ждем 1 минуту...",
+    "counts": {},
+    "samples": []
+  },
+  "set_profitable_bot.err": {
+    "bytes": 13675652,
+    "first": "2026-09-17 20:52:39,488 - INFO - {15121: {'tf': Decimal('10.00'), '24h': False, 'no_losing_donors':",
+    "last": "2026-09-18 15:49:26,213 - INFO - copy_bot_15200",
+    "counts": {},
+    "samples": []
+  },
+  "set_volatile_pairs.err": {
+    "bytes": 228288,
+    "first": "2026-09-17 20:52:39,216 - INFO - AssetHistoryCrud init",
+    "last": "2026-09-18 15:49:25,501 - INFO - self.is_need_list_of_symbols False",
+    "counts": {},
+    "samples": []
+  },
+  "test_bots_00.err": {
+    "bytes": 4053064,
+    "first": "2026-09-17 20:52:40,176 - INFO - is_prod = False, dev",
+    "last": "2026-09-18 15:49:47,891 - INFO - waiting for 15129",
+    "counts": {
+      "Нет свежей цены": 19
+    },
+    "samples": [
+      "2026-09-17 22:29:02,934 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 5 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-17 22:30:02,934 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 64 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 10:44:58,890 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 5 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 10:45:58,910 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 63 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 10:46:58,911 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 124 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 10:47:58,911 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 182 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 10:48:58,912 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 244 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 10:49:58,916 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 304 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 10:50:58,929 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 364 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 10:51:58,929 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 424 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 10:52:58,936 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 482 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 10:53:58,936 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 545 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 10:54:58,945 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 605 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 10:55:58,945 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 665 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 10:56:58,959 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 725 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 10:57:58,959 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 783 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 10:58:58,959 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 844 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 10:59:58,959 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 904 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 14:29:28,081 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 965 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save."
+    ]
+  },
+  "test_bots_01.err": {
+    "bytes": 10313621,
+    "first": "2026-09-17 20:52:40,175 - INFO - is_prod = False, dev",
+    "last": "2026-09-18 15:49:48,015 - INFO - waiting for 15121",
+    "counts": {
+      "Нет свежей цены": 19
+    },
+    "samples": [
+      "2026-09-17 22:29:02,926 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 5 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-17 22:30:02,934 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 62 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 10:44:58,915 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 5 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 10:45:58,915 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 64 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 10:46:58,915 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 124 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 10:47:58,920 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 184 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 10:48:58,944 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 244 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 10:49:58,953 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 301 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 10:50:58,978 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 364 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 10:51:58,982 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 424 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 10:52:58,985 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 485 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 10:53:59,008 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 545 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 10:54:59,008 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 605 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 10:55:59,009 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 665 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 10:56:59,009 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 725 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 10:57:59,016 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 785 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 10:58:59,026 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 842 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 10:59:59,055 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 905 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 14:29:28,055 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 965 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save."
+    ]
+  },
+  "test_bots_02.err": {
+    "bytes": 4229003,
+    "first": "2026-09-17 20:52:40,179 - INFO - is_prod = False, dev",
+    "last": "2026-09-18 15:49:47,931 - INFO - waiting for 15206",
+    "counts": {
+      "Нет свежей цены": 19
+    },
+    "samples": [
+      "2026-09-17 22:29:02,911 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 5 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-17 22:30:02,914 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 62 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 10:44:58,885 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 5 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 10:45:58,893 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 62 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 10:46:58,902 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 121 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 10:47:58,912 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 184 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 10:48:58,944 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 244 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 10:49:58,977 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 301 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 10:50:58,980 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 364 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 10:51:59,002 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 424 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 10:52:59,002 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 483 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 10:53:59,010 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 545 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 10:54:59,010 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 602 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 10:55:59,019 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 665 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 10:56:59,021 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 724 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 10:57:59,027 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 784 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 10:58:59,027 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 842 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 10:59:59,036 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 902 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save.",
+      "2026-09-18 14:29:28,046 - INFO - ⏳ Нет свежей цены в Redis по ключу price_snapshot:BMTUSDT уже 965 с — боты на этой паре стоят. Проверьте app.scripts.watch_ws_and_save."
+    ]
+  }
+}

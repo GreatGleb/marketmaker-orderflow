@@ -1,0 +1,132 @@
+{
+  "total": 30,
+  "passed": 30,
+  "failed": 0,
+  "skipped": 0,
+  "database": "orderflow_audit_tests_20260918",
+  "redis": "orderflow_audit_redis_test (отдельный временный контейнер)",
+  "tests": [
+    {
+      "test": "test_active_pairs_session",
+      "seconds": 1.228
+    },
+    {
+      "test": "test_aggregate_dedup",
+      "seconds": 1.642
+    },
+    {
+      "test": "test_aggregate_load",
+      "seconds": 1.721
+    },
+    {
+      "test": "test_copybot_config_types",
+      "seconds": 2.354
+    },
+    {
+      "test": "test_copybot_v3_chain",
+      "seconds": 1.75
+    },
+    {
+      "test": "test_copybot_v3_compound",
+      "seconds": 2.305
+    },
+    {
+      "test": "test_copybot_v3_series_db",
+      "seconds": 1.498
+    },
+    {
+      "test": "test_copybot_v3_simulation",
+      "seconds": 2.687
+    },
+    {
+      "test": "test_donor_filter",
+      "seconds": 1.72
+    },
+    {
+      "test": "test_donor_freshness",
+      "seconds": 3.439
+    },
+    {
+      "test": "test_error_notify_throttle",
+      "seconds": 2.922
+    },
+    {
+      "test": "test_price_cache",
+      "seconds": 1.909
+    },
+    {
+      "test": "test_price_freshness",
+      "seconds": 2.151
+    },
+    {
+      "test": "test_price_publication",
+      "seconds": 2.034
+    },
+    {
+      "test": "test_redis_url_setting",
+      "seconds": 2.232
+    },
+    {
+      "test": "test_referral_match",
+      "seconds": 1.494
+    },
+    {
+      "test": "test_report_windows",
+      "seconds": 1.352
+    },
+    {
+      "test": "test_retention_db",
+      "seconds": 2.824
+    },
+    {
+      "test": "test_retention_windows",
+      "seconds": 1.769
+    },
+    {
+      "test": "test_sharding",
+      "seconds": 2.506
+    },
+    {
+      "test": "test_simulator_flag",
+      "seconds": 0.613
+    },
+    {
+      "test": "test_simulator_session_release",
+      "seconds": 2.391
+    },
+    {
+      "test": "test_simulator_uses_cache",
+      "seconds": 2.546
+    },
+    {
+      "test": "test_tradable_pairs",
+      "seconds": 1.717
+    },
+    {
+      "test": "test_v3_market_limits",
+      "seconds": 2.468
+    },
+    {
+      "test": "test_volatile_pair_pick",
+      "seconds": 1.652
+    },
+    {
+      "test": "test_watched_affordability",
+      "seconds": 1.781
+    },
+    {
+      "test": "test_watched_pairs_pick",
+      "seconds": 1.905
+    },
+    {
+      "test": "test_window_cache",
+      "seconds": 1.802
+    },
+    {
+      "test": "test_worker_session_release",
+      "seconds": 1.723
+    }
+  ],
+  "additional_verification": "test_donor_freshness и test_v3_market_limits повторены после финальной правки отмены ожидания и добавления перебора сеток",
+  "logs": "/tmp/orderflow-fixes-20260918"
+}

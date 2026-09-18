@@ -1,5 +1,5 @@
 from sqlalchemy import select, distinct, update
-from decimal import Decimal
+from decimal import Decimal, DecimalException
 import json
 
 from app.db.models import AssetExchangeSpec
@@ -41,6 +41,9 @@ class AssetExchangeSpecCrud(BaseCrud[AssetExchangeSpec]):
         "tick_size": None,
         "step_size": None,
         "market_step_size": None,
+        "market_min_qty": None,
+        "market_max_qty": None,
+        "min_notional": None,
         "min_qty": None,
         "max_qty": None,
         "min_price": None,
@@ -48,9 +51,9 @@ class AssetExchangeSpecCrud(BaseCrud[AssetExchangeSpec]):
     }
 
     @staticmethod
-    def extract_step_sizes(filters) -> dict[str, float | None]:
+    def extract_step_sizes(filters) -> dict[str, Decimal | None]:
         """Шаги и границы цены и лота из JSON-фильтров Binance."""
-        if not filters:
+        if not isinstance(filters, list) or not all(isinstance(f, dict) for f in filters):
             return dict(AssetExchangeSpecCrud.EMPTY_MARKET_DATA)
 
         price_filter = next(
@@ -66,12 +69,23 @@ class AssetExchangeSpecCrud(BaseCrud[AssetExchangeSpec]):
         )
 
         def _from(source, key):
-            return float(source[key]) if source else None
+            try:
+                value = Decimal(str(source[key]))
+                return value if value.is_finite() and value >= 0 else None
+            except (KeyError, TypeError, ValueError, DecimalException):
+                return None
+
+        notional_filter = next(
+            (f for f in filters if f.get("filterType") == "MIN_NOTIONAL"), None
+        )
 
         return {
             "tick_size": _from(price_filter, "tickSize"),
             "step_size": _from(lot_size_filter, "stepSize"),
             "market_step_size": _from(market_lot_filter, "stepSize"),
+            "market_min_qty": _from(market_lot_filter, "minQty"),
+            "market_max_qty": _from(market_lot_filter, "maxQty"),
+            "min_notional": _from(notional_filter, "notional"),
             "min_qty": _from(lot_size_filter, "minQty"),
             "max_qty": _from(lot_size_filter, "maxQty"),
             "min_price": _from(price_filter, "minPrice"),
@@ -80,7 +94,7 @@ class AssetExchangeSpecCrud(BaseCrud[AssetExchangeSpec]):
 
     async def get_step_size_by_symbol(
         self, symbol: str
-    ) -> dict[str, float] | None:
+    ) -> dict[str, Decimal | None] | None:
         stmt = (
             select(AssetExchangeSpec.filters)
             .where(AssetExchangeSpec.symbol == symbol)

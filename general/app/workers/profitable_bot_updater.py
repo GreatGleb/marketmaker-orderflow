@@ -20,6 +20,7 @@ from app.db.models import TestBot
 from app.dependencies import get_redis
 
 from app.utils import Command
+from app.sub_services.logic.donor_selection import DONOR_TTL_SECONDS, donor_payload
 
 
 # Конфиг донора уезжает копиботам через JSON (ключ copy_bot_{id} в Redis), а в
@@ -512,8 +513,11 @@ class ProfitableBotUpdaterCommand(Command):
                     logging.info(f"copy_bot_{bot.id}")
                     if refer_bot_dict:
                         await redis.set(
-                            f"copy_bot_{bot.id}", json.dumps(refer_bot_dict)
+                            f"copy_bot_{bot.id}", json.dumps(donor_payload(refer_bot_dict)),
+                            ex=DONOR_TTL_SECONDS,
                         )
+                    else:
+                        await redis.delete(f"copy_bot_{bot.id}")
 
             # Сон — вне сессии: она закрыта, транзакции нет, снапшот отпущен.
             # window_cache при этом живёт дальше, он к сессии не привязан.

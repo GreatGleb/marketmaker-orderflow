@@ -1,0 +1,280 @@
+{
+  "database": {
+    "name": "orderflow_live_clean_20260917",
+    "checked_at": "2026-09-18 15:58:14.870438+00:00",
+    "ticks": 486256,
+    "watched": 51
+  },
+  "quality": {
+    "stale_arrivals": 0,
+    "max_arrival_age": "0:01:58.550251"
+  },
+  "duplicates": {
+    "groups": 0
+  },
+  "coverage": {
+    "configured": {
+      "v3": 2,
+      "v1": 80,
+      "v2": 20,
+      "ordinary": 15120
+    },
+    "traded": {
+      "ordinary": 2016,
+      "v1": 8,
+      "v2": 3
+    },
+    "orders": {
+      "ordinary": 14131,
+      "v1": 16,
+      "v2": 3
+    },
+    "ma_configured": 0,
+    "volatile_configured": 0,
+    "symbols": [
+      "BMTUSDT"
+    ]
+  },
+  "checks": {
+    "pnl_mismatch": 0,
+    "fee_mismatch": 0,
+    "invalid": 0,
+    "sl_formula_mismatch": 0,
+    "time_exit_before_30s": 0,
+    "time_exit_without_low_gain": 0,
+    "open_no_recent_matching_tick": 0,
+    "close_no_recent_matching_tick": 0,
+    "profit_exit_below_breakeven": 0,
+    "fixed_profit_before_target": 0,
+    "trailing_profit_without_pullback": 0,
+    "invalid_v1_donor_kind": 0
+  },
+  "stats": {
+    "ordinary": {
+      "orders": 14131,
+      "positive": 3873,
+      "pnl": "-15859.0794760330041166565151838069",
+      "fee": "14131.4865881856490133874780516931"
+    },
+    "v1": {
+      "orders": 16,
+      "positive": 16,
+      "pnl": "22.208943782995190583929874440",
+      "fee": "16.0191140289059505705772535640"
+    },
+    "v2": {
+      "orders": 3,
+      "positive": 3,
+      "pnl": "0.169661733615221987315010051",
+      "fee": "3.0015856236786469344608879490"
+    }
+  },
+  "reasons": {
+    "ordinary:stop-long-lose": 13886,
+    "ordinary:stop-won": 245,
+    "v1:stop-won": 8,
+    "v1:stop-long-lose": 8,
+    "v2:stop-long-lose": 3
+  },
+  "price_age": {
+    "open": {
+      "count": 14150,
+      "min": 4.974673,
+      "median": 6.2159245,
+      "p95": 10.71936,
+      "max": 10.771584
+    },
+    "close": {
+      "count": 14150,
+      "min": 5.928965,
+      "median": 9.593866,
+      "p95": 28.297521,
+      "max": 28.403477
+    }
+  },
+  "latest_price_mismatch_samples": {},
+  "donor_pairs": {
+    "15129->1": 1,
+    "15130->1": 1,
+    "15126->1": 1,
+    "15133->953": 1,
+    "15122->1": 1,
+    "15121->1": 1,
+    "15125->1": 1,
+    "15134->953": 1,
+    "15134->4": 1,
+    "15201->1": 1,
+    "15125->351": 1,
+    "15122->351": 1,
+    "15203->1": 1,
+    "15202->1": 1,
+    "15126->351": 1,
+    "15129->4": 1,
+    "15130->4": 1,
+    "15121->351": 1,
+    "15133->4": 1
+  },
+  "parameter_mismatches": [],
+  "parameter_mismatch_count": 0,
+  "feed": {
+    "BMTUSDT": {
+      "ticks": 6887,
+      "arrival_gap_seconds": {
+        "count": 6886,
+        "min": 0.955125,
+        "median": 6.01372,
+        "p95": 20.273982,
+        "max": 13606.788263
+      },
+      "unchanged_prices": 3384
+    }
+  },
+  "rollups": {
+    "rows": 7288,
+    "expected_rows": 7288,
+    "watermark": "2026-09-18 05:20:00+00:00",
+    "mismatched_keys": 0
+  },
+  "report_comparisons": [
+    {
+      "hours": 1,
+      "kind": "all",
+      "rows": 2027,
+      "mismatches": 0,
+      "effective_start": "2026-09-18 14:40:00+00:00"
+    },
+    {
+      "hours": 1,
+      "kind": "ordinary",
+      "rows": 2016,
+      "mismatches": 0,
+      "effective_start": "2026-09-18 14:40:00+00:00"
+    },
+    {
+      "hours": 1,
+      "kind": "v1",
+      "rows": 8,
+      "mismatches": 0,
+      "effective_start": "2026-09-18 14:40:00+00:00"
+    },
+    {
+      "hours": 1,
+      "kind": "v2",
+      "rows": 3,
+      "mismatches": 0,
+      "effective_start": "2026-09-18 14:40:00+00:00"
+    },
+    {
+      "hours": 1,
+      "kind": "v3",
+      "rows": 0,
+      "mismatches": 0,
+      "effective_start": "2026-09-18 14:40:00+00:00"
+    },
+    {
+      "hours": 6,
+      "kind": "all",
+      "rows": 2027,
+      "mismatches": 0,
+      "effective_start": "2026-09-18 09:40:00+00:00"
+    },
+    {
+      "hours": 6,
+      "kind": "ordinary",
+      "rows": 2016,
+      "mismatches": 0,
+      "effective_start": "2026-09-18 09:40:00+00:00"
+    },
+    {
+      "hours": 6,
+      "kind": "v1",
+      "rows": 8,
+      "mismatches": 0,
+      "effective_start": "2026-09-18 09:40:00+00:00"
+    },
+    {
+      "hours": 6,
+      "kind": "v2",
+      "rows": 3,
+      "mismatches": 0,
+      "effective_start": "2026-09-18 09:40:00+00:00"
+    },
+    {
+      "hours": 6,
+      "kind": "v3",
+      "rows": 0,
+      "mismatches": 0,
+      "effective_start": "2026-09-18 09:40:00+00:00"
+    },
+    {
+      "hours": 12,
+      "kind": "all",
+      "rows": 2027,
+      "mismatches": 0,
+      "effective_start": "2026-09-18 03:40:00+00:00"
+    },
+    {
+      "hours": 12,
+      "kind": "ordinary",
+      "rows": 2016,
+      "mismatches": 0,
+      "effective_start": "2026-09-18 03:40:00+00:00"
+    },
+    {
+      "hours": 12,
+      "kind": "v1",
+      "rows": 8,
+      "mismatches": 0,
+      "effective_start": "2026-09-18 03:40:00+00:00"
+    },
+    {
+      "hours": 12,
+      "kind": "v2",
+      "rows": 3,
+      "mismatches": 0,
+      "effective_start": "2026-09-18 03:40:00+00:00"
+    },
+    {
+      "hours": 12,
+      "kind": "v3",
+      "rows": 0,
+      "mismatches": 0,
+      "effective_start": "2026-09-18 03:40:00+00:00"
+    },
+    {
+      "hours": 24,
+      "kind": "all",
+      "rows": 2027,
+      "mismatches": 0,
+      "effective_start": "2026-09-17 15:40:00+00:00"
+    },
+    {
+      "hours": 24,
+      "kind": "ordinary",
+      "rows": 2016,
+      "mismatches": 0,
+      "effective_start": "2026-09-17 15:40:00+00:00"
+    },
+    {
+      "hours": 24,
+      "kind": "v1",
+      "rows": 8,
+      "mismatches": 0,
+      "effective_start": "2026-09-17 15:40:00+00:00"
+    },
+    {
+      "hours": 24,
+      "kind": "v2",
+      "rows": 3,
+      "mismatches": 0,
+      "effective_start": "2026-09-17 15:40:00+00:00"
+    },
+    {
+      "hours": 24,
+      "kind": "v3",
+      "rows": 0,
+      "mismatches": 0,
+      "effective_start": "2026-09-17 15:40:00+00:00"
+    }
+  ]
+}

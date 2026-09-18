@@ -1,0 +1,567 @@
+{
+  "at": "2026-09-18 15:49:49+00:00",
+  "checked": 80,
+  "failures": [],
+  "results": [
+    {
+      "bot": 15121,
+      "minutes": "10.00",
+      "candidates": 998,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15122,
+      "minutes": "10.00",
+      "candidates": 998,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15123,
+      "minutes": "10.00",
+      "candidates": 0,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15124,
+      "minutes": "10.00",
+      "candidates": 0,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15125,
+      "minutes": "20.00",
+      "candidates": 998,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15126,
+      "minutes": "20.00",
+      "candidates": 998,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15127,
+      "minutes": "20.00",
+      "candidates": 0,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15128,
+      "minutes": "20.00",
+      "candidates": 0,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15129,
+      "minutes": "30.00",
+      "candidates": 1050,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15130,
+      "minutes": "30.00",
+      "candidates": 1050,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15131,
+      "minutes": "30.00",
+      "candidates": 77,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15132,
+      "minutes": "30.00",
+      "candidates": 77,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15133,
+      "minutes": "40.00",
+      "candidates": 1050,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15134,
+      "minutes": "40.00",
+      "candidates": 1050,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15135,
+      "minutes": "40.00",
+      "candidates": 77,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15136,
+      "minutes": "40.00",
+      "candidates": 77,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15137,
+      "minutes": "50.00",
+      "candidates": 1050,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15138,
+      "minutes": "50.00",
+      "candidates": 1050,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15139,
+      "minutes": "50.00",
+      "candidates": 77,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15140,
+      "minutes": "50.00",
+      "candidates": 77,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15141,
+      "minutes": "60.00",
+      "candidates": 140,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15142,
+      "minutes": "60.00",
+      "candidates": 140,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15143,
+      "minutes": "60.00",
+      "candidates": 77,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15144,
+      "minutes": "60.00",
+      "candidates": 77,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15145,
+      "minutes": "120.00",
+      "candidates": 140,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15146,
+      "minutes": "120.00",
+      "candidates": 140,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15147,
+      "minutes": "120.00",
+      "candidates": 77,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15148,
+      "minutes": "120.00",
+      "candidates": 77,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15149,
+      "minutes": "180.00",
+      "candidates": 140,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15150,
+      "minutes": "180.00",
+      "candidates": 140,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15151,
+      "minutes": "180.00",
+      "candidates": 77,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15152,
+      "minutes": "180.00",
+      "candidates": 77,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15153,
+      "minutes": "240.00",
+      "candidates": 140,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15154,
+      "minutes": "240.00",
+      "candidates": 140,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15155,
+      "minutes": "240.00",
+      "candidates": 77,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15156,
+      "minutes": "240.00",
+      "candidates": 77,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15157,
+      "minutes": "360.00",
+      "candidates": 140,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15158,
+      "minutes": "360.00",
+      "candidates": 140,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15159,
+      "minutes": "360.00",
+      "candidates": 77,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15160,
+      "minutes": "360.00",
+      "candidates": 77,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15161,
+      "minutes": "420.00",
+      "candidates": 140,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15162,
+      "minutes": "420.00",
+      "candidates": 140,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15163,
+      "minutes": "420.00",
+      "candidates": 77,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15164,
+      "minutes": "420.00",
+      "candidates": 77,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15165,
+      "minutes": "480.00",
+      "candidates": 140,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15166,
+      "minutes": "480.00",
+      "candidates": 140,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15167,
+      "minutes": "480.00",
+      "candidates": 77,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15168,
+      "minutes": "480.00",
+      "candidates": 77,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15169,
+      "minutes": "540.00",
+      "candidates": 140,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15170,
+      "minutes": "540.00",
+      "candidates": 140,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15171,
+      "minutes": "540.00",
+      "candidates": 77,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15172,
+      "minutes": "540.00",
+      "candidates": 77,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15173,
+      "minutes": "600.00",
+      "candidates": 140,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15174,
+      "minutes": "600.00",
+      "candidates": 140,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15175,
+      "minutes": "600.00",
+      "candidates": 77,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15176,
+      "minutes": "600.00",
+      "candidates": 77,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15177,
+      "minutes": "660.00",
+      "candidates": 79,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15178,
+      "minutes": "660.00",
+      "candidates": 79,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15179,
+      "minutes": "660.00",
+      "candidates": 77,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15180,
+      "minutes": "660.00",
+      "candidates": 77,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15181,
+      "minutes": "720.00",
+      "candidates": 79,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15182,
+      "minutes": "720.00",
+      "candidates": 79,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15183,
+      "minutes": "720.00",
+      "candidates": 77,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15184,
+      "minutes": "720.00",
+      "candidates": 77,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15185,
+      "minutes": "1440.00",
+      "candidates": 77,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15186,
+      "minutes": "1440.00",
+      "candidates": 77,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15187,
+      "minutes": "1440.00",
+      "candidates": 77,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15188,
+      "minutes": "1440.00",
+      "candidates": 77,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15189,
+      "minutes": "1920.00",
+      "candidates": 77,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15190,
+      "minutes": "1920.00",
+      "candidates": 77,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15191,
+      "minutes": "1920.00",
+      "candidates": 77,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15192,
+      "minutes": "1920.00",
+      "candidates": 77,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15193,
+      "minutes": "2400.00",
+      "candidates": 77,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15194,
+      "minutes": "2400.00",
+      "candidates": 77,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15195,
+      "minutes": "2400.00",
+      "candidates": 77,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15196,
+      "minutes": "2400.00",
+      "candidates": 77,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15197,
+      "minutes": "2880.00",
+      "candidates": 77,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15198,
+      "minutes": "2880.00",
+      "candidates": 77,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15199,
+      "minutes": "2880.00",
+      "candidates": 77,
+      "set_matches": true,
+      "order_matches": true
+    },
+    {
+      "bot": 15200,
+      "minutes": "2880.00",
+      "candidates": 77,
+      "set_matches": true,
+      "order_matches": true
+    }
+  ]
+}
