@@ -51,11 +51,8 @@ COPYBOT_V3_WINDOW_MINUTES = 720
 def copybot_v3_rows() -> list[dict]:
     """Строки `test_bots` для обоих ботов v3.
 
-    Одна фабрика на оба места, которые их заводят: полное пересоздание парка
-    (`app/scripts/new_bots.py`) и точечный досев
-    (`app/scripts/seed_copybot_v3.py`). Разойдись эти определения — и прогноз
-    считался бы ботом, отличающимся от задуманного, а заметить это было бы
-    нечем.
+    Используется основным сидингом `app/scripts/new_bots.py`
+    и точечным досевом `app/scripts/seed_copybot_v3.py`.
     """
     return [
         {
