@@ -35,13 +35,19 @@ from unittest.mock import AsyncMock, patch
 from sqlalchemy import func, select, text
 
 from app.config import settings
-from app.constants.strategy import STRATEGY_LEGACY
+from app.constants.strategy import STRATEGY_0, STRATEGY_LEGACY
+from app.constants.strategy_0_seed import strategy_0_bot_rows
+from app.crud.strategy_pair import StrategyPairCrud
+from app.db.models import AssetExchangeSpec
 from app.crud.strategy import StrategyCrud
 from app.db.base import DatabaseSessionManager
 from app.db.models import TestBot
 from app.scripts import new_bots
 
-OTHER_STRATEGY = "strategy_0"
+# Соседняя стратегия для проверки независимости парков. Не strategy_0:
+# у той свой сид и своя сетка, а здесь нужен парк той же формы, что у
+# legacy, чтобы сравнивать было с чем.
+OTHER_STRATEGY = "strategy_x"
 
 # 2000 процентных плюс копиботы: 80 v1, 20 v2, 2 v3.
 EXPECTED_PARK = 2000 + 80 + 20 + 2
@@ -99,6 +105,68 @@ async def check_other_strategy(session, legacy_id, other_id):
     print("  парк одной стратегии не задевает парк другой")
 
 
+async def check_strategy_0_park(session, other_id):
+    """Парк стратегии прострелов заводится по её набору пар.
+
+    Это и есть проверка критерия готовности: новая стратегия получает
+    парк своим сидом, без единой правки в общем цикле и без миграции на
+    каждый её параметр — они лежат в strategy_config.
+    """
+    # Без пар заводить некого: бот без пары в симуляторе просто встанет.
+    await new_bots.create_strategy_0_bots()
+    assert await counts(session, other_id) == (0, 0), (
+        "боты заведены, хотя у стратегии нет ни одной пары"
+    )
+
+    for symbol in ("AAAUSDT", "BBBUSDT"):
+        await session.execute(
+            text(
+                """
+                INSERT INTO asset_exchange_specs
+                    (source, contract_type, symbol, quote_asset, status,
+                     created_at, updated_at)
+                VALUES ('binance', 'PERPETUAL', :symbol, 'USDT', 'TRADING',
+                        now(), now())
+                ON CONFLICT DO NOTHING
+                """
+            ),
+            {"symbol": symbol},
+        )
+    await session.commit()
+
+    spec_ids = (await session.execute(
+        select(AssetExchangeSpec.id).where(
+            AssetExchangeSpec.symbol.in_(["AAAUSDT", "BBBUSDT"])
+        )
+    )).scalars().all()
+
+    await StrategyPairCrud(session).add(other_id, spec_ids)
+    await session.commit()
+
+    expected = len(strategy_0_bot_rows(["AAAUSDT", "BBBUSDT"]))
+
+    await new_bots.create_strategy_0_bots()
+    assert await counts(session, other_id) == (expected, expected)
+
+    # Настройки входят в ключ конфигурации, иначе повтор увидел бы весь
+    # парк как одного бота и завёл бы его заново.
+    await new_bots.create_strategy_0_bots()
+    assert await counts(session, other_id) == (expected, expected), (
+        "повторный досев стратегии 0 завёл дубли"
+    )
+
+    configured = (await session.execute(
+        select(func.count()).select_from(TestBot).where(
+            TestBot.strategy_id == other_id,
+            TestBot.strategy_config.is_not(None),
+        )
+    )).scalar_one()
+
+    assert configured == expected, "у ботов стратегии 0 нет её настроек"
+
+    print(f"  парк стратегии 0: {expected} конфигураций, повтор без дублей")
+
+
 async def main():
     if not os.getenv("PARK_SEED_TEST_DB"):
         print(
@@ -117,7 +185,8 @@ async def main():
 
         strategy_crud = StrategyCrud(session)
         legacy_id = await strategy_crud.ensure_legacy()
-        other_id = await strategy_crud.ensure(OTHER_STRATEGY, "Прострелы")
+        other_id = await strategy_crud.ensure(OTHER_STRATEGY, "Соседняя")
+        strategy_0_id = await strategy_crud.ensure(STRATEGY_0, "Прострелы")
         await session.commit()
 
     # Средний процент за тик считается по истории цен: здесь она не
@@ -130,6 +199,9 @@ async def main():
             await check_idempotent(session, legacy_id)
             await check_replace(session, legacy_id)
             await check_other_strategy(session, legacy_id, other_id)
+
+        async with dsm.get_session() as session:
+            await check_strategy_0_park(session, strategy_0_id)
 
     print("\nвсё сходится")
 
