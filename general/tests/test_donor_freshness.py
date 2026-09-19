@@ -269,8 +269,36 @@ async def check_price_during_final_selection():
     print('  смена/истечение цены во время проверки цепочки: запрет входа с кэшем и без')
 
 
+async def check_missing_donor():
+    """Копибот без донора уходит на новый круг, а не падает.
+
+    Пустой пул — обычное состояние: ключ `copy_bot_*` живёт 90 секунд, а
+    воркер ходит раз в 30. Симулятор обязан пережить это молча; падение
+    здесь роняет цикл бота целиком, и заметно оно только по логам.
+    """
+    redis = FakeRedis()
+    redis.store.pop(KEY, None)
+
+    v1 = V3_BOT._replace(
+        id=COPYBOT_V1_ID, copybot_v3_time_in_minutes=None,
+        copybot_v3_compound_balance=False,
+        copy_bot_min_time_profitability_min=Decimal(30),
+    )
+
+    async def signal(stop, params):
+        raise AssertionError('без донора вход не должен даже запрашиваться')
+
+    with patch.object(m.asyncio, 'sleep', AsyncMock()):
+        await attempt(redis, v1, signal)
+
+    assert not redis.pushed, 'без донора сделка не пишется'
+
+    print('  копибот без донора не роняет цикл')
+
+
 async def main():
     await check_publication()
+    await check_missing_donor()
     await check_wait_cancellation()
     await check_simulator_revocation()
     await check_chain_at_entry()

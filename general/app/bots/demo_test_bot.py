@@ -759,6 +759,14 @@ class StartTestBotsCommand(Command):
                 )
                 bot_config = updating_config_res['config']
                 referral_bot_id = updating_config_res['referral_bot_id']
+
+                if not bot_config:
+                    await asyncio.sleep(60)
+                    return
+
+                # Только после проверки: донора могло не найтись, и тогда
+                # в ответе нет ни 'selection', ни осмысленного донора —
+                # сделки всё равно не будет.
                 donor_chain = [*chain, referral_bot_id]
                 # .get(): ключ copy_bot_*, записанный воркером до этой
                 # правки, живёт в Redis до его следующего цикла и поля
@@ -768,10 +776,6 @@ class StartTestBotsCommand(Command):
                     updating_config_res['selection'].get('strategy_id')
                     or executed_strategy_id
                 )
-
-                if not bot_config:
-                    await asyncio.sleep(60)
-                    return
 
                 async def chain_is_current():
                     selected, current_chain = await self.select_copybot(original_bot_config)
