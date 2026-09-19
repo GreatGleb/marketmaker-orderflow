@@ -4,8 +4,10 @@ from decimal import Decimal as D
 from unittest.mock import AsyncMock, patch
 
 import app.bots.demo_test_bot as m
+from app.enums.trade_type import TradeType
 from app.crud.exchange_pair_spec import AssetExchangeSpecCrud as Specs
 from app.sub_services.logic.market_setup import MarketDataBuilder
+from tests.strategy_fixtures import STRATEGY_KEYS
 from tests.test_copybot_v3_simulation import (
     FakeCrud, FakeRedis, FakeSessionManager, MARKET, SYMBOL, V3_BOT,
 )
@@ -111,9 +113,10 @@ async def check_signal_price_before_open():
     provider.get_price.return_value = D(100)
     provider._read_price.return_value = D(101)
     command = S(stop_event=stop)
+    command._strategy_keys = dict(STRATEGY_KEYS)
 
     async def signal(*args, **kwargs):
-        return m.TradeType.BUY.value, D(101)
+        return TradeType.BUY.value, D(101)
 
     # До сигнала 9.9*100=990 допустимо; по сигналу 9.8*101=989.8 уже нет.
     with patch.object(m, 'DatabaseSessionManager', FakeSessionManager), \

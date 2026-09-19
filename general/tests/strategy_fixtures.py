@@ -10,6 +10,11 @@ LEGACY_STRATEGY_ID = 1
 
 STRATEGIES = {LEGACY_STRATEGY_ID: STRATEGY_LEGACY}
 
+# То, что симулятор читает на старте и держит в `_strategy_keys`. Без
+# карты он не знает, каким алгоритмом торговать, и бота не запускает —
+# так же, как на живой базе со стратегией, которой нет в коде.
+STRATEGY_KEYS = dict(STRATEGIES)
+
 
 class FakeResult:
     """Ответ session.execute: только то, что читают карты стратегий."""

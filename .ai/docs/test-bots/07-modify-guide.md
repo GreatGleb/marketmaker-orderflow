@@ -42,7 +42,27 @@
 6. Если параметр надо видеть в разрезе сделки — поле в `TestOrder` +
    `order_data` (`demo_test_bot.py:727`).
 
-## Рецепт: добавить новую стратегию выхода
+## Рецепт: добавить новую торговую стратегию
+
+Симулятор для этого трогать не нужно — в этом и был смысл разделения.
+
+1. Класс, реализующий `Algorithm` (`app/strategies/base.py`): `prepare`,
+   `entry_levels`, `wait_for_entry`, `open_position`, `should_exit`.
+   Образец — `app/strategies/legacy/algorithm.py`.
+2. Ключ и версия в атрибутах класса. Версия попадает в каждую сделку
+   (`test_orders.algorithm_version`); менять её при каждой правке логики
+   входа или выхода, иначе сделки до и после сольются в одну статистику.
+3. Строка в реестре `app/strategies/registry.py`.
+4. Стратегия в таблице `strategies` (ключ тот же) и парк ботов под неё —
+   `python -m app.scripts.new_bots --strategy <ключ>`.
+5. Набор пар: `--symbols` у `seed_watched_pairs`, либо своя политика в
+   `pair_policy`.
+
+Ключ, которого нет в реестре, бота не запускает: в лог уходит понятная
+ошибка, сделок не пишется. Это намеренно — провести бота по чужому
+алгоритму хуже, чем не провести вовсе.
+
+## Рецепт: добавить новую стратегию выхода внутри legacy
 
 1. Метод в `ExitStrategy` (`exit_strategy.py`) по образцу
    `check_exit_conditions` — принимает `order`, цены, возвращает `bool`
@@ -50,20 +70,23 @@
    `order.stop_reason_event`.
 2. Новое значение в `StopReasonEvent` (`app/enums/event_type.py`), если
    нужна новая причина.
-3. Флаг в `TestBot` + ветка в `demo_test_bot.py:425-463`.
-4. Уровни, если нужны, посчитать заранее в фазе 3 (`:590-656`).
+3. Флаг в `TestBot` + ветка в `LegacyAlgorithm.should_exit`.
+4. Уровни, если нужны, посчитать в `LegacyAlgorithm.open_position` и
+   положить в `Position.state`.
 
-## Рецепт: добавить новую стратегию входа
+## Рецепт: добавить новую стратегию входа внутри legacy
 
-Править `PriceWatcher.wait_for_entry_price` (`price_provider.py:161`) —
-там уже есть развилка «MA / пробой». Функция должна вернуть
-`(TradeType.X.value, price)`. Она вызывается под `asyncio.wait_for`, так что
-внутренние `sleep` определяют реакцию на таймаут. Таймаут задаётся в
-`demo_test_bot.py:535-544`.
+Править `PriceWatcher.wait_for_entry_price` (`price_provider.py`,
+`wait_for_entry_price`) — там уже есть развилка «MA / пробой». Функция
+должна вернуть `(TradeType.X.value, price)`. Её вызывает
+`LegacyAlgorithm.wait_for_entry` под `asyncio.wait_for`, так что
+внутренние `sleep` определяют реакцию на таймаут. Сам таймаут считает
+`LegacyAlgorithm.entry_levels`.
 
 ## Рецепт: убрать/изменить правило «30 секунд»
 
-`demo_test_bot.py:681-692`. Правило принудительно закрывает сделку, если
+`app/strategies/legacy/algorithm.py`, `LONG_LOSE_AFTER_SECONDS` и
+`LONG_LOSE_MIN_TICKS` в `should_exit`. Правило закрывает сделку, если
 через 30 секунд после открытия чистая прибыль (отсчёт от безубытка, в тиках)
 меньше 10.
 

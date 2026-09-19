@@ -26,8 +26,9 @@ from tests.price_fixtures import price_snapshot
 from unittest.mock import patch
 
 import app.bots.demo_test_bot as m
+from app.enums.trade_type import TradeType
 from tests.strategy_fixtures import (
-    LEGACY_STRATEGY_ID, execute_strategy_maps,
+    LEGACY_STRATEGY_ID, STRATEGY_KEYS, execute_strategy_maps,
 )
 
 from app.db.models import TestBot
@@ -212,7 +213,7 @@ async def run_once(bot, market=None):
     async def fake_wait_for(coro, timeout):
         coro.close()
         stop_event.set()
-        return (m.TradeType.BUY.value, PRICE)
+        return (TradeType.BUY.value, PRICE)
 
     real_sleep = asyncio.sleep
 
@@ -228,6 +229,7 @@ async def run_once(bot, market=None):
         return await real_sleep(seconds)
 
     command = m.StartTestBotsCommand(stop_event=stop_event)
+    command._strategy_keys = dict(STRATEGY_KEYS)
 
     with patch.object(m.asyncio, "wait_for", fake_wait_for), \
             patch.object(m.asyncio, "sleep", fake_sleep), \
@@ -318,9 +320,10 @@ async def main():
         # отбора донора до записи сделки, а не срабатывание уровня.
         coro.close()
         stop_event.set()
-        return (m.TradeType.BUY.value, PRICE)
+        return (TradeType.BUY.value, PRICE)
 
     command = m.StartTestBotsCommand(stop_event=stop_event)
+    command._strategy_keys = dict(STRATEGY_KEYS)
 
     with patch.object(m.asyncio, "wait_for", fake_wait_for), \
             patch.object(m, "TestBotCrud", FakeCrud), \
@@ -363,7 +366,7 @@ async def main():
     )
 
     expected_pnl = PriceCalculator.calculate_pnl(
-        trade_type=m.TradeType.BUY.value,
+        trade_type=TradeType.BUY.value,
         balance=EXPECTED_NOTIONAL,
         open_price=PRICE,
         close_price=PRICE,

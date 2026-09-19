@@ -11,7 +11,8 @@ from tests.price_fixtures import price_snapshot
 from unittest.mock import patch
 
 import app.bots.demo_test_bot as m
-from tests.strategy_fixtures import LEGACY_STRATEGY_ID
+from app.enums.trade_type import TradeType
+from tests.strategy_fixtures import LEGACY_STRATEGY_ID, STRATEGY_KEYS
 from app.sub_services.watchers.price_provider import PriceCache, PriceProvider
 
 FIELDS = [
@@ -85,10 +86,12 @@ async def main():
         # Не гоняем настоящее ожидание входа: нам важен путь получения цены.
         coro.close()
         stop_event.set()
-        return (m.TradeType.BUY.value, Decimal("0.09"))
+        return (TradeType.BUY.value, Decimal("0.09"))
 
     with patch.object(m.asyncio, "wait_for", fake_wait_for):
-        await m.StartTestBotsCommand(stop_event=stop_event).simulate_bot(
+        command = m.StartTestBotsCommand(stop_event=stop_event)
+        command._strategy_keys = dict(STRATEGY_KEYS)
+        await command.simulate_bot(
             redis=redis,
             original_bot_config=BOT,
             shared_data=SHARED,

@@ -6,6 +6,7 @@ from decimal import Decimal
 from unittest.mock import AsyncMock, patch
 
 import app.bots.demo_test_bot as m
+from app.enums.trade_type import TradeType
 import app.workers.profitable_bot_updater as worker
 from app.sub_services.logic.donor_selection import (
     DonorChanged, DonorGuard, donor_payload, read_donor,
@@ -14,6 +15,7 @@ from tests.test_copybot_v3_simulation import (
     COPYBOT_V1_ID, DONOR_CONFIG, DONOR_ID, FakeCrud, FakeRedis,
     FakeSessionManager, MARKET, PRICE, SYMBOL, V3_BOT,
 )
+from tests.strategy_fixtures import STRATEGY_KEYS
 from tests.test_worker_session_release import FakeCrud as WorkerCrud
 from tests.price_fixtures import price_snapshot
 
@@ -130,6 +132,7 @@ async def check_wait_cancellation():
 async def attempt(redis, bot, signal, *, provider=None, crud=FakeCrud):
     stop = asyncio.Event()
     command = m.StartTestBotsCommand(stop_event=stop)
+    command._strategy_keys = dict(STRATEGY_KEYS)
     if provider is None:
         provider = AsyncMock()
         provider.get_price.return_value = PRICE
@@ -159,7 +162,7 @@ async def check_simulator_revocation():
                     redis.store[KEY] = json.dumps(donor_payload(replacement))
                 else:
                     redis.store.pop(KEY)
-                return m.TradeType.BUY.value, PRICE
+                return TradeType.BUY.value, PRICE
 
             await attempt(redis, bot, revoked)
             assert not redis.pushed, 'вход по отозванному/заменённому выбору'
@@ -169,7 +172,7 @@ async def check_simulator_revocation():
                 async def fresh(stop, params):
                     assert params['bot_config'].stop_loss_ticks == 77
                     stop.set()
-                    return m.TradeType.BUY.value, PRICE
+                    return TradeType.BUY.value, PRICE
 
                 await attempt(redis, bot, fresh)
                 assert redis.pushed[0]['referral_bot_id'] == 999
@@ -197,7 +200,7 @@ async def check_chain_at_entry():
 
         async def signal(stop, params):
             ChangedCrud.changed = True
-            return m.TradeType.BUY.value, PRICE
+            return TradeType.BUY.value, PRICE
 
         redis = FakeRedis()
         await attempt(redis, V3_BOT, signal, crud=ChangedCrud)
@@ -222,7 +225,7 @@ async def check_open_position_keeps_config():
 
     async def signal(stop, params):
         stop.set()
-        return m.TradeType.BUY.value, PRICE
+        return TradeType.BUY.value, PRICE
 
     await attempt(redis, V3_BOT, signal, provider=provider)
     assert count == 2 and redis.pushed[0]['referral_bot_id'] == DONOR_ID
@@ -258,7 +261,7 @@ async def check_price_during_final_selection():
             async def signal(stop, params):
                 SlowSelection.signal_seen = True
                 stop.set()
-                return m.TradeType.BUY.value, PRICE
+                return TradeType.BUY.value, PRICE
 
             # До исправления истёкшая цена приводила бы к вечному ожиданию
             # закрытия. Таймаут ограничивает именно неисправное выполнение.

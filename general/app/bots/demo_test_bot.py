@@ -22,8 +22,6 @@ from app.db.models import TestBot, TestOrder
 from app.dependencies import get_redis
 from app.db.base import DatabaseSessionManager
 from app.constants.commissions import COMMISSION_OPEN
-from app.enums.event_type import StopReasonEvent
-from app.enums.trade_type import TradeType
 from app.sub_services.logic.market_setup import (
     LOT_DATA_KEYS,
     MarketDataBuilder,
@@ -32,6 +30,8 @@ from app.sub_services.logic.price_calculator import PriceCalculator
 from app.sub_services.logic.quantity_grid import quantity_grid
 from app.constants.strategy import algorithm_version_for
 from app.crud.strategy import StrategyCrud
+from app.strategies.base import MarketContext
+from app.strategies.registry import UnknownAlgorithm, get_algorithm
 from app.sub_services.logic.donor_selection import DonorChanged, DonorGuard, read_donor
 from app.sub_services.watchers.price_provider import (
     PriceCache,
@@ -39,7 +39,6 @@ from app.sub_services.watchers.price_provider import (
     PriceProvider,
 )
 from app.utils import Command
-from app.sub_services.logic.exit_strategy import ExitStrategy
 from app.workers.profitable_bot_updater import ProfitableBotUpdaterCommand
 from app.sub_services.notifications.factory import NotificationServiceFactory
 
@@ -829,14 +828,19 @@ class StartTestBotsCommand(Command):
                     return await donor_guard.wait(awaitable)
                 return await awaitable
 
-            bot_config = (
-                await before_entry(ProfitableBotUpdaterCommand.update_config_for_percentage(
-                    bot_config=bot_config,
-                    price_provider=price_provider,
-                    symbol=symbol,
-                    tick_size=tick_size,
-                ))
-            )
+            # Алгоритм выбирается по фактически исполняемой стратегии:
+            # у копибота это стратегия донора, а не его парка.
+            try:
+                algorithm = get_algorithm(
+                    self._strategy_keys.get(executed_strategy_id)
+                )
+            except UnknownAlgorithm as error:
+                # Провести бота по текущему алгоритму «раз уж похоже»
+                # нельзя: в историю уйдут сделки, которых этот алгоритм
+                # не совершал. Бот просто ждёт следующего круга.
+                logging.info("Бот %s не запущен: %s", bot_id, error)
+                await asyncio.sleep(60)
+                return
 
             # Один на сделку, а не на каждую попытку входа: он лёгкий, но
             # главное — переиспользует price_provider с общим кэшем цен.
@@ -844,15 +848,28 @@ class StartTestBotsCommand(Command):
                 redis=redis, price_provider=price_provider
             )
 
+            context = MarketContext(
+                bot_id=bot_id,
+                bot_config=bot_config,
+                symbol=symbol,
+                tick_size=tick_size,
+                market_data=data,
+                commission_rate=commission_rate,
+                price_provider=price_provider,
+                price_watcher=price_watcher,
+                binance_bot=binance_bot,
+                before_entry=before_entry,
+            )
+
+            bot_config = await algorithm.prepare(context)
+            context.bot_config = bot_config
+
             while True:
                 initial_price = await before_entry(price_provider.get_price(symbol=symbol))
 
-                entry_price_buy = (
-                    initial_price + bot_config.start_updown_ticks * tick_size
-                )
-                entry_price_sell = (
-                    initial_price - bot_config.start_updown_ticks * tick_size
-                )
+                levels = await algorithm.entry_levels(context, initial_price)
+                entry_price_buy = levels.buy
+                entry_price_sell = levels.sell
 
                 if is_compound_v3:
                     # Проверяем до ожидания входа, как это делает боевой бот в
@@ -887,45 +904,20 @@ class StartTestBotsCommand(Command):
                         await asyncio.sleep(60)
                         return
 
-                is_timeout_occurred = False
-
-                trade_type = None
-                entry_price = None
-
                 if is_it_copy or bot_id == 1:
                     logging.info(f'waiting for {bot_id}')
 
-                try:
-                    if bot_config.consider_ma_for_open_order:
-                        # MA-бот входит только по пересечению средних, поэтому
-                        # time_to_wait здесь не применяется: 12 часов — это
-                        # предохранитель, по нему цикл просто уходит на новую
-                        # итерацию ожидания.
-                        wait_seconds = 12 * 60 * 60
-                    elif bot_config.time_to_wait_for_entry_price_to_open_order_in_seconds:
-                        wait_seconds = bot_config.time_to_wait_for_entry_price_to_open_order_in_seconds
-                    else:
-                        wait_seconds = 1
+                entry = await algorithm.wait_for_entry(context, levels)
 
-                    timeout = int(wait_seconds)
-
-                    trade_type, entry_price = await before_entry(asyncio.wait_for(
-                        price_watcher.wait_for_entry_price(
-                            symbol=symbol,
-                            entry_price_buy=entry_price_buy,
-                            entry_price_sell=entry_price_sell,
-                            binance_bot=binance_bot,
-                            bot_config=bot_config,
-                        ),
-                        timeout=timeout,
-                    ))
-                except asyncio.TimeoutError:
-                    is_timeout_occurred = True
+                trade_type = entry.trade_type
+                entry_price = entry.price
 
                 if is_it_copy or bot_id == 1:
-                    logging.info(f'is_timeout_occurred: {is_timeout_occurred} for {bot_id}')
+                    logging.info(
+                        f'is_timeout_occurred: {entry.timed_out} for {bot_id}'
+                    )
 
-                if is_timeout_occurred or not trade_type or not entry_price:
+                if not entry.entered:
                     continue
                 else:
                     break
@@ -956,72 +948,12 @@ class StartTestBotsCommand(Command):
                     return
 
             open_price = entry_price
-            price_from_previous_step = entry_price
-            peak_favorable_price = entry_price
 
-            close_not_lose_price = (
-                PriceCalculator.calculate_close_not_lose_price(
-                    open_price=open_price,
-                    trade_type=trade_type,
-                    commission_open=commission_rate,
-                    commission_close=commission_rate,
-                )
-            )
-
-            if not bot_config.consider_ma_for_close_order:
-                stop_loss_price = PriceCalculator.calculate_stop_lose_price(
-                    stop_loss_ticks=bot_config.stop_loss_ticks,
-                    tick_size=tick_size,
-                    open_price=open_price,
-                    trade_type=trade_type,
-                )
-                if bot_config.use_trailing_stop:
-                    original_take_profit_price = (
-                        PriceCalculator.calculate_trailing_take_profit_price(
-                            peak_favorable_price=open_price,
-                            stop_success_ticks=bot_config.stop_success_ticks,
-                            tick_size=tick_size,
-                            trade_type=trade_type,
-                        )
-                    )
-                else:
-                    original_take_profit_price = (
-                        PriceCalculator.calculate_take_profit_price(
-                            stop_success_ticks=bot_config.stop_success_ticks,
-                            tick_size=tick_size,
-                            open_price=open_price,
-                            trade_type=trade_type,
-                            commission_open=commission_rate,
-                            commission_close=commission_rate,
-                        )
-                    )
-                take_profit_price = original_take_profit_price
-
-                order = TestOrder(
-                    stop_loss_price=Decimal(stop_loss_price),
-                    start_updown_ticks=bot_config.start_updown_ticks,
-                    stop_success_ticks=bot_config.stop_success_ticks,
-                    stop_loss_ticks=bot_config.stop_loss_ticks,
-                    open_price=open_price,
-                    open_time=datetime.now(UTC),
-                    open_fee=(
-                        Decimal(bot_config.balance) * Decimal(commission_rate)
-                    ),
-                    order_type=trade_type
-                )
-            else:
-                order = TestOrder(
-                    stop_loss_price=0,
-                    start_updown_ticks=0,
-                    stop_success_ticks=0,
-                    stop_loss_ticks=0,
-                    open_price=open_price,
-                    open_time=datetime.now(UTC),
-                    open_fee=(
-                        Decimal(bot_config.balance) * Decimal(commission_rate)
-                    ),
-                    order_type=trade_type
-                )
+            # Позицию и всё, из чего складывается решение о выходе,
+            # строит алгоритм: у legacy это стопы, трейлинг и цена
+            # безубытка, у следующей стратегии будет своё.
+            position = algorithm.open_position(context, trade_type, entry_price)
+            order = position.order
 
             if is_it_copy or bot_id == 1:
                 logging.info(f'wait for should_exit for {bot_id}')
@@ -1031,59 +963,19 @@ class StartTestBotsCommand(Command):
             while not stop_event.is_set():
                 updated_price = await price_provider.get_price(symbol=symbol)
 
-                if bot_config.consider_ma_for_close_order:
-                    should_exit = (
-                        await ExitStrategy.check_exit_ma_conditions(
-                            binance_bot=binance_bot,
-                            bot_config=bot_config,
-                            symbol=symbol,
-                            order_side=order.order_type,
-                            updated_price=updated_price,
-                            close_not_lose_price=close_not_lose_price,
-                        )
-                    )
-                else:
-                    if bot_config.use_trailing_stop:
-                        should_exit, take_profit_price, peak_favorable_price = (
-                            await ExitStrategy.check_exit_conditions_trailing(
-                                price_calculator=PriceCalculator,
-                                tick_size=tick_size,
-                                order=order,
-                                close_not_lose_price=close_not_lose_price,
-                                take_profit_price=take_profit_price,
-                                updated_price=updated_price,
-                                price_from_previous_step=price_from_previous_step,
-                                peak_favorable_price=peak_favorable_price
-                            )
-                        )
-                    else:
-                        should_exit = (
-                            await ExitStrategy.check_exit_conditions(
-                                order=order,
-                                close_not_lose_price=close_not_lose_price,
-                                take_profit_price=take_profit_price,
-                                updated_price=updated_price,
-                            )
-                        )
+                decision = await algorithm.should_exit(
+                    context=context,
+                    position=position,
+                    updated_price=updated_price,
+                    held_seconds=time.time() - just30sec_start_time,
+                )
 
-                just30sec_current_time = time.time()
-                just30sec_elapsed_time = just30sec_current_time - just30sec_start_time
-
-                if order.order_type == TradeType.BUY:
-                    price_diff_from_cnl = updated_price - close_not_lose_price
-                else:
-                    price_diff_from_cnl = close_not_lose_price - updated_price
-
-                diff_ticks = price_diff_from_cnl / tick_size
-
-                if diff_ticks < 10 and just30sec_elapsed_time >= 30:
-                    order.stop_reason_event = StopReasonEvent.STOP_LONG_LOSE.value
+                if decision.should_exit:
+                    # Причину ставит алгоритм: у legacy это выход по
+                    # времени удержания, обычные стопы её не заполняют.
+                    if decision.reason:
+                        order.stop_reason_event = decision.reason
                     break
-
-                if should_exit:
-                    break
-
-                price_from_previous_step = updated_price
 
                 await asyncio.sleep(0.1)
 

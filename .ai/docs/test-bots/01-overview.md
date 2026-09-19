@@ -71,6 +71,7 @@ N минут. Сами сделки живут 72 часа, статистика
 
 | Файл | Роль |
 |---|---|
+| `general/app/strategies/` | **алгоритмы стратегий**: контракт (`base.py`), реестр (`registry.py`), текущий алгоритм (`legacy/algorithm.py`). Вход и выход живут здесь, а не в симуляторе |
 | `general/app/scripts/new_bots.py` | **генератор ботов**: перебор параметров → `test_bots`. Досевает недостающих по ключу конфигурации; `--replace` деактивирует прежних ботов стратегии, `TRUNCATE` больше не делает |
 | `general/app/scripts/top_bots_report.py` | CLI-отчёт «топ прибыльных ботов» |
 | `general/app/scripts/seed_commission_rates.py` | заполняет ставки maker/taker по парам из Binance |
