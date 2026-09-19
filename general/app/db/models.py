@@ -477,7 +477,11 @@ class TestOrder(BigId):
         ),
     )
     donor_chain: Mapped[Optional[list]] = mapped_column(
-        JSONB,
+        # none_as_null: иначе SQLAlchemy кладёт в JSONB скаляр `null`, а
+        # не SQL NULL. Отличить такую строку от «цепочки нет» можно
+        # только сравнением с 'null'::jsonb — то есть `IS NULL` в любом
+        # отчёте молча считает её заполненной.
+        JSONB(none_as_null=True),
         nullable=True,
         comment=(
             "Цепочка id доноров от копибота к обычному боту, например "
@@ -533,7 +537,7 @@ class TestBot(BaseId):
         comment="Стратегия, экземпляром которой является бот",
     )
     donor_scope: Mapped[Optional[dict]] = mapped_column(
-        JSONB,
+        JSONB(none_as_null=True),
         nullable=True,
         comment=(
             "Пул доноров копибота: {'mode': 'all'} либо "

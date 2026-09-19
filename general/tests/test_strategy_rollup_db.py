@@ -36,6 +36,7 @@ from app.constants.strategy import (
     STRATEGY_LEGACY,
 )
 from app.crud.strategy import StrategyCrud
+from app.crud.test_orders import TestOrderCrud
 from app.crud.test_order_rollup import TestOrderRollupCrud, floor_to_bucket
 from app.db.base import DatabaseSessionManager
 from app.enums.event_type import StopReasonEvent
@@ -241,6 +242,64 @@ async def check_report_cuts(rollup_crud, legacy_id, other_id):
     print("  разрезы «по парку» и «по исполненной» расходятся, как задумано")
 
 
+async def check_empty_donor_chain(session, legacy_id):
+    """У обычного бота цепочки доноров нет — и это SQL NULL.
+
+    JSONB-колонка принимает и скаляр `null`, и SQL NULL; выглядят они в
+    выводе одинаково, а ведут себя по-разному: `donor_chain IS NULL` не
+    видит первый, и отчёт молча считает такую сделку копиботской.
+    Поэтому проверяем не «пусто ли», а чем именно пусто.
+    """
+    moment = datetime.now(UTC)
+
+    await TestOrderCrud(session).bulk_create([
+        {
+            "asset_symbol": SYMBOL,
+            "balance": 1000,
+            "order_type": "long",
+            "open_price": 100,
+            "open_time": moment,
+            "open_fee": 0.02,
+            "stop_loss_price": 99,
+            "close_price": 101,
+            "close_time": moment,
+            "close_fee": 0.02,
+            "profit_loss": Decimal("1.0"),
+            "is_active": False,
+            "bot_id": DONOR_LEGACY_ID,
+            "referral_bot_id": None,
+            "donor_chain": None,
+            "stop_reason_event": StopReasonEvent.STOP_WON.value,
+            "strategy_id": legacy_id,
+            "executed_strategy_id": legacy_id,
+            "algorithm_version": LEGACY_ALGORITHM_VERSION,
+            "created_at": moment,
+            "updated_at": moment,
+        }
+    ])
+    await session.commit()
+
+    result = await session.execute(
+        text(
+            """
+            SELECT count(*) FILTER (WHERE donor_chain IS NULL),
+                   count(*) FILTER (WHERE donor_chain = 'null'::jsonb)
+            FROM test_orders
+            WHERE bot_id = :bot_id
+            """
+        ),
+        {"bot_id": DONOR_LEGACY_ID},
+    )
+    sql_nulls, json_nulls = result.one()
+
+    assert json_nulls == 0, (
+        f"{json_nulls} сделок с JSON-скаляром null вместо SQL NULL"
+    )
+    assert sql_nulls == 1, f"ожидалась одна строка без цепочки, а их {sql_nulls}"
+
+    print("  пустая цепочка доноров пишется как SQL NULL")
+
+
 async def main():
     if not os.getenv("STRATEGY_ROLLUP_TEST_DB"):
         print(
@@ -270,6 +329,7 @@ async def main():
         )
         await check_rebuild(session, rollup_crud, bucket_start, rows)
         await check_report_cuts(rollup_crud, legacy_id, other_id)
+        await check_empty_donor_chain(session, legacy_id)
 
     print("\nвсё сходится")
 
