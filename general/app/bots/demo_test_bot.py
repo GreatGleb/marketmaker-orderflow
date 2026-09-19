@@ -28,9 +28,9 @@ from app.sub_services.logic.market_setup import (
 )
 from app.sub_services.logic.price_calculator import PriceCalculator
 from app.sub_services.logic.quantity_grid import quantity_grid
-from app.constants.strategy import algorithm_version_for
+from app.constants.strategy import algorithm_version_for, scope_allows
 from app.crud.strategy import StrategyCrud
-from app.strategies.base import MarketContext
+from app.strategies.base import ConfigError, MarketContext
 from app.strategies.registry import UnknownAlgorithm, get_algorithm
 from app.sub_services.logic.donor_selection import DonorChanged, DonorGuard, read_donor
 from app.sub_services.watchers.price_provider import (
@@ -456,6 +456,11 @@ class StartTestBotsCommand(Command):
         ref_bot_config = TestBot(
             balance=1000,
             symbol=refer_bot["symbol"],
+            # Настройки едут от донора целиком: копибот исполняет его
+            # алгоритм, а значит и параметры должен брать его.
+            # .get() — ключи copy_bot_*, записанные прошлой версией
+            # воркера, поля ещё не содержат.
+            strategy_config=refer_bot.get("strategy_config"),
             # Тики в конфиге донора могут быть null: у бота либо тиковые
             # уровни, либо процентные. Ноль здесь и означает «не задано».
             stop_success_ticks=int(refer_bot['stop_success_ticks'] or 0),
@@ -697,6 +702,25 @@ class StartTestBotsCommand(Command):
                 return None, ()
             return selected, (*chain, selected.id)
 
+    @staticmethod
+    async def scope_still_allows(bot_id: int, strategy_key) -> bool:
+        """Свежий пул доноров бота по-прежнему разрешает эту стратегию.
+
+        Читается из базы, а не из конфига в памяти: конфиги симулятор
+        снимает один раз на старте, а пул меняют, не дожидаясь
+        перезапуска.
+        """
+        dsm = DatabaseSessionManager.create(settings.DB_URL)
+
+        async with dsm.get_session() as session:
+            bots = await TestBotCrud(session).get_bot_by_id(bot_id=bot_id)
+
+            if not bots:
+                # Бота больше нет — входить от его имени тем более незачем.
+                return False
+
+            return scope_allows(bots[0].donor_scope, strategy_key)
+
     async def simulate_bot(self, redis, original_bot_config, shared_data,
                            stop_event, price_provider, binance_bot):
         try:
@@ -776,9 +800,35 @@ class StartTestBotsCommand(Command):
                     or executed_strategy_id
                 )
 
+                # Пул проверяется по фактически исполняемой стратегии, а
+                # не по принадлежности промежуточных звеньев: копибот
+                # может прийти к чужому алгоритму через собственный парк.
+                if not scope_allows(
+                    original_bot_config.donor_scope,
+                    self._strategy_keys.get(executed_strategy_id),
+                ):
+                    logging.info(
+                        'Донор бота %s исполняет стратегию вне его пула — '
+                        'пропускаем круг', bot_id,
+                    )
+                    await asyncio.sleep(60)
+                    return
+
                 async def chain_is_current():
                     selected, current_chain = await self.select_copybot(original_bot_config)
-                    return selected is not None and current_chain == chain
+
+                    if selected is None or current_chain != chain:
+                        return False
+
+                    # Пул могли сузить, пока бот ждал входа. Тогда выбор
+                    # отзывается, как и при смене цепочки: входить по
+                    # алгоритму, который боту уже не разрешён, нельзя.
+                    return await self.scope_still_allows(
+                        bot_id=original_bot_config.id,
+                        strategy_key=self._strategy_keys.get(
+                            executed_strategy_id
+                        ),
+                    )
 
                 donor_guard = DonorGuard(
                     redis, copybot_id, updating_config_res['selection'],
@@ -842,6 +892,19 @@ class StartTestBotsCommand(Command):
                 await asyncio.sleep(60)
                 return
 
+            try:
+                # Настройки берутся у того бота, чей алгоритм исполняется:
+                # у копибота это конфиг донора, а не его собственный.
+                strategy_config = algorithm.parse_config(
+                    getattr(bot_config, "strategy_config", None)
+                )
+            except ConfigError as error:
+                logging.info(
+                    "Бот %s не запущен, настройки стратегии: %s", bot_id, error
+                )
+                await asyncio.sleep(60)
+                return
+
             # Один на сделку, а не на каждую попытку входа: он лёгкий, но
             # главное — переиспользует price_provider с общим кэшем цен.
             price_watcher = PriceWatcher(
@@ -859,6 +922,7 @@ class StartTestBotsCommand(Command):
                 price_watcher=price_watcher,
                 binance_bot=binance_bot,
                 before_entry=before_entry,
+                strategy_config=strategy_config,
             )
 
             bot_config = await algorithm.prepare(context)

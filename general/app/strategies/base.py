@@ -37,6 +37,9 @@ class MarketContext:
     price_watcher: Any
     binance_bot: Any
     before_entry: Any
+    # Разобранные настройки стратегии: то, что вернул `parse_config`.
+    # У legacy здесь пусто — его параметры лежат колонками бота.
+    strategy_config: Any = None
 
 
 @dataclass
@@ -83,6 +86,15 @@ class ExitDecision:
     reason: Optional[str] = None
 
 
+class ConfigError(ValueError):
+    """Настройки стратегии не проходят проверку.
+
+    Бот с такими настройками не запускается: догадываться, что имел в
+    виду автор конфига, нельзя — сделки уйдут в общую статистику, и
+    отличить их будет нечем.
+    """
+
+
 @runtime_checkable
 class Algorithm(Protocol):
     """Что обязана уметь стратегия.
@@ -94,6 +106,17 @@ class Algorithm(Protocol):
 
     key: str
     version: str
+    # Версия схемы настроек. Не путать с `version`: та отвечает на
+    # вопрос «по каким правилам получена сделка», эта — «как читать
+    # параметры».
+    config_schema_version: int
+
+    def parse_config(self, raw: Optional[dict]) -> Any:
+        """Проверяет настройки бота и возвращает их разобранными.
+
+        Неизвестный ключ — ошибка, а не «оставим как есть»: опечатка в
+        имени параметра иначе тихо выключила бы его.
+        """
 
     async def prepare(self, context: MarketContext) -> Any:
         """Конфиг бота, приведённый к виду, в котором с ним работают.

@@ -29,6 +29,9 @@ FIELDS = [
     # Симулятор пишет стратегию парка в каждую сделку, поэтому поле
     # обязано быть у любого конфига, который к нему попадает.
     "strategy_id",
+    # Пул доноров и настройки алгоритма читаются из того же конфига.
+    "donor_scope",
+    "strategy_config",
 ]
 Bot = namedtuple("Bot", FIELDS)
 
@@ -44,6 +47,7 @@ BOT = Bot(
     min_timeframe_asset_volatility=None,
     copybot_v3_time_in_minutes=None, copybot_v3_compound_balance=False,
     copybot_v3_stopped_at=None, strategy_id=LEGACY_STRATEGY_ID,
+    donor_scope=None, strategy_config=None,
 )
 
 SHARED = {

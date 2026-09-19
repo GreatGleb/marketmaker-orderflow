@@ -582,6 +582,14 @@ class TestBot(BaseId):
         index=True,
         comment="Стратегия, экземпляром которой является бот",
     )
+    strategy_config: Mapped[Optional[dict]] = mapped_column(
+        JSONB(none_as_null=True),
+        nullable=True,
+        comment=(
+            "Настройки, специфичные для алгоритма стратегии, с ключом "
+            "schema_version. NULL — своих настроек у стратегии нет"
+        ),
+    )
     donor_scope: Mapped[Optional[dict]] = mapped_column(
         JSONB(none_as_null=True),
         nullable=True,

@@ -70,6 +70,21 @@ def donor_scope_list(*strategy_keys: str) -> dict:
     return {"mode": DONOR_SCOPE_MODE_LIST, "strategies": list(strategy_keys)}
 
 
+def scope_allows(scope, strategy_key) -> bool:
+    """Разрешает ли пул исполнение этой стратегии.
+
+    Проверка по факту, а не по составу цепочки: копибот может прийти к
+    донору чужой стратегии через промежуточные звенья своего парка, и
+    смотреть надо на того, чьим алгоритмом в итоге торгуют.
+    """
+    keys = donor_scope_keys(scope)
+
+    if keys is None:
+        return True
+
+    return strategy_key in keys
+
+
 def donor_scope_keys(scope) -> list[str] | None:
     """Ключи стратегий пула; `None` — ограничений нет.
 

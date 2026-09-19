@@ -56,6 +56,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import func, select
 
 from app.config import settings
+from app.crud.strategy import StrategyCrud, UnknownStrategy
 from app.crud.test_order_rollup import TestOrderRollupCrud
 from app.db.base import DatabaseSessionManager
 from app.db.models import TestBot
@@ -90,7 +91,7 @@ async def park_born_at(session):
     ).scalar()
 
 
-async def copybot_combinations(session):
+async def copybot_combinations(session, strategy_ids=None):
     """Различные наборы параметров отбора среди активных копиботов v1.
 
     Отбор зависит только от тройки (окно, проверка за сутки, отсев
@@ -107,6 +108,11 @@ async def copybot_combinations(session):
             .where(
                 TestBot.is_active,
                 TestBot.copy_bot_min_time_profitability_min.is_not(None),
+                *(
+                    [TestBot.strategy_id.in_(strategy_ids)]
+                    if strategy_ids is not None
+                    else []
+                ),
             )
             .distinct()
         )
@@ -133,11 +139,25 @@ def share(part, whole):
     return f"{part / whole * 100:5.1f}%" if whole else "    — "
 
 
-async def run(days=None, hours=None, details=False, top_count=10):
+async def run(days=None, hours=None, details=False, top_count=10,
+              strategy=None):
     dsm = DatabaseSessionManager.create(settings.DB_URL)
 
     async with dsm.get_session() as session:
         rollup_crud = TestOrderRollupCrud(session)
+
+        strategy_ids = None
+
+        if strategy:
+            # Отчёт про отбор доноров, а отбор идёт внутри пула
+            # стратегии: смешивать парки в одной таблице бессмысленно.
+            try:
+                strategy_ids = await StrategyCrud(session).ids_by_keys(
+                    [key.strip() for key in strategy.split(",") if key.strip()]
+                )
+            except UnknownStrategy as error:
+                print(f"❌ {error}")
+                return
 
         watermark = await rollup_crud.rollup_watermark()
 
@@ -167,7 +187,7 @@ async def run(days=None, hours=None, details=False, top_count=10):
             print(f"   ⚠️  запрошено глубже, чем живёт парк "
                   f"(с {born:%Y-%m-%d %H:%M}) — окно урезано")
 
-        combinations = await copybot_combinations(session)
+        combinations = await copybot_combinations(session, strategy_ids)
 
         if not combinations:
             print("   активных копиботов v1 нет")
@@ -261,6 +281,8 @@ def main():
                         help="Глубина окна в часах.")
     parser.add_argument('--details', action='store_true',
                         help="Разбивка по окнам прибыльности и по ботам.")
+    parser.add_argument('-s', '--strategy', type=str,
+                        help="Только копиботы этих стратегий, через запятую")
     parser.add_argument('-top_count', '--top_count', type=int, default=10,
                         help="Сколько ботов показать в разбивке.")
 
@@ -269,6 +291,7 @@ def main():
     asyncio.run(run(
         days=args.days, hours=args.hours,
         details=args.details, top_count=args.top_count,
+        strategy=args.strategy,
     ))
 
 

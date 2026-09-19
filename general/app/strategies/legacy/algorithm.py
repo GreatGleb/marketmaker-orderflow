@@ -25,6 +25,7 @@ from app.db.models import TestOrder
 from app.enums.event_type import StopReasonEvent
 from app.enums.trade_type import TradeType
 from app.strategies.base import (
+    ConfigError,
     EntryLevels,
     EntryResult,
     ExitDecision,
@@ -49,6 +50,36 @@ LONG_LOSE_MIN_TICKS = 10
 class LegacyAlgorithm:
     key = STRATEGY_LEGACY
     version = LEGACY_ALGORITHM_VERSION
+    config_schema_version = 1
+
+    def parse_config(self, raw):
+        """У legacy своих настроек нет: всё лежит колонками `test_bots`.
+
+        Переносить их в JSON ради единообразия нельзя — по ним ходят
+        отбор доноров, отчёты и шардирование, и индексы на них нужны.
+        Поэтому непустой конфиг здесь означает ошибку, а не «параметры,
+        которые я пока не понимаю».
+        """
+        if not raw:
+            return None
+
+        extra = sorted(set(raw) - {"schema_version"})
+
+        if extra:
+            raise ConfigError(
+                f"у стратегии {self.key} нет своих настроек, а переданы: "
+                f"{', '.join(extra)}"
+            )
+
+        version = raw.get("schema_version", self.config_schema_version)
+
+        if version != self.config_schema_version:
+            raise ConfigError(
+                f"версия схемы настроек {version} не совпадает с "
+                f"{self.config_schema_version}"
+            )
+
+        return None
 
     async def prepare(self, context: MarketContext):
         # Импорт внутри метода: воркер копиботов тянет за собой crud и

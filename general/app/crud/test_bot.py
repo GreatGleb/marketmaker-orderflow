@@ -205,6 +205,18 @@ class TestBotCrud(BaseCrud[TestBot]):
         )
         return result.rowcount
 
+    async def balance_by_bot(self, bot_ids) -> dict[int, float]:
+        """Номинал сделки у перечисленных ботов."""
+        bot_ids = list(bot_ids)
+
+        if not bot_ids:
+            return {}
+
+        result = await self.session.execute(
+            select(TestBot.id, TestBot.balance).where(TestBot.id.in_(bot_ids))
+        )
+        return {bot_id: float(balance) for bot_id, balance in result.all()}
+
     async def strategy_id_by_bot(self) -> dict[int, int]:
         """id бота -> id его стратегии для всего парка.
 

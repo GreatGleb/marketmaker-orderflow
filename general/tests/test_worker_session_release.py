@@ -91,6 +91,9 @@ class FakeCrud:
     async def get_bot_by_id(self, bot_id):
         return [self.donor]
 
+    async def balance_by_bot(self, bot_ids):
+        return {bot_id: 1000.0 for bot_id in bot_ids}
+
     async def strategy_id_by_bot(self):
         return {self.copybot.id: LEGACY_STRATEGY_ID,
                 self.donor.id: LEGACY_STRATEGY_ID}

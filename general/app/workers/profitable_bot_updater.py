@@ -20,7 +20,7 @@ from app.db.models import TestBot
 from app.dependencies import get_redis
 
 from app.utils import Command
-from app.constants.strategy import donor_scope_keys
+from app.constants.strategy import STRATEGY_LEGACY, donor_scope_keys
 from app.crud.strategy import StrategyCrud
 from app.sub_services.logic.donor_selection import DONOR_TTL_SECONDS, donor_payload
 
@@ -186,11 +186,13 @@ class ProfitableBotUpdaterCommand(Command):
                 refer_bot_dict = {
                     "id": refer_bot.id,
                     "symbol": refer_bot.symbol,
-                    # По какому алгоритму копибот на самом деле торгует.
-                    # Без этого исполненную стратегию пришлось бы
-                    # угадывать по набору параметров — а параметры у
-                    # разных стратегий могут совпасть.
+                    # По какому алгоритму копибот на самом деле торгует
+                    # и с какими настройками. Без этого исполненную
+                    # стратегию пришлось бы угадывать по набору
+                    # параметров — а они у разных стратегий могут
+                    # совпасть.
                     "strategy_id": refer_bot.strategy_id,
+                    "strategy_config": refer_bot.strategy_config,
                     "stop_success_ticks": _as_int(
                         refer_bot.stop_success_ticks, default=None
                     ),
@@ -270,6 +272,37 @@ class ProfitableBotUpdaterCommand(Command):
             for donor_id in donor_ids
             if strategy_id_by_bot.get(donor_id) in allowed
         ]
+
+    @staticmethod
+    def warn_about_mixed_nominals(donor_ids, balance_by_bot, copybot_id):
+        """Предупреждает, когда в общем пуле разный номинал сделки.
+
+        Рейтинг доноров считается по абсолютной прибыли, а она линейна
+        по номиналу: бот с балансом вдвое больше выигрывает у лучшего по
+        качеству, ничего не делая лучше. Пока пул состоит из одной
+        стратегии, номинал у всех одинаковый (сиды ставят 1000) и
+        вопроса нет. Как только в пуле окажется стратегия с другим
+        номиналом, метрику придётся выбирать явно — нормировать на
+        баланс или сравнивать только сопоставимых.
+
+        Молча нормировать здесь нельзя: это пересортировка кандидатов,
+        а порядок задаёт первый шаг отбора (.ai/rules/experiments.md).
+        """
+        nominals = {
+            balance_by_bot[donor_id]
+            for donor_id in donor_ids
+            if donor_id in balance_by_bot
+        }
+
+        if len(nominals) > 1:
+            logging.warning(
+                "Копибот %s: в пуле доноры с разным номиналом сделки (%s). "
+                "Рейтинг считается по абсолютной прибыли, поэтому крупный "
+                "номинал получает преимущество — метрику сравнения нужно "
+                "задать явно.",
+                copybot_id,
+                ", ".join(str(value) for value in sorted(nominals)),
+            )
 
     @staticmethod
     async def update_config_for_percentage(
@@ -561,6 +594,15 @@ class ProfitableBotUpdaterCommand(Command):
                         strategy_id_by_key,
                         bot.id,
                     )
+
+                    if donor_scope_keys(bot.donor_scope) != [STRATEGY_LEGACY]:
+                        # Пул шире одной знакомой стратегии — проверяем,
+                        # сопоставимы ли кандидаты по номиналу.
+                        self.warn_about_mixed_nominals(
+                            donor_ids,
+                            await bot_crud.balance_by_bot(donor_ids),
+                            bot.id,
+                        )
                     refer_bot_dict = await self.get_bot_config_by_params(
                         bot_crud=bot_crud,
                         bot_ids=donor_ids

@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, patch
 import app.bots.demo_test_bot as m
 
 from app.constants.strategy import LEGACY_ALGORITHM_VERSION, STRATEGY_LEGACY
-from app.strategies.base import Algorithm
+from app.strategies.base import Algorithm, ConfigError
 from app.strategies.registry import (
     UnknownAlgorithm, get_algorithm, known_keys,
 )
@@ -111,8 +111,30 @@ async def check_bot_does_not_trade():
     print("  бот незарегистрированной стратегии не торгует")
 
 
+def check_config():
+    """Настройки проверяет сам алгоритм, опечатки не проходят."""
+    legacy = get_algorithm(STRATEGY_LEGACY)
+
+    assert legacy.parse_config(None) is None
+    assert legacy.parse_config({}) is None
+    assert legacy.parse_config(
+        {"schema_version": legacy.config_schema_version}
+    ) is None
+
+    for bad in ({"window_seconds": 5}, {"schema_version": 99}):
+        try:
+            legacy.parse_config(bad)
+        except ConfigError:
+            continue
+
+        raise AssertionError(f"настройки {bad} приняты, хотя не должны")
+
+    print("  настройки стратегии проверяются, лишние ключи отвергаются")
+
+
 async def main():
     print("Реестр стратегий:")
+    check_config()
     check_registry()
     check_unknown_key()
     await check_bot_does_not_trade()

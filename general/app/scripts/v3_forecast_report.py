@@ -33,6 +33,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from app.config import settings
+from app.crud.strategy import StrategyCrud, UnknownStrategy
 from app.crud.test_bot import TestBotCrud
 from app.crud.test_order_rollup import TestOrderRollupCrud
 from app.db.base import DatabaseSessionManager
@@ -200,12 +201,14 @@ async def print_report(
     title: str,
     since: datetime,
     earliest: datetime,
+    strategy_ids=None,
 ) -> None:
     now = datetime.now(UTC)
     truncated = since < earliest
 
     rows, window_start, watermark = await rollup_crud.profit_by_bot(
-        since=max(since, earliest), just_copy_bots_v3=True
+        since=max(since, earliest), just_copy_bots_v3=True,
+        strategy_ids=strategy_ids,
     )
 
     stats_by_bot = {row.bot_id: row for row in rows}
@@ -250,10 +253,22 @@ async def run(
     days: int = None,
     hours: int = None,
     all_history: bool = False,
+    strategy: str = None,
 ) -> None:
     dsm = DatabaseSessionManager.create(settings.DB_URL)
 
     async with dsm.get_session() as session:
+        strategy_ids = None
+
+        if strategy:
+            try:
+                strategy_ids = await StrategyCrud(session).ids_by_keys(
+                    [key.strip() for key in strategy.split(",") if key.strip()]
+                )
+            except UnknownStrategy as error:
+                print(f"❌ {error}")
+                return
+
         bots = await TestBotCrud(session).get_copybots_v3()
 
         if not bots:
@@ -291,6 +306,7 @@ async def run(
                 title=title,
                 since=now - length,
                 earliest=earliest,
+                strategy_ids=strategy_ids,
             )
 
         print(
@@ -312,6 +328,11 @@ def main():
                         help="Глубина окна в часах (например, 12).")
     parser.add_argument('-all', '--all_history', action='store_true',
                         help="За всю сохранённую историю.")
+    parser.add_argument('-s', '--strategy', type=str,
+                        help=(
+                            "Только копиботы v3 этих стратегий, через "
+                            "запятую"
+                        ))
 
     args = parser.parse_args()
 
@@ -321,6 +342,7 @@ def main():
             days=args.days,
             hours=args.hours,
             all_history=args.all_history,
+            strategy=args.strategy,
         )
     )
 

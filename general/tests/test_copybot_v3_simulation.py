@@ -75,6 +75,9 @@ FIELDS = [
     # Симулятор пишет стратегию парка в каждую сделку, поэтому поле
     # обязано быть у любого конфига, который к нему попадает.
     "strategy_id",
+    # Пул доноров и настройки алгоритма читаются из того же конфига.
+    "donor_scope",
+    "strategy_config",
 ]
 
 Bot = namedtuple("Bot", FIELDS)
@@ -93,6 +96,7 @@ V3_BOT = Bot(
     copybot_v3_time_in_minutes=Decimal("720"),
     copybot_v3_compound_balance=True,
     copybot_v3_stopped_at=None, strategy_id=LEGACY_STRATEGY_ID,
+    donor_scope=None, strategy_config=None,
 )
 
 # Конфиг донора в том виде, в каком его кладёт воркер: числа, не строки.
@@ -123,6 +127,12 @@ LADDER = {
         id=COPYBOT_V2_ID, symbol='', balance=Decimal("1000"),
         copybot_v2_time_in_minutes=Decimal("60"),
     ),
+    # Сам бот v3 тоже лежит в базе: перед входом симулятор перечитывает
+    # его пул доноров — пул могли сузить, пока бот ждал цену.
+    V3_BOT_ID: TestBot(
+        id=V3_BOT_ID, symbol='', balance=Decimal("1000"),
+        copybot_v3_time_in_minutes=Decimal("720"),
+    ),
 }
 
 
@@ -150,6 +160,9 @@ class FakeCrud:
         bot = LADDER.get(bot_id)
 
         return [bot] if bot else []
+
+    async def balance_by_bot(self, bot_ids):
+        return {bot_id: 1000.0 for bot_id in bot_ids}
 
     async def strategy_id_by_bot(self):
         return {bot_id: LEGACY_STRATEGY_ID for bot_id in LADDER}

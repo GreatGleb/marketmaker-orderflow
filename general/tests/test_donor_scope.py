@@ -16,6 +16,7 @@ from app.constants.strategy import (
     STRATEGY_LEGACY,
     donor_scope_keys,
     donor_scope_list,
+    scope_allows,
 )
 from app.crud.test_bot import is_copybot_row, with_strategy
 from app.workers.profitable_bot_updater import ProfitableBotUpdaterCommand as P
@@ -103,8 +104,22 @@ def check_rows():
     print("  строки парка: стратегия всем, пул — только копиботам")
 
 
+def check_allows():
+    """Проверка по факту исполнения, а не по составу цепочки."""
+    assert scope_allows(None, STRATEGY_LEGACY)
+    assert scope_allows(DONOR_SCOPE_ALL, "strategy_0")
+    assert scope_allows(donor_scope_list(STRATEGY_LEGACY), STRATEGY_LEGACY)
+    assert not scope_allows(donor_scope_list(STRATEGY_LEGACY), "strategy_0")
+    assert not scope_allows(donor_scope_list(), STRATEGY_LEGACY)
+    # Стратегии нет в карте симулятора — значит и разрешать нечего.
+    assert not scope_allows(donor_scope_list(STRATEGY_LEGACY), None)
+
+    print("  исполняемая стратегия сверяется с пулом")
+
+
 async def main():
     print("Пул стратегий-доноров:")
+    check_allows()
     check_scope_keys()
     check_filter()
     check_rows()
