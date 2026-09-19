@@ -14,7 +14,9 @@ from unittest.mock import AsyncMock, patch
 
 import app.bots.demo_test_bot as m
 
-from app.constants.strategy import LEGACY_ALGORITHM_VERSION, STRATEGY_LEGACY
+from app.constants.strategy import (
+    LEGACY_ALGORITHM_VERSION, STRATEGY_0, STRATEGY_LEGACY,
+)
 from app.strategies.base import Algorithm, ConfigError
 from app.strategies.registry import (
     UnknownAlgorithm, get_algorithm, known_keys,
@@ -31,28 +33,43 @@ CONTRACT = (
 
 
 def check_registry():
-    assert known_keys() == [STRATEGY_LEGACY], known_keys()
+    assert known_keys() == [STRATEGY_LEGACY, STRATEGY_0], known_keys()
 
     legacy = get_algorithm(STRATEGY_LEGACY)
 
-    assert legacy.key == STRATEGY_LEGACY
     assert legacy.version == LEGACY_ALGORITHM_VERSION, (
         "версия алгоритма попадает в каждую сделку — менять её вместе с "
         "логикой входа/выхода, иначе сделки до и после правки сольются"
     )
 
-    for method in CONTRACT:
-        assert callable(getattr(legacy, method, None)), method
+    versions = set()
 
-    assert isinstance(legacy, Algorithm), (
-        "реализация обязана удовлетворять контракту Algorithm"
+    # Контракт проверяется у каждой реализации, а не только у legacy:
+    # симулятор вызывает их одинаково, и недостающий метод обнаружился
+    # бы уже на живых ботах.
+    for key in known_keys():
+        algorithm = get_algorithm(key)
+
+        assert algorithm.key == key, (key, algorithm.key)
+
+        for method in CONTRACT + ("parse_config",):
+            assert callable(getattr(algorithm, method, None)), (key, method)
+
+        assert isinstance(algorithm, Algorithm), key
+        assert isinstance(algorithm.config_schema_version, int), key
+
+        versions.add(algorithm.version)
+
+    assert len(versions) == len(known_keys()), (
+        "версии алгоритмов совпали у разных стратегий — по такой версии "
+        "сделки не различить"
     )
 
-    print(f"  реестр: {known_keys()}, контракт на месте")
+    print(f"  реестр: {known_keys()}, контракт на месте у всех")
 
 
 def check_unknown_key():
-    for key in (None, "", "strategy_0", "сюрприз"):
+    for key in (None, "", "strategy_1", "сюрприз"):
         try:
             get_algorithm(key)
         except UnknownAlgorithm as error:

@@ -11,7 +11,9 @@ from app.constants.demo_seed import copybot_seed_groups, percentage_bot_rows
 from app.crud.asset_history import AssetHistoryCrud
 from app.db.base import DatabaseSessionManager
 from app.crud.strategy import StrategyCrud
-from app.constants.strategy import STRATEGY_LEGACY
+from app.constants.strategy import STRATEGY_0, STRATEGY_LEGACY
+from app.constants.strategy_0_seed import strategy_0_bot_rows
+from app.crud.strategy_pair import StrategyPairCrud
 from app.crud.test_bot import TestBotCrud, bot_identity, with_strategy
 from app.config import settings
 import asyncio
@@ -227,6 +229,10 @@ async def create_bots(dry_run: bool = False, strategy: str = STRATEGY_LEGACY,
     `test_orders` по внешнему ключу — то есть всю историю эксперимента,
     — и не давал завести парк второй стратегии, не разрушив первый.
     """
+    if strategy == STRATEGY_0:
+        await create_strategy_0_bots(dry_run=dry_run, replace=replace)
+        return
+
     # Данные и сетку проверяем до записи: сбой не должен трогать парк.
     average_percent = await get_average_percentage_for_minimum_tick()
     if average_percent is None:
@@ -288,6 +294,62 @@ async def create_bots(dry_run: bool = False, strategy: str = STRATEGY_LEGACY,
             print(f"✅ Ботов {name} создано: {count}")
         else:
             print(f"   Ботов {name} досевать не потребовалось")
+
+
+async def create_strategy_0_bots(dry_run: bool = False,
+                                 replace: bool = False) -> None:
+    """Парк стратегии 0 по её набору пар.
+
+    Пары берутся из `strategy_pairs`, а не из общего списка: у стратегии
+    свой набор, и заводить ботов на чужих парах значит подписаться на
+    котировки, которые ей не нужны.
+    """
+    dsm = DatabaseSessionManager.create(settings.DB_URL)
+
+    async with dsm.get_session() as session:
+        strategy_crud = StrategyCrud(session)
+        strategy_id = await strategy_crud.ensure(STRATEGY_0, "Прострелы")
+
+        symbols = await StrategyPairCrud(session).symbols_for(strategy_id)
+
+        if not symbols:
+            print(
+                "У стратегии strategy_0 нет ни одной пары. Задайте их:\n"
+                "  python -m app.scripts.seed_watched_pairs "
+                "--strategy strategy_0 --symbols BTCUSDT,ETHUSDT --replace"
+            )
+            return
+
+        rows = strategy_0_bot_rows(symbols)
+
+        print(
+            f"Пар у стратегии: {len(symbols)}, конфигураций: {len(rows)}"
+        )
+
+        if dry_run:
+            return
+
+        bot_crud = TestBotCrud(session)
+
+        deactivated = 0
+        if replace:
+            deactivated = await bot_crud.deactivate_strategy(strategy_id)
+
+        known = set() if replace else await bot_crud.existing_identities(
+            strategy_id
+        )
+        fresh = [row for row in rows if bot_identity(row) not in known]
+        prepared = with_strategy(fresh, strategy_id)
+
+        for offset in range(0, len(prepared), 250):
+            await bot_crud.bulk_create(prepared[offset:offset + 250])
+
+        await session.commit()
+
+    if replace:
+        print(f"✅ Деактивировано прежних ботов: {deactivated}")
+
+    print(f"✅ Ботов strategy_0 создано: {len(prepared)}")
 
 
 async def create_bots_safely(dry_run: bool = False,

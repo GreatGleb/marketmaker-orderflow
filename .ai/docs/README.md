@@ -13,8 +13,9 @@
 [test-bots/09-roadmap.md](test-bots/09-roadmap.md) — новую сессию удобно
 начинать оттуда.
 
-Предложение по разделению стратегий и подготовке стратегии 0:
-[план рефакторинга](test-bots/12-multi-strategy-plan.md).
+Разделение стратегий: [план и что по нему
+сделано](test-bots/12-multi-strategy-plan.md), сама стратегия
+прострелов — [13-strategy-0.md](test-bots/13-strategy-0.md).
 
 ## Соглашения
 

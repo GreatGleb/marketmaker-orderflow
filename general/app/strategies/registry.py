@@ -11,6 +11,7 @@
 """
 from app.strategies.base import Algorithm
 from app.strategies.legacy.algorithm import LegacyAlgorithm
+from app.strategies.strategy_0.algorithm import Strategy0Algorithm
 
 
 class UnknownAlgorithm(LookupError):
@@ -19,6 +20,7 @@ class UnknownAlgorithm(LookupError):
 
 _ALGORITHMS: dict[str, Algorithm] = {
     LegacyAlgorithm.key: LegacyAlgorithm(),
+    Strategy0Algorithm.key: Strategy0Algorithm(),
 }
 
 

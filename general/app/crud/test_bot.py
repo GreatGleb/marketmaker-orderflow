@@ -1,3 +1,5 @@
+import json
+
 from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -59,6 +61,9 @@ BOT_IDENTITY_FIELDS = (
     "copybot_v2_time_in_minutes",
     "copybot_v3_time_in_minutes",
     "copybot_v3_compound_balance",
+    # Настройки стратегии — часть конфигурации, а не довесок: у
+    # стратегии 0 ими и отличается один бот парка от другого.
+    "strategy_config",
 )
 
 
@@ -91,6 +96,11 @@ def bot_identity(bot) -> tuple:
         if isinstance(raw, (int, float, Decimal)):
             number = Decimal(str(raw))
             return None if number == 0 else str(number.normalize())
+
+        if isinstance(raw, dict):
+            # Канонический вид: порядок ключей в JSONB не сохраняется, и
+            # два одинаковых по смыслу конфига иначе разъехались бы.
+            return json.dumps(raw, sort_keys=True, default=str)
 
         return raw or None
 
