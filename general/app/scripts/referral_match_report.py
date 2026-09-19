@@ -56,6 +56,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import func, select
 
 from app.config import settings
+from app.constants.strategy import BOT_KIND_COPY_V1
 from app.crud.strategy import StrategyCrud, UnknownStrategy
 from app.crud.test_order_rollup import TestOrderRollupCrud
 from app.db.base import DatabaseSessionManager
@@ -107,7 +108,7 @@ async def copybot_combinations(session, strategy_ids=None):
             )
             .where(
                 TestBot.is_active,
-                TestBot.copy_bot_min_time_profitability_min.is_not(None),
+                TestBot.bot_kind == BOT_KIND_COPY_V1,
                 *(
                     [TestBot.strategy_id.in_(strategy_ids)]
                     if strategy_ids is not None

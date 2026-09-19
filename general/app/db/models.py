@@ -582,6 +582,16 @@ class TestBot(BaseId):
         index=True,
         comment="Стратегия, экземпляром которой является бот",
     )
+    bot_kind: Mapped[str] = mapped_column(
+        types.String,
+        nullable=False,
+        server_default="ordinary",
+        index=True,
+        comment=(
+            "Вид бота: ordinary, copy_v1, copy_v2, copy_v3. Колонки-маркеры "
+            "остались окнами оценки прибыльности, а не признаком типа"
+        ),
+    )
     strategy_config: Mapped[Optional[dict]] = mapped_column(
         JSONB(none_as_null=True),
         nullable=True,

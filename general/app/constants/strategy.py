@@ -54,6 +54,17 @@ PAIR_POLICY_VOLATILITY_JUMPS = "volatility_jumps"
 PAIR_POLICIES = (PAIR_POLICY_MANUAL, PAIR_POLICY_VOLATILITY_JUMPS)
 
 
+# Вид бота (`test_bots.bot_kind`). Раньше выводился из того, какая
+# колонка-маркер не NULL; теперь хранится явно, а маркеры остались
+# только как окна оценки прибыльности.
+BOT_KIND_ORDINARY = "ordinary"
+BOT_KIND_COPY_V1 = "copy_v1"
+BOT_KIND_COPY_V2 = "copy_v2"
+BOT_KIND_COPY_V3 = "copy_v3"
+
+COPY_BOT_KINDS = (BOT_KIND_COPY_V1, BOT_KIND_COPY_V2, BOT_KIND_COPY_V3)
+
+
 # Пул доноров копибота (`test_bots.donor_scope`).
 #
 # {"mode": "all"} — любые стратегии, включая подключённые позже.

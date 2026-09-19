@@ -40,12 +40,15 @@ NVDAUSDT), которые котируются в USDT, по имени от к�
 """
 import argparse
 import asyncio
+import json
 import logging
 
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 
 import httpx
+
+from redis.asyncio import Redis
 
 from sqlalchemy import delete, func, select
 
@@ -57,6 +60,7 @@ from app.constants.markets import (
 )
 # Тот же порог оборота, что и у отбора волатильной пары: держать два своих
 # понятия неликвида в одном проекте — верный способ их разъехать.
+from app.constants.open_positions import OPEN_POSITION_SYMBOLS_PREFIX
 from app.constants.strategy import (
     PAIR_POLICY_VOLATILITY_JUMPS,
     STRATEGY_LEGACY,
@@ -526,6 +530,41 @@ async def spec_ids_by_symbol(session, symbols) -> dict[str, int]:
     return found
 
 
+async def busy_symbols() -> list[str]:
+    """Пары, на которых шарды симулятора держат позиции прямо сейчас.
+
+    Состояние позиций живёт в памяти процессов, поэтому спрашиваем их
+    самих: каждый шард публикует свой список с коротким TTL. Redis не
+    отвечает — считаем, что занятых пар нет: пересборка идёт под
+    остановленным симулятором, и это не худший из возможных ответов,
+    но и молчать о нём нельзя.
+    """
+    redis = Redis.from_url(settings.REDIS_URL)
+
+    try:
+        symbols = []
+
+        async for key in redis.scan_iter(
+            f"{OPEN_POSITION_SYMBOLS_PREFIX}:*", count=100
+        ):
+            raw = await redis.get(key)
+
+            if not raw:
+                continue
+
+            try:
+                symbols.extend(json.loads(raw))
+            except (TypeError, ValueError):
+                logging.info(f"Ключ {key} с занятыми парами не разобран")
+
+        return list(dict.fromkeys(symbols))
+    except Exception as error:
+        logging.info(f"Не удалось прочитать занятые пары: {error}")
+        return []
+    finally:
+        await redis.aclose()
+
+
 async def sync_watched_pairs(session):
     """watched_pair := объединение наборов стратегий + пары активных ботов.
 
@@ -545,8 +584,10 @@ async def sync_watched_pairs(session):
         )
     )).scalars().all() if strategy_spec_ids else []
 
+    # Пары открытых позиций — наравне с закреплёнными: пропадёт пара,
+    # и позицию будет нечем закрывать.
     symbols = list(dict.fromkeys([
-        *symbols, *await get_pinned_symbols(session),
+        *symbols, *await get_pinned_symbols(session), *await busy_symbols(),
     ]))
 
     symbols = await affordable_symbols(session, symbols)

@@ -28,7 +28,7 @@ from sqlalchemy import select
 
 from app.config import settings
 from app.constants.copybot import copybot_v3_rows
-from app.constants.strategy import STRATEGY_LEGACY
+from app.constants.strategy import BOT_KIND_COPY_V3, STRATEGY_LEGACY
 from app.crud.strategy import StrategyCrud
 from app.crud.test_bot import TestBotCrud, with_strategy
 from app.db.base import DatabaseSessionManager
@@ -71,7 +71,7 @@ async def missing_rows(session, strategy_id) -> list[dict]:
                 TestBot.copybot_v3_time_in_minutes,
                 TestBot.copybot_v3_compound_balance,
             ).where(
-                TestBot.copybot_v3_time_in_minutes.is_not(None),
+                TestBot.bot_kind == BOT_KIND_COPY_V3,
                 TestBot.strategy_id == strategy_id,
             )
         )

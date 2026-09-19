@@ -14,7 +14,12 @@ from redis.asyncio import Redis
 
 from app.config import settings
 from app.bots.binance_bot import BinanceBot
-from app.constants.order import ORDER_QUEUE_KEY
+from app.services.paper_execution import build_trade, publish_trade
+from app.constants.open_positions import (
+    OPEN_POSITION_PUBLISH_INTERVAL_SECONDS,
+    OPEN_POSITION_SYMBOLS_TTL_SECONDS,
+    open_position_symbols_key,
+)
 from app.constants.volatility import most_volatile_symbol_key
 from app.crud.exchange_pair_spec import AssetExchangeSpecCrud
 from app.crud.test_bot import TestBotCrud
@@ -103,6 +108,10 @@ class StartTestBotsCommand(Command):
         # id стратегии -> ключ. Нужна, чтобы записать версию алгоритма в
         # сделку: id выдаёт база, а версия привязана к ключу.
         self._strategy_keys: dict[int, str] = {}
+        # Пары, на которых этот процесс прямо сейчас держит позиции.
+        # Публикуются в Redis, чтобы пересборка watched_pair не сняла
+        # подписку на пару, по которой позицию ещё нужно закрывать.
+        self._open_symbols: dict[int, str] = {}
         # Логи всех шардов лежат в разных файлах, но при чтении их вместе
         # (или в консоли ручного запуска) без пометки не разобрать, чей это.
         self.log_prefix = f'[шард {shard}/{shards}] ' if shards > 1 else ''
@@ -255,6 +264,8 @@ class StartTestBotsCommand(Command):
                         await asyncio.sleep(1)
 
             tasks.append(asyncio.create_task(_run_loop(bot)))
+
+        tasks.append(asyncio.create_task(self.publish_open_symbols(redis)))
 
         await asyncio.gather(*tasks)
 
@@ -502,12 +513,6 @@ class StartTestBotsCommand(Command):
             'selection': refer_bot,
         }
 
-    @staticmethod
-    def json_serializer(obj):
-        if isinstance(obj, datetime):
-            return obj.isoformat()
-        raise TypeError(f"Type {type(obj)} not serializable")
-
     # --- копибот v3 с компаундингом ---------------------------------------
     #
     # Единственный бот парка, который ведёт счёт, а не считает на условную
@@ -701,6 +706,37 @@ class StartTestBotsCommand(Command):
             if not selected:
                 return None, ()
             return selected, (*chain, selected.id)
+
+    async def publish_open_symbols(self, redis):
+        """Раз в несколько секунд обновляет список занятых пар шарда.
+
+        Отдельной задачей, а не из цикла удержания: тот крутится каждые
+        100 мс на каждого бота, и запись в Redis оттуда была бы на
+        порядки чаще нужного.
+        """
+        key = open_position_symbols_key(self.shard)
+
+        while not self.stop_event.is_set():
+            symbols = sorted(set(self._open_symbols.values()))
+
+            try:
+                if symbols:
+                    await redis.set(
+                        key,
+                        json.dumps(symbols),
+                        ex=OPEN_POSITION_SYMBOLS_TTL_SECONDS,
+                    )
+                else:
+                    # Позиций нет — ключ не продлеваем: пусть истечёт
+                    # сам, а не держит подписки на пустом месте.
+                    await redis.delete(key)
+            except Exception as error:
+                # Redis лежит — это не повод ронять симулятор: без
+                # ключа пересборка пар просто не узнает о занятых парах,
+                # а она и так идёт раз в сутки.
+                logging.info("Не удалось опубликовать занятые пары: %s", error)
+
+            await asyncio.sleep(OPEN_POSITION_PUBLISH_INTERVAL_SECONDS)
 
     @staticmethod
     async def scope_still_allows(bot_id: int, strategy_key) -> bool:
@@ -1023,6 +1059,7 @@ class StartTestBotsCommand(Command):
                 logging.info(f'wait for should_exit for {bot_id}')
 
             just30sec_start_time = time.time()
+            self._open_symbols[bot_id] = symbol
 
             while not stop_event.is_set():
                 updated_price = await price_provider.get_price(symbol=symbol)
@@ -1046,6 +1083,9 @@ class StartTestBotsCommand(Command):
             if is_it_copy or bot_id == 1:
                 logging.info(f'end wait for {bot_id}')
 
+            # Позиция закрыта: пара этому боту больше не нужна.
+            self._open_symbols.pop(bot_id, None)
+
             close_price = await price_provider.get_price(symbol=symbol)
 
             balance = bot_config.balance
@@ -1058,57 +1098,26 @@ class StartTestBotsCommand(Command):
                 # бывает.
                 balance = notional
 
-            pnl = PriceCalculator.calculate_pnl(
-                balance=balance,
-                close_price=close_price,
-                open_price=open_price,
+            trade = build_trade(
+                order=order,
+                bot_id=bot_id,
+                symbol=symbol,
                 trade_type=trade_type,
-                commission_open=commission_rate,
-                commission_close=commission_rate,
-            )
-
-            # Тем же расчётом, что и внутри calculate_pnl, иначе поля
-            # open_fee/close_fee не сходятся с profit_loss.
-            open_fee, close_fee = PriceCalculator.calculate_fees(
                 balance=balance,
                 open_price=open_price,
                 close_price=close_price,
-                commission_open=commission_rate,
-                commission_close=commission_rate,
-            )
-
-            order_data = {
-                "asset_symbol": symbol,
-                "order_type": trade_type,
-                "balance": str(balance),
-                "open_price": str(open_price),
-                "open_time": order.open_time,
-                "open_fee": str(open_fee),
-                "stop_loss_price": str(order.stop_loss_price),
-                "bot_id": bot_id,
-                "close_price": str(close_price),
-                "close_time": datetime.now(UTC),
-                "close_fee": str(close_fee),
-                "profit_loss": str(pnl),
-                "is_active": False,
-                "start_updown_ticks": int(order.start_updown_ticks),
-                "stop_loss_ticks": int(order.stop_loss_ticks),
-                "stop_success_ticks": int(order.stop_success_ticks),
-                "stop_reason_event": order.stop_reason_event,
-                "referral_bot_id": referral_bot_id,
-                "strategy_id": original_bot_config.strategy_id,
-                "executed_strategy_id": executed_strategy_id,
-                "algorithm_version": algorithm_version_for(
+                commission_rate=commission_rate,
+                referral_bot_id=referral_bot_id,
+                strategy_id=original_bot_config.strategy_id,
+                executed_strategy_id=executed_strategy_id,
+                algorithm_version=algorithm_version_for(
                     self._strategy_keys.get(executed_strategy_id)
                 ),
-                "donor_chain": donor_chain,
-                "created_at": datetime.now(UTC),
-                "updated_at": datetime.now(UTC),
-            }
-            await redis.rpush(
-                ORDER_QUEUE_KEY,
-                json.dumps(order_data, default=self.json_serializer),
+                donor_chain=donor_chain,
             )
+            pnl = trade.pnl
+
+            await publish_trade(redis, trade)
 
             if is_compound_v3:
                 # Счёт растёт и падает на результат сделки — в этом и смысл

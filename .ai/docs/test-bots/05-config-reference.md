@@ -20,15 +20,17 @@
 | `consider_ma_for_close_order` | bool | `demo_test_bot.py:606`, `:669` | выход по MA (уровни SL/TP обнуляются) |
 | `ma_number_of_candles_for_open_order` | numeric NULL | `price_provider.py:173` | период одной MA |
 | `ma_number_of_candles_for_close_order` | numeric NULL | там же | период второй MA. Быстрая/медленная определяются сравнением, а не именами полей |
-| `copy_bot_min_time_profitability_min` | numeric NULL | `demo_test_bot.py:445` | **признак копибота v1** + окно оценки прибыльности донора, минуты |
+| `copy_bot_min_time_profitability_min` | numeric NULL | `update_config_from_referral_bot` | окно оценки прибыльности донора, минуты (у `bot_kind = copy_v1`) |
 | `copybot_v1_check_for_24h_profitability` | bool | `profitable_bot_updater.py:421` | доп. фильтр донора: прибылен и за 24 ч |
 | `copybot_v1_exclude_losing_donors` | bool | там же | доп. фильтр: выбросить донора, у которого копиры за сутки в минусе. Отсутствие истории копирования — не причина выбрасывать |
-| `copybot_v2_time_in_minutes` | numeric NULL | `demo_test_bot.py:425` | **признак копибота v2** + окно оценки прибыльности копибота-донора |
-| `copybot_v3_time_in_minutes` | numeric NULL | `simulate_bot`, ветка перед v2 | **признак копибота v3** + окно, за которое ранжируются копиботы v2. У обоих ботов `720` — те же 12 часов, что зашиты в боевом `_get_best_copy_bot` |
+| `copybot_v2_time_in_minutes` | numeric NULL | `select_copybot` | окно оценки прибыльности копибота-донора (у `bot_kind = copy_v2`) |
+| `copybot_v3_time_in_minutes` | numeric NULL | `select_copybot` | окно, за которое ранжируются копиботы v2 (у `bot_kind = copy_v3`). У обоих ботов `720` — те же 12 часов, что зашиты в боевом `_get_best_copy_bot` |
 | `copybot_v3_compound_balance` | bool | `simulate_bot`, `compound_order_size` | различает пару ботов v3. `false` — баланс всегда 1000, как у парка; `true` — бот ведёт счёт, в позицию идёт 99% баланса, количество округляется по шагу лота |
 | `copybot_v3_stopped_at` | timestamptz NULL | `_v3_stop`, `_v3_is_stopped` | когда на балансе перестал набираться минимальный лот. Бот остаётся `is_active`, иначе выпал бы из отчётов вместе с фактом остановки |
 | `min_timeframe_asset_volatility` | numeric NULL | `demo_test_bot.py:465` | окно в минутах, за которое берётся самая волатильная пара. Заполнено → пара из Redis вместо `symbol`. В нынешнем парке не заполнено ни у кого |
 | `strategy_id` | int NOT NULL | `with_strategy`, `strategy_id_by_bot` | стратегия, экземпляром которой является бот. У всего нынешнего парка — `legacy` |
+| `bot_kind` | str NOT NULL | `active_bots_subquery`, `bot_kind_for_row` | вид бота: `ordinary`, `copy_v1`, `copy_v2`, `copy_v3`. Раньше выводился из того, какая колонка-маркер не NULL; маркеры остались окнами оценки прибыльности |
+| `strategy_config` | jsonb NULL | `Algorithm.parse_config` | настройки, специфичные для алгоритма, с ключом `schema_version`. У `legacy` пусто: его параметры лежат колонками |
 | `donor_scope` | jsonb NULL | `donors_within_scope` | пул стратегий-доноров копибота: `{"mode": "all"}` либо `{"mode": "list", "strategies": ["legacy"]}`. `NULL` у обычных ботов и означает «без ограничений». По умолчанию сиды ставят явный список своей стратегии: с `all` копибот сменил бы алгоритм сам собой в день подключения второй стратегии |
 | `created_at` / `updated_at` | timestamptz | — | из `BaseId` |
 

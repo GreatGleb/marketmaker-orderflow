@@ -488,15 +488,12 @@ class TestOrderRollupCrud(BaseCrud[TestOrderRollup]):
         with
         -- Кандидаты в доноры — те же, кого перебирает воркер:
         -- profitable_bot_ids_for_window ходит с just_not_copy_bots=True.
-        -- Список колонок обязан совпадать с COPYBOT_MARKER_COLUMNS в
-        -- app/crud/test_bot.py: там он перебирается кодом, здесь написан
-        -- руками, и разойтись они могут только молча.
+        -- Условие одно и то же в обоих местах — вид бота, а не набор
+        -- nullable-колонок, который раньше приходилось держать
+        -- синхронным здесь и в app/crud/test_bot.py.
         non_copy as (
             select id from test_bots
-            where is_active
-              and copy_bot_min_time_profitability_min is null
-              and copybot_v2_time_in_minutes is null
-              and copybot_v3_time_in_minutes is null
+            where is_active and bot_kind = 'ordinary'
         ),
         -- Что копиботы этой комбинации параметров делали на самом деле.
         -- Строка свёртки — на (блок, бот, донор, пара), донор нас интересует

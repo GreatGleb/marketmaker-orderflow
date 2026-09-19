@@ -5,20 +5,29 @@ from sqlalchemy import select, func, case, distinct, update
 from sqlalchemy.dialects.postgresql import insert
 from datetime import datetime, timezone
 
-from app.constants.strategy import donor_scope_list, STRATEGY_LEGACY
+from app.constants.strategy import (
+    BOT_KIND_COPY_V1,
+    BOT_KIND_COPY_V2,
+    BOT_KIND_COPY_V3,
+    BOT_KIND_ORDINARY,
+    COPY_BOT_KINDS,
+    donor_scope_list,
+    STRATEGY_LEGACY,
+)
 from app.db.models import TestBot, TestOrder
 from app.crud.base import BaseCrud
 
 UTC = timezone.utc
 
 
-# Колонки-маркеры: тип бота не хранится отдельным полем, он выводится из того,
-# какая из них не NULL. Заводя следующую версию копибота, добавьте её сюда —
-# `just_not_copy_bots` строится перебором этого списка, и забытая колонка
-# означает, что новый копибот попадёт в пул доноров обычных ботов. Цепочка
-# отбора замкнётся в кольцо (v3 → v2 → v1 → v3), а собственных торговых
-# параметров у копибота нет: донор соберётся из нулей, и это не упадёт и никак
-# не проявится в логах.
+# Колонки-маркеры: окна оценки прибыльности у копиботов каждого уровня.
+# Видом бота они больше не заведуют — для этого есть `bot_kind`, — но
+# остаются тем, чем были по существу: параметром отбора донора.
+#
+# Раньше вид выводился перебором этого списка, и забытая в нём колонка
+# означала, что новый копибот попадёт в пул доноров обычных ботов:
+# цепочка замыкалась в кольцо (v3 → v2 → v1 → v3), донор собирался из
+# нулей, и это не падало и никак не проявлялось в логах.
 COPYBOT_MARKER_COLUMNS = (
     "copy_bot_min_time_profitability_min",
     "copybot_v2_time_in_minutes",
@@ -88,13 +97,28 @@ def bot_identity(bot) -> tuple:
     return tuple(value(field) for field in BOT_IDENTITY_FIELDS)
 
 
-def is_copybot_row(row: dict) -> bool:
-    """Строка парка описывает копибота.
+def bot_kind_for_row(row: dict) -> str:
+    """Вид бота по строке сида.
 
-    Та же проверка, что и у `just_not_copy_bots`, только для словаря,
-    который ещё не стал строкой таблицы.
+    Порядок проверки — от старшего к младшему: строка с несколькими
+    маркерами ведёт себя как старший из них, и раскладывать её иначе,
+    чем это делает симулятор, нельзя.
     """
-    return any(row.get(column) is not None for column in COPYBOT_MARKER_COLUMNS)
+    if row.get("copybot_v3_time_in_minutes") is not None:
+        return BOT_KIND_COPY_V3
+
+    if row.get("copybot_v2_time_in_minutes") is not None:
+        return BOT_KIND_COPY_V2
+
+    if row.get("copy_bot_min_time_profitability_min") is not None:
+        return BOT_KIND_COPY_V1
+
+    return BOT_KIND_ORDINARY
+
+
+def is_copybot_row(row: dict) -> bool:
+    """Строка парка описывает копибота."""
+    return bot_kind_for_row(row) in COPY_BOT_KINDS
 
 
 def with_strategy(rows: list[dict], strategy_id: int, donor_scope=None) -> list[dict]:
@@ -116,6 +140,7 @@ def with_strategy(rows: list[dict], strategy_id: int, donor_scope=None) -> list[
 
     for row in rows:
         row = {**row, "strategy_id": strategy_id}
+        row.setdefault("bot_kind", bot_kind_for_row(row))
 
         if is_copybot_row(row):
             row.setdefault("donor_scope", donor_scope)
@@ -142,18 +167,13 @@ def active_bots_subquery(
     query = select(TestBot.id).where(TestBot.is_active == True)
 
     if just_copy_bots:
-        query = query.where(
-            TestBot.copy_bot_min_time_profitability_min.is_not(None)
-        )
+        query = query.where(TestBot.bot_kind == BOT_KIND_COPY_V1)
     elif just_copy_bots_v2:
-        query = query.where(TestBot.copybot_v2_time_in_minutes.is_not(None))
+        query = query.where(TestBot.bot_kind == BOT_KIND_COPY_V2)
     elif just_copy_bots_v3:
-        query = query.where(TestBot.copybot_v3_time_in_minutes.is_not(None))
+        query = query.where(TestBot.bot_kind == BOT_KIND_COPY_V3)
     elif just_not_copy_bots:
-        query = query.where(*(
-            getattr(TestBot, column).is_(None)
-            for column in COPYBOT_MARKER_COLUMNS
-        ))
+        query = query.where(TestBot.bot_kind == BOT_KIND_ORDINARY)
 
     if symbol:
         query = query.where(TestBot.symbol == symbol)
@@ -303,9 +323,7 @@ class TestBotCrud(BaseCrud[TestBot]):
         return list(result.scalars().all())
 
     async def get_copybots(self):
-        stmt = select(TestBot).where(
-            TestBot.copy_bot_min_time_profitability_min.is_not(None)
-        )
+        stmt = select(TestBot).where(TestBot.bot_kind == BOT_KIND_COPY_V1)
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
@@ -315,9 +333,7 @@ class TestBotCrud(BaseCrud[TestBot]):
         Нужен и симулятору (через него бот узнаёт свой стартовый баланс после
         перезапуска), и отчёту: тот показывает обе кривые рядом.
         """
-        stmt = select(TestBot).where(
-            TestBot.copybot_v3_time_in_minutes.is_not(None)
-        )
+        stmt = select(TestBot).where(TestBot.bot_kind == BOT_KIND_COPY_V3)
 
         if compound is not None:
             stmt = stmt.where(

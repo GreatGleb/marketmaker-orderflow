@@ -164,6 +164,40 @@ async def check_pinned(session, strategy_ids):
     print("  пара активного бота держится в списке помимо наборов")
 
 
+async def check_busy_pairs(session, strategy_ids):
+    """Пара открытой позиции остаётся в списке, даже выпав из наборов.
+
+    Состояние позиций живёт в памяти процессов симулятора, поэтому они
+    сами публикуют занятые пары. Без этого пересборка снимала бы
+    подписку на пару, по которой позицию ещё нужно закрывать.
+    """
+    legacy_id, other_id = strategy_ids
+
+    # Ни один набор про DDDUSDT не знает, бот на ней тоже не закреплён:
+    # держится она только открытой позицией.
+    await session.execute(text("UPDATE test_bots SET is_active = false"))
+    await session.commit()
+
+    with patch.object(
+        sw, "busy_symbols", AsyncMock(return_value=["DDDUSDT"]),
+    ):
+        await sw.sync_watched_pairs(session)
+
+    assert "DDDUSDT" in await watched_symbols(session), (
+        "пара открытой позиции выпала из списка — закрывать позицию "
+        "будет нечем"
+    )
+
+    # Без публикации занятых пар она уходит: список не держит ничего
+    # лишнего дольше необходимого.
+    with patch.object(sw, "busy_symbols", AsyncMock(return_value=[])):
+        await sw.sync_watched_pairs(session)
+
+    assert "DDDUSDT" not in await watched_symbols(session)
+
+    print("  пара открытой позиции держится в списке, пока позиция жива")
+
+
 async def main():
     if not os.getenv("STRATEGY_PAIRS_TEST_DB"):
         print(
@@ -198,6 +232,7 @@ async def main():
             await check_union(session, strategy_ids)
             await check_independence(session, strategy_ids)
             await check_pinned(session, strategy_ids)
+            await check_busy_pairs(session, strategy_ids)
 
     print("\nвсё сходится")
 
