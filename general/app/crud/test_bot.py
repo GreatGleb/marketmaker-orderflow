@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, case, distinct, update
 from sqlalchemy.dialects.postgresql import insert
@@ -22,6 +24,68 @@ COPYBOT_MARKER_COLUMNS = (
     "copybot_v2_time_in_minutes",
     "copybot_v3_time_in_minutes",
 )
+
+
+# Поля, которыми конфигурация бота отличается от другой. Баланса здесь
+# намеренно нет: у компаундирующего бота v3 он меняется от сделки к
+# сделке, и по нему такой бот выглядел бы «новым» при каждом досеве.
+BOT_IDENTITY_FIELDS = (
+    "symbol",
+    "start_updown_percents",
+    "stop_loss_percents",
+    "stop_win_percents",
+    "min_timeframe_asset_volatility",
+    "start_updown_ticks",
+    "stop_loss_ticks",
+    "stop_success_ticks",
+    "use_trailing_stop",
+    "consider_ma_for_open_order",
+    "consider_ma_for_close_order",
+    "ma_number_of_candles_for_open_order",
+    "ma_number_of_candles_for_close_order",
+    "time_to_wait_for_entry_price_to_open_order_in_seconds",
+    "copy_bot_min_time_profitability_min",
+    "copybot_v1_check_for_24h_profitability",
+    "copybot_v1_exclude_losing_donors",
+    "copybot_v2_time_in_minutes",
+    "copybot_v3_time_in_minutes",
+    "copybot_v3_compound_balance",
+)
+
+
+def bot_identity(bot) -> tuple:
+    """Ключ конфигурации: словарь сида и строка базы дают одно и то же.
+
+    Числа сравниваются нормализованными строками, а не как есть: из
+    базы numeric приходит с другим числом нулей в хвосте
+    (`Decimal('0.0050')` против `Decimal('0.005')`), и прямое сравнение
+    объявило бы одинаковых ботов разными — досев завёл бы дубль на
+    каждый запуск.
+    """
+    def value(field):
+        if isinstance(bot, dict):
+            raw = bot.get(field)
+        else:
+            raw = getattr(bot, field, None)
+
+        # «Не задано» у строки сида и у строки базы выглядит по-разному:
+        # в сиде поля просто нет, а в базе на его месте стоит серверное
+        # умолчание — 0 у тиков, false у флагов. Сводим к одному, иначе
+        # каждый досев считал бы весь парк новым. Ноль и здесь означает
+        # «не задано» — ровно так его трактуют потребители конфига.
+        if raw is None or raw is False:
+            return None
+
+        if isinstance(raw, bool):
+            return True
+
+        if isinstance(raw, (int, float, Decimal)):
+            number = Decimal(str(raw))
+            return None if number == 0 else str(number.normalize())
+
+        return raw or None
+
+    return tuple(value(field) for field in BOT_IDENTITY_FIELDS)
 
 
 def is_copybot_row(row: dict) -> bool:
@@ -119,6 +183,27 @@ class TestBotCrud(BaseCrud[TestBot]):
 
         result = await self.session.execute(stmt)
         return result.scalars().all()
+
+    async def existing_identities(self, strategy_id: int) -> set[tuple]:
+        """Ключи конфигураций, уже заведённых в парке этой стратегии."""
+        result = await self.session.scalars(
+            select(TestBot).where(TestBot.strategy_id == strategy_id)
+        )
+        return {bot_identity(bot) for bot in result.unique().all()}
+
+    async def deactivate_strategy(self, strategy_id: int) -> int:
+        """Снимает `is_active` со всех ботов стратегии. Возвращает сколько.
+
+        Замена парка — это деактивация прежних конфигураций, а не
+        удаление: сделки остаются на месте, и накопленная статистика
+        переживает пересборку.
+        """
+        result = await self.session.execute(
+            update(TestBot)
+            .where(TestBot.strategy_id == strategy_id, TestBot.is_active.is_(True))
+            .values(is_active=False)
+        )
+        return result.rowcount
 
     async def strategy_id_by_bot(self) -> dict[int, int]:
         """id бота -> id его стратегии для всего парка.

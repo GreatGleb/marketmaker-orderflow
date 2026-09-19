@@ -42,6 +42,18 @@ def algorithm_version_for(strategy_key) -> str | None:
     return ALGORITHM_VERSIONS.get(strategy_key)
 
 
+# Политика набора пар (`strategies.pair_policy`).
+#
+# Отбор по скачкам — то, что делает `seed_watched_pairs` сегодня: оборот,
+# число передних фронтов, потолок вклада одного скачка. Он принадлежит
+# legacy, а не «системе вообще»: стратегии прострелов, скорее всего,
+# нужны другие пары и другой критерий.
+PAIR_POLICY_MANUAL = "manual"
+PAIR_POLICY_VOLATILITY_JUMPS = "volatility_jumps"
+
+PAIR_POLICIES = (PAIR_POLICY_MANUAL, PAIR_POLICY_VOLATILITY_JUMPS)
+
+
 # Пул доноров копибота (`test_bots.donor_scope`).
 #
 # {"mode": "all"} — любые стратегии, включая подключённые позже.

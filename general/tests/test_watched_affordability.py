@@ -98,27 +98,99 @@ class Result:
         return self.rows
     def scalars(self):
         return self
+    def scalar_one_or_none(self):
+        return self.rows[0] if self.rows else None
     def first(self):
         return self.rows[0] if self.rows else None
 
 
+SPEC_IDS = {'GOOD': 1, 'BAD': 2}
+
+
 class Session:
+    """Справочник, набор пар стратегии и watched_pair в памяти.
+
+    Отвечает по смыслу запроса, а не по порядку вызовов: реализация
+    ходит в базу несколько раз и порядок меняется от правки к правке, а
+    проверяем мы здесь другое — что недоступная для покупки пара не
+    попадает ни в набор стратегии, ни в общий список.
+    """
+
     def __init__(self, replace):
         self.info = {'watched_affordability': snapshot()}
-        self.responses = ([] if replace else [Result(['BAD'])]) + [
-            Result([SimpleNamespace(symbol=s, quote_asset='USDT', contract_type='PERPETUAL') for s in ('GOOD', 'BAD')]),
-            Result([(1, 'GOOD')]), Result([2]), Result([]),
-        ]
+        # До прогона в наборе и в списке лежит 'BAD' — пара, покупка
+        # которой не проходит по бюджету. Прогон обязан её убрать.
+        self.strategy_pairs = {SPEC_IDS['BAD']}
+        self.watched = {SPEC_IDS['BAD']}
+        self.replace = replace
         self.deleted = False
         self.added = []
         self.committed = False
+
     async def execute(self, query):
         if query.is_delete:
-            self.deleted = True
-            assert list(query.compile().params.values()) == [[2]]
-        return self.responses.pop(0)
+            ids = [
+                value for value in query.compile().params.values()
+                if isinstance(value, list)
+            ]
+            removed = set(ids[0]) if ids else set()
+
+            if query.table.name == 'watched_pair':
+                self.deleted = True
+                self.watched -= removed
+            else:
+                self.strategy_pairs -= removed
+
+            return Result([])
+
+        if query.is_insert:
+            for row in query.compile().params.values():
+                if isinstance(row, int):
+                    self.strategy_pairs.add(row)
+            for values in getattr(query, '_values', ()) or ():
+                pass
+            return Result([])
+
+        columns = [column.name for column in query.selected_columns]
+        table = query.get_final_froms()[0].name
+
+        if table == 'strategies':
+            return Result([SimpleNamespace(
+                id=1, key='legacy', pair_policy='volatility_jumps',
+            )])
+
+        if table == 'asset_exchange_specs':
+            if columns[:3] == ['symbol', 'quote_asset', 'contract_type']:
+                return Result([
+                    SimpleNamespace(
+                        symbol=symbol, quote_asset='USDT',
+                        contract_type='PERPETUAL', status='TRADING',
+                    )
+                    for symbol in SPEC_IDS
+                ])
+            if columns == ['id', 'symbol']:
+                return Result([
+                    (spec_id, symbol)
+                    for symbol, spec_id in SPEC_IDS.items()
+                ])
+            if columns == ['symbol']:
+                by_id = {spec_id: symbol for symbol, spec_id in SPEC_IDS.items()}
+                return Result([
+                    by_id[spec_id] for spec_id in sorted(self.strategy_pairs)
+                ])
+
+        if table == 'strategy_pairs':
+            return Result(sorted(self.strategy_pairs))
+
+        if table == 'watched_pair':
+            return Result(sorted(self.watched))
+
+        raise AssertionError(f'неожиданный запрос: {table}, {columns}')
+
     def add(self, row):
         self.added.append(row.asset_exchange_id)
+        self.watched.add(row.asset_exchange_id)
+
     async def commit(self):
         self.committed = True
 
@@ -128,9 +200,15 @@ async def check_paths():
     for replace in (True, False):
         session = Session(replace)
         with patch.object(sw, 'get_pinned_symbols', AsyncMock(return_value=['BAD'])):
-            assert await sw.apply_watched_pairs(session, ['GOOD', 'BAD'], replace) == (1, 1)
+            assert await sw.apply_watched_pairs(
+                session, ['GOOD', 'BAD'], replace, strategy_id=1
+            ) == (1, 1)
         assert session.deleted and session.committed and session.added == [1]
-        assert not session.responses
+        # Недоступная пара не осталась ни в общем списке, ни в наборе
+        # стратегии — при replace её оттуда убирают, при пополнении она
+        # туда просто не попадает.
+        assert session.watched == {SPEC_IDS['GOOD']}, session.watched
+        assert SPEC_IDS['GOOD'] in session.strategy_pairs
     # Снимок переиспользуется; протухший обновляется одним общим вызовом.
     session = SimpleNamespace(info={})
     with patch.object(wa, 'load_snapshot', AsyncMock(side_effect=lambda: snapshot())) as load:
@@ -177,8 +255,12 @@ async def check_rank_and_empty_rebuild():
          patch.object(sw, 'apply_watched_pairs', AsyncMock(return_value=(1, 0))) as apply, \
          patch.object(sw, 'restart_price_feed'), \
          patch.object(sw, 'watch_and_rank', AsyncMock(return_value=['GOOD'])):
-        assert await sw.bootstrap(session, 1, 2, 0, .5) == ['GOOD']
-        apply.assert_awaited_once_with(session, ['GOOD'], replace=True)
+        assert await sw.bootstrap(session, 1, 2, 0, .5, strategy_id=1) == ['GOOD']
+        # Кандидаты разгона попадают в набор той стратегии, ради которой
+        # он затеян, а не в чужой.
+        apply.assert_awaited_once_with(
+            session, ['GOOD'], replace=True, strategy_id=1
+        )
 
     # Та же функция вызывается суточным воркером. Пустой отбор не мешает
     # удалить недоступные старые пары и перезапустить подписки.
@@ -188,9 +270,11 @@ async def check_rank_and_empty_rebuild():
          patch.object(sw, 'bootstrap', AsyncMock(return_value=None)), \
          patch.object(sw, 'apply_watched_pairs', AsyncMock(return_value=(0, 1))) as apply, \
          patch.object(sw, 'restart_price_feed') as restart:
-        session.execute = AsyncMock(return_value=Result([]))
+        session.execute = AsyncMock(return_value=Result([SimpleNamespace(
+            id=1, key='legacy', pair_policy='volatility_jumps',
+        )]))
         await sw.seed_watched_pairs(replace=True)
-        apply.assert_awaited_once_with(session, [], False)
+        apply.assert_awaited_once_with(session, [], False, strategy_id=1)
         restart.assert_called_once()
 
 

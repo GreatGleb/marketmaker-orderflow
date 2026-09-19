@@ -57,8 +57,14 @@ from app.constants.markets import (
 )
 # Тот же порог оборота, что и у отбора волатильной пары: держать два своих
 # понятия неликвида в одном проекте — верный способ их разъехать.
+from app.constants.strategy import (
+    PAIR_POLICY_VOLATILITY_JUMPS,
+    STRATEGY_LEGACY,
+)
 from app.constants.volatility import MIN_QUOTE_VOLUME_24H
 from app.crud.asset_history import AssetHistoryCrud
+from app.crud.strategy import StrategyCrud
+from app.crud.strategy_pair import StrategyPairCrud
 from app.crud.test_bot import TestBotCrud
 from app.db.base import DatabaseSessionManager
 from app.db.models import AssetExchangeSpec, AssetHistory, WatchedPair
@@ -415,14 +421,22 @@ async def watch_and_rank(candidates, top, watch_minutes, jump_threshold):
     return chosen
 
 
-async def bootstrap(session, top, candidates_count, watch_minutes, jump_threshold):
-    """Разгон на чистой базе: кандидаты → 5 минут наблюдения → топ по скачкам."""
+async def bootstrap(session, top, candidates_count, watch_minutes,
+                    jump_threshold, strategy_id=None):
+    """Разгон на чистой базе: кандидаты → 5 минут наблюдения → топ по скачкам.
+
+    Кандидаты кладутся в набор той же стратегии, ради которой идёт
+    разгон: иначе временные подписки осели бы у legacy и остались там
+    после отбора.
+    """
     candidates = await rank_from_binance(session, top=candidates_count)
 
     if not candidates:
         return None
 
-    added, removed = await apply_watched_pairs(session, candidates, replace=True)
+    added, removed = await apply_watched_pairs(
+        session, candidates, replace=True, strategy_id=strategy_id
+    )
     logging.info(
         f"В watched_pair временно положено {len(candidates)} кандидатов "
         f"(добавлено {added}, убрано {removed})."
@@ -446,34 +460,51 @@ async def get_pinned_symbols(session):
     return await TestBotCrud(session).get_bot_symbols()
 
 
-async def apply_watched_pairs(session, symbols, replace):
-    """Кладёт выбранные пары в watched_pair. Возвращает (добавлено, удалено).
+async def apply_watched_pairs(session, symbols, replace, strategy_id=None):
+    """Обновляет набор пар стратегии и пересобирает watched_pair.
 
-    При replace=True досыпает допустимые пары активных ботов,
-    поэтому итоговый список может оказаться чуть длиннее запрошенного топа.
-    Так честнее, чем тратить на них места в рейтинге.
+    Возвращает (добавлено, удалено) — про watched_pair, а не про набор:
+    именно этот список определяет, по каким парам придут котировки.
 
-    Здесь же последняя проверка на торгуемость. Отбор её уже прошёл, но это
-    единственная запись в watched_pair во всём проекте, и держать проверку
-    на входе в неё дешевле, чем полагаться на то, что все вызывающие
-    отфильтровали список сами.
+    При replace=True набор стратегии становится равен переданному
+    списку, иначе только пополняется. Чужие наборы не трогаются ни в
+    одном из случаев: пара, выпавшая из отбора одной стратегии, но
+    нужная другой, остаётся в общем списке.
+
+    Пары активных ботов досыпаются в watched_pair всегда, а не только
+    при replace, и в набор стратегии не входят: пропадёт пара — бот с
+    закреплённым символом просто встанет.
     """
-    if replace:
-        pinned = await get_pinned_symbols(session)
-        symbols = list(dict.fromkeys([*symbols, *pinned]))
-    else:
-        # Защита короткого топа сохраняет лишь всё ещё доступные старые пары.
-        existing_symbols = (await session.execute(
-            select(AssetExchangeSpec.symbol).join(
-                WatchedPair, WatchedPair.asset_exchange_id == AssetExchangeSpec.id
-            )
-        )).scalars().all()
-        symbols = list(dict.fromkeys([*symbols, *existing_symbols]))
+    if strategy_id is None:
+        strategy_id = await StrategyCrud(session).ensure_legacy()
 
     symbols = await affordable_symbols(session, symbols)
     symbols = keep_tradable(
-        symbols, await tradable_symbols(session), "Запись в watched_pair"
+        symbols, await tradable_symbols(session), "Набор пар стратегии"
     )
+
+    spec_id_by_symbol = await spec_ids_by_symbol(session, symbols)
+    pair_crud = StrategyPairCrud(session)
+    wanted_ids = {
+        spec_id_by_symbol[symbol]
+        for symbol in symbols
+        if symbol in spec_id_by_symbol
+    }
+
+    if replace:
+        await pair_crud.replace(strategy_id, wanted_ids)
+    else:
+        await pair_crud.add(strategy_id, wanted_ids)
+
+    return await sync_watched_pairs(session)
+
+
+async def spec_ids_by_symbol(session, symbols) -> dict[str, int]:
+    """symbol -> id в справочнике; о пропущенных сообщает в лог."""
+    symbols = list(symbols)
+
+    if not symbols:
+        return {}
 
     spec_rows = (
         await session.execute(
@@ -482,8 +513,8 @@ async def apply_watched_pairs(session, symbols, replace):
         )
     ).all()
 
-    spec_id_by_symbol = {symbol: spec_id for spec_id, symbol in spec_rows}
-    missing = [s for s in symbols if s not in spec_id_by_symbol]
+    found = {symbol: spec_id for spec_id, symbol in spec_rows}
+    missing = [symbol for symbol in symbols if symbol not in found]
 
     if missing:
         logging.info(
@@ -492,7 +523,46 @@ async def apply_watched_pairs(session, symbols, replace):
             f"Сначала выполните app.scripts.seed_binance_data."
         )
 
-    wanted_ids = {spec_id_by_symbol[s] for s in symbols if s in spec_id_by_symbol}
+    return found
+
+
+async def sync_watched_pairs(session):
+    """watched_pair := объединение наборов стратегий + пары активных ботов.
+
+    Единственная запись в watched_pair во всём проекте, поэтому здесь же
+    последняя проверка доступности и торгуемости: держать её на входе
+    дешевле, чем полагаться на то, что каждый вызывающий отфильтровал
+    свой список сам.
+
+    Возвращает (добавлено, удалено).
+    """
+    pair_crud = StrategyPairCrud(session)
+
+    strategy_spec_ids = await pair_crud.union_spec_ids()
+    symbols = (await session.execute(
+        select(AssetExchangeSpec.symbol).where(
+            AssetExchangeSpec.id.in_(strategy_spec_ids)
+        )
+    )).scalars().all() if strategy_spec_ids else []
+
+    symbols = list(dict.fromkeys([
+        *symbols, *await get_pinned_symbols(session),
+    ]))
+
+    symbols = await affordable_symbols(session, symbols)
+    symbols = keep_tradable(
+        symbols, await tradable_symbols(session), "Запись в watched_pair"
+    )
+
+    spec_id_by_symbol = await spec_ids_by_symbol(session, symbols)
+    # По отфильтрованному списку, а не по всему ответу справочника:
+    # иначе отсев по бюджету и торгуемости ничего не значит.
+    wanted_ids = {
+        spec_id_by_symbol[symbol]
+        for symbol in symbols
+        if symbol in spec_id_by_symbol
+    }
+
     existing_ids = set(
         (await session.execute(select(WatchedPair.asset_exchange_id))).scalars().all()
     )
@@ -520,8 +590,15 @@ async def apply_watched_pairs(session, symbols, replace):
 async def seed_watched_pairs(
     top=50, hours=24, jump_threshold=0.5, replace=False, bootstrap_mode=False,
     candidates=BOOTSTRAP_CANDIDATES, watch_minutes=BOOTSTRAP_WATCH_MINUTES,
+    strategy=STRATEGY_LEGACY, symbols=None,
 ):
-    """Пересобирает watched_pair. Симулятор на это время останавливается.
+    """Пересобирает набор пар стратегии. Симулятор на это время стоит.
+
+    Пары набираются по политике стратегии (`strategies.pair_policy`):
+    `volatility_jumps` — отбором по скачкам, как было всегда, `manual` —
+    только явным списком в `symbols`. Отбор по скачкам принадлежит
+    `legacy`: молча применить его к стратегии, которая просила явный
+    список, значит поменять ей условия эксперимента.
 
     Иначе получается тихая порча данных: пара выпадает из watched_pair, цены
     по ней больше не приходят, а бот с открытой позицией продолжает видеть
@@ -532,6 +609,42 @@ async def seed_watched_pairs(
     dsm = DatabaseSessionManager.create(settings.DB_URL)
 
     async with paused_simulator(), dsm.get_session() as session:
+        strategy_crud = StrategyCrud(session)
+        strategy_row = await strategy_crud.get_by_key(strategy)
+
+        if strategy_row is None:
+            logging.info(
+                f"Стратегия {strategy!r} не зарегистрирована — набор пар "
+                f"собирать не для кого."
+            )
+            return
+
+        strategy_id = strategy_row.id
+        policy = strategy_row.pair_policy
+
+        if symbols:
+            # Явный список — это всегда явный список, какой бы политика ни
+            # была: человек попросил именно эти пары.
+            added, removed = await apply_watched_pairs(
+                session, list(symbols), replace, strategy_id=strategy_id
+            )
+            logging.info(
+                f"✅ Набор пар {strategy}: задан явно "
+                f"({len(symbols)} пар). watched_pair: добавлено {added}, "
+                f"удалено {removed}."
+            )
+            if added or removed:
+                restart_price_feed()
+            return
+
+        if policy != PAIR_POLICY_VOLATILITY_JUMPS:
+            logging.info(
+                f"У стратегии {strategy!r} политика пар {policy!r}: пары "
+                f"задаются явным списком (--symbols), отбор по скачкам к ней "
+                f"не применяется."
+            )
+            return
+
         # Обновляем справочник до ранжирования; затем используем общий снимок.
         await affordable_symbols(session, [])
         symbols = None
@@ -551,6 +664,7 @@ async def seed_watched_pairs(
             symbols = await bootstrap(
                 session=session, top=top, candidates_count=candidates,
                 watch_minutes=watch_minutes, jump_threshold=jump_threshold,
+                strategy_id=strategy_id,
             )
             replace = True
 
@@ -571,7 +685,9 @@ async def seed_watched_pairs(
             )
             replace = False
 
-        added, removed = await apply_watched_pairs(session, symbols, replace)
+        added, removed = await apply_watched_pairs(
+            session, symbols, replace, strategy_id=strategy_id
+        )
 
         total = (
             await session.execute(select(WatchedPair.asset_exchange_id))
@@ -625,6 +741,17 @@ def main():
         '--watch-minutes', type=float, default=BOOTSTRAP_WATCH_MINUTES,
         help="Сколько минут следить за кандидатами при разгоне."
     )
+    parser.add_argument(
+        '--strategy', default=STRATEGY_LEGACY,
+        help="Чей набор пар пересобирать (ключ стратегии)."
+    )
+    parser.add_argument(
+        '--symbols',
+        help=(
+            "Явный список пар через запятую. Набор стратегии станет равен "
+            "ему (с --replace) либо пополнится им."
+        )
+    )
     args = parser.parse_args()
 
     try:
@@ -632,6 +759,12 @@ def main():
             top=args.top, hours=args.hours, jump_threshold=args.jump_threshold,
             replace=args.replace, bootstrap_mode=args.bootstrap,
             candidates=args.candidates, watch_minutes=args.watch_minutes,
+            strategy=args.strategy,
+            symbols=[
+                symbol.strip()
+                for symbol in (args.symbols or '').split(',')
+                if symbol.strip()
+            ] or None,
         ))
     except SimulatorIsRunning as e:
         # Текст исключения — готовое сообщение человеку, трейсбек тут лишний.

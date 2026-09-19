@@ -10,6 +10,12 @@ init, и дёргать симулятор на каждом перезапус�
 import asyncio
 import logging
 
+from sqlalchemy import select
+
+from app.config import settings
+from app.constants.strategy import PAIR_POLICY_VOLATILITY_JUMPS
+from app.db.base import DatabaseSessionManager
+from app.db.models import Strategy
 from app.scripts.seed_watched_pairs import seed_watched_pairs
 
 logging.basicConfig(
@@ -25,6 +31,19 @@ HISTORY_HOURS = 24
 WATCHED_PAIRS_TOP = 50
 
 
+async def strategies_with_jump_policy() -> list[str]:
+    """Ключи стратегий, которые набирают пары отбором по скачкам."""
+    dsm = DatabaseSessionManager.create(settings.DB_URL)
+
+    async with dsm.get_session() as session:
+        result = await session.execute(
+            select(Strategy.key).where(
+                Strategy.pair_policy == PAIR_POLICY_VOLATILITY_JUMPS
+            )
+        )
+        return list(result.scalars().all())
+
+
 async def main():
     logging.info(
         f"Пересборка watched_pair раз в {REBUILD_INTERVAL_SECONDS // 3600} ч. "
@@ -34,9 +53,14 @@ async def main():
 
     while True:
         try:
-            await seed_watched_pairs(
-                top=WATCHED_PAIRS_TOP, hours=HISTORY_HOURS, replace=True
-            )
+            # Пересобираем наборы всех стратегий, которые набирают пары
+            # отбором. Остальные держат явный список — его человек задаёт
+            # руками, и трогать его суточной пересборкой нельзя.
+            for key in await strategies_with_jump_policy():
+                await seed_watched_pairs(
+                    top=WATCHED_PAIRS_TOP, hours=HISTORY_HOURS, replace=True,
+                    strategy=key,
+                )
         except Exception as e:
             # Не даём процессу умереть: supervisor его перезапустит, и первая
             # пересборка снова уедет на сутки вперёд.

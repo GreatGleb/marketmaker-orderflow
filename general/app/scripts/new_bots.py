@@ -5,13 +5,14 @@ import time
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from sqlalchemy import select, func, text
+from sqlalchemy import select, func
 
 from app.constants.demo_seed import copybot_seed_groups, percentage_bot_rows
 from app.crud.asset_history import AssetHistoryCrud
 from app.db.base import DatabaseSessionManager
 from app.crud.strategy import StrategyCrud
-from app.crud.test_bot import TestBotCrud, with_strategy
+from app.constants.strategy import STRATEGY_LEGACY
+from app.crud.test_bot import TestBotCrud, bot_identity, with_strategy
 from app.config import settings
 import asyncio
 
@@ -210,9 +211,23 @@ async def deactivate_not_profit_bots(bot_crud):
     print('need_to_deactivate_bots')
 
 
-async def create_bots(dry_run: bool = False):
-    """Пересоздаёт 2000 процентных ботов и всех копиботов одной транзакцией."""
-    # Данные и сетку проверяем до TRUNCATE: сбой не должен стирать парк.
+async def create_bots(dry_run: bool = False, strategy: str = STRATEGY_LEGACY,
+                      replace: bool = False):
+    """Досевает парк стратегии: 2000 процентных ботов и копиботы.
+
+    Повторный запуск не плодит дублей: сверка идёт по ключу
+    конфигурации (`bot_identity`), и заводятся только недостающие боты.
+
+    `replace=True` — замена набора: прежние конфигурации этой стратегии
+    деактивируются, новые заводятся с новыми id. Сделки остаются на
+    месте, поэтому накопленная статистика переживает пересборку.
+    Чужие стратегии не трогаются ни в одном из случаев.
+
+    `TRUNCATE` здесь больше нет. Он сносил `test_bots` вместе с
+    `test_orders` по внешнему ключу — то есть всю историю эксперимента,
+    — и не давал завести парк второй стратегии, не разрушив первый.
+    """
+    # Данные и сетку проверяем до записи: сбой не должен трогать парк.
     average_percent = await get_average_percentage_for_minimum_tick()
     if average_percent is None:
         raise RuntimeError(
@@ -238,44 +253,82 @@ async def create_bots(dry_run: bool = False):
 
     dsm = DatabaseSessionManager.create(settings.DB_URL)
     async with dsm.get_session() as session:
-        await session.execute(text("TRUNCATE TABLE test_bots RESTART IDENTITY CASCADE;"))
-        # TRUNCATE парка не трогает `strategies`: стратегия переживает
-        # пересоздание ботов, иначе после каждого сида менялись бы id
-        # стратегии в уже записанных сделках.
-        strategy_id = await StrategyCrud(session).ensure_legacy()
+        strategy_crud = StrategyCrud(session)
+        strategy_id = await strategy_crud.ensure(strategy, strategy)
         bot_crud = TestBotCrud(session)
-        rows = with_strategy(rows, strategy_id)
-        for offset in range(0, len(rows), 250):
-            await bot_crud.bulk_create(rows[offset:offset + 250])
-        for bots in copybot_groups.values():
-            await bot_crud.bulk_create(with_strategy(bots, strategy_id))
+
+        deactivated = 0
+        if replace:
+            deactivated = await bot_crud.deactivate_strategy(strategy_id)
+
+        # После деактивации в парке не осталось активных конфигураций
+        # этой стратегии, поэтому сверка идёт только при досеве.
+        known = set() if replace else await bot_crud.existing_identities(
+            strategy_id
+        )
+
+        created = {}
+
+        for name, group in (("процентных", rows), *copybot_groups.items()):
+            fresh = [row for row in group if bot_identity(row) not in known]
+            prepared = with_strategy(fresh, strategy_id)
+
+            for offset in range(0, len(prepared), 250):
+                await bot_crud.bulk_create(prepared[offset:offset + 250])
+
+            created[name] = len(prepared)
+
         await session.commit()
-    print(f"✅ Процентных ботов создано: {len(rows)}")
-    for version, bots in copybot_groups.items():
-        print(f"✅ Копиботов {version} создано: {len(bots)}")
+
+    if replace:
+        print(f"✅ Деактивировано прежних ботов: {deactivated}")
+
+    for name, count in created.items():
+        if count:
+            print(f"✅ Ботов {name} создано: {count}")
+        else:
+            print(f"   Ботов {name} досевать не потребовалось")
 
 
-async def create_bots_safely(dry_run: bool = False):
+async def create_bots_safely(dry_run: bool = False,
+                             strategy: str = STRATEGY_LEGACY,
+                             replace: bool = False):
     """create_bots с остановкой симулятора.
 
-    Менять парк под работающим симулятором нельзя: TRUNCATE снесёт test_bots
-    вместе с test_orders, а симулятор продолжит писать сделки от имени уже
-    несуществующих ботов. Открытые позиции живут только в памяти процесса и
-    при остановке теряются — это меньшее зло по сравнению с мусором в данных.
+    Состав парка симулятор читает один раз на старте, поэтому менять его
+    под работающими процессами бессмысленно: новых ботов они не увидят, а
+    деактивированных продолжат считать активными до перезапуска. Открытые
+    позиции живут только в памяти процесса и при остановке теряются — это
+    меньшее зло по сравнению с расхождением между парком и тем, что в
+    памяти у симулятора.
     """
     if dry_run:
-        await create_bots(dry_run=True)
+        await create_bots(dry_run=True, strategy=strategy, replace=replace)
         return
     with paused("test_bots"):
-        await create_bots()
+        await create_bots(strategy=strategy, replace=replace)
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Пересоздать 2000 процентных демоботов и всех копиботов")
+    parser = argparse.ArgumentParser(
+        description=(
+            "Досеять парк стратегии: 2000 процентных демоботов и копиботы. "
+            "Повторный запуск не плодит дублей."
+        )
+    )
     parser.add_argument("--dry-run", action="store_true", help="Показать распределение без записи")
+    parser.add_argument("--strategy", default=STRATEGY_LEGACY,
+                        help="Ключ стратегии, чей парк засевается")
+    parser.add_argument("--replace", action="store_true",
+                        help=(
+                            "Заменить набор: прежние боты этой стратегии "
+                            "деактивируются, история сделок остаётся"
+                        ))
     args = parser.parse_args()
     try:
-        asyncio.run(create_bots_safely(dry_run=args.dry_run))
+        asyncio.run(create_bots_safely(
+            dry_run=args.dry_run, strategy=args.strategy, replace=args.replace,
+        ))
     except SimulatorIsRunning as e:
         # Текст исключения — готовое сообщение человеку, трейсбек тут лишний.
         logging.error(str(e))

@@ -330,6 +330,43 @@ class AssetVolumeVolatility(BaseId):
     )
 
 
+class StrategyPair(BaseId):
+    """Пара, нужная конкретной стратегии.
+
+    `watched_pair` остаётся общим техническим списком питателя и
+    собирается как объединение этих наборов: один поток котировок на
+    всех, независимые наборы у каждой стратегии. Иначе пересборка пар
+    одной стратегии молча лишала бы котировок ботов другой.
+
+    Один инструмент может принадлежать нескольким стратегиям — отсюда
+    уникальность по паре полей, а не по одному `asset_exchange_id`.
+    """
+
+    __tablename__ = "strategy_pairs"
+
+    strategy_id: Mapped[int] = mapped_column(
+        ForeignKey("strategies.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="Чей это набор пар",
+    )
+    asset_exchange_id: Mapped[int] = mapped_column(
+        ForeignKey("asset_exchange_specs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="Инструмент из справочника",
+    )
+
+    __table_args__ = (
+        Index(
+            "uq_strategy_pairs_key",
+            "strategy_id",
+            "asset_exchange_id",
+            unique=True,
+        ),
+    )
+
+
 class WatchedPair(BaseId):
     __tablename__ = "watched_pair"
 
@@ -513,6 +550,15 @@ class Strategy(BaseId):
     )
     title: Mapped[str] = mapped_column(
         types.String, nullable=False, comment="Человекочитаемое название"
+    )
+    pair_policy: Mapped[str] = mapped_column(
+        types.String,
+        nullable=False,
+        server_default="manual",
+        comment=(
+            "Как стратегия набирает пары: manual — явный список, "
+            "volatility_jumps — отбор по скачкам, как у legacy"
+        ),
     )
     allows_new_entries: Mapped[bool] = mapped_column(
         types.Boolean,
