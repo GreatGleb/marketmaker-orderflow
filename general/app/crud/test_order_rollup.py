@@ -64,6 +64,13 @@ class TestOrderRollupCrud(BaseCrud[TestOrderRollup]):
         только для ручного пересчёта — так два наложившихся прохода воркера
         не портят цифры.
 
+        Стратегия парка, исполненная стратегия и версия алгоритма входят и
+        в группировку, и в ключ. Копибот может сменить донора на бота
+        другой стратегии прямо внутри блока: без этих измерений обе группы
+        схлопнулись бы в одну строку, вторая перезаписала бы первую, и
+        часть сделок пропала бы из статистики вместе с сырьём, которое
+        удалит ретеншн.
+
         Границы обязаны попадать ровно на блоки. Иначе край запроса разрежет
         блок пополам: `date_bin` всё равно отнесёт обе половинки к одному
         `bucket_start`, вторая перезапишет первую по уникальному ключу — и
@@ -86,6 +93,7 @@ class TestOrderRollupCrud(BaseCrud[TestOrderRollup]):
                 """
                 INSERT INTO test_order_rollups (
                     bucket_start, bot_id, referral_bot_id, asset_symbol,
+                    strategy_id, executed_strategy_id, algorithm_version,
                     orders_count, profitable_count, profit_loss_sum, fee_sum,
                     stop_won_count, stop_loosed_count, stop_long_lose_count,
                     created_at, updated_at
@@ -99,6 +107,9 @@ class TestOrderRollupCrud(BaseCrud[TestOrderRollup]):
                     bot_id,
                     referral_bot_id,
                     asset_symbol,
+                    strategy_id,
+                    executed_strategy_id,
+                    algorithm_version,
                     count(*),
                     count(*) FILTER (WHERE profit_loss > 0),
                     sum(profit_loss),
@@ -110,9 +121,10 @@ class TestOrderRollupCrud(BaseCrud[TestOrderRollup]):
                     now()
                 FROM test_orders
                 WHERE created_at >= :start AND created_at < :end
-                GROUP BY 1, 2, 3, 4
+                GROUP BY 1, 2, 3, 4, 5, 6, 7
                 ON CONFLICT
-                    (bucket_start, bot_id, referral_bot_id, asset_symbol)
+                    (bucket_start, bot_id, referral_bot_id, asset_symbol,
+                     strategy_id, executed_strategy_id, algorithm_version)
                 DO UPDATE SET
                     orders_count = EXCLUDED.orders_count,
                     profitable_count = EXCLUDED.profitable_count,
@@ -198,6 +210,8 @@ class TestOrderRollupCrud(BaseCrud[TestOrderRollup]):
         just_not_copy_bots=False,
         symbol=None,
         by_referral_bot_id=False,
+        strategy_ids=None,
+        executed_strategy_ids=None,
     ) -> tuple[list, datetime, datetime | None]:
         """Статистика по каждому боту за окно `[since, сейчас)`.
 
@@ -211,6 +225,11 @@ class TestOrderRollupCrud(BaseCrud[TestOrderRollup]):
         Двойного счёта не будет: границы веток стыкуются по watermark, а не
         перекрываются. Сырьё за уже свёрнутые блоки в базе какое-то время
         лежит (ретеншн ходит раз в час) — из отчёта оно исключено.
+
+        Разрезов по стратегии два, и они разные. `strategy_ids` — чьи это
+        боты, `executed_strategy_ids` — каким алгоритмом сделка на самом
+        деле сделана. У копибота они расходятся, поэтому складывать итоги
+        двух разрезов нельзя: одна и та же сделка попадает в оба.
 
         Возвращает `(строки, начало окна, граница свёрнутого)`. Начало окна
         возвращается посчитанным, а не запрошенным: оно округляется вниз до
@@ -235,10 +254,16 @@ class TestOrderRollupCrud(BaseCrud[TestOrderRollup]):
 
         if rollup_from is not None:
             parts.append(
-                self.rollup_part(bots, rollup_from, rollup_to, by_referral_bot_id)
+                self.rollup_part(
+                    bots, rollup_from, rollup_to, by_referral_bot_id,
+                    strategy_ids, executed_strategy_ids,
+                )
             )
 
-        parts.append(self.raw_part(bots, raw_from, by_referral_bot_id))
+        parts.append(self.raw_part(
+            bots, raw_from, by_referral_bot_id,
+            strategy_ids, executed_strategy_ids,
+        ))
 
         combined = (
             parts[0] if len(parts) == 1 else union_all(*parts)
@@ -340,7 +365,28 @@ class TestOrderRollupCrud(BaseCrud[TestOrderRollup]):
         return (await self.session.execute(stmt)).all()
 
     @classmethod
-    def rollup_part(cls, bots, start: datetime, end: datetime, by_referral):
+    def strategy_filters(cls, model, strategy_ids, executed_strategy_ids):
+        """Условия по стратегии для обеих веток отчёта.
+
+        Обе ветки обязаны фильтровать одинаково: разойдись они — отчёт
+        даст разрыв ровно на границе свёрнутого, которая каждый час
+        уезжает, и поймать это в цифрах почти нельзя.
+        """
+        conditions = []
+
+        if strategy_ids is not None:
+            conditions.append(model.strategy_id.in_(strategy_ids))
+
+        if executed_strategy_ids is not None:
+            conditions.append(model.executed_strategy_id.in_(executed_strategy_ids))
+
+        return conditions
+
+    @classmethod
+    def rollup_part(
+        cls, bots, start: datetime, end: datetime, by_referral,
+        strategy_ids=None, executed_strategy_ids=None,
+    ):
         """Ветка по свёрткам: складываем уже посчитанное."""
         key = (
             TestOrderRollup.referral_bot_id
@@ -373,12 +419,18 @@ class TestOrderRollupCrud(BaseCrud[TestOrderRollup]):
                 key.in_(bots),
                 TestOrderRollup.bucket_start >= start,
                 TestOrderRollup.bucket_start < end,
+                *cls.strategy_filters(
+                    TestOrderRollup, strategy_ids, executed_strategy_ids
+                ),
             )
             .group_by(key)
         )
 
     @classmethod
-    def raw_part(cls, bots, start: datetime, by_referral):
+    def raw_part(
+        cls, bots, start: datetime, by_referral,
+        strategy_ids=None, executed_strategy_ids=None,
+    ):
         """Ветка по сырым сделкам: считаем ровно то же, что `build_range`.
 
         Если эти два счёта разойдутся, отчёт даст разрыв ровно на границе
@@ -422,7 +474,13 @@ class TestOrderRollupCrud(BaseCrud[TestOrderRollup]):
                 )
                 .label("stop_long_lose"),
             )
-            .where(key.in_(bots), TestOrder.created_at >= start)
+            .where(
+                key.in_(bots),
+                TestOrder.created_at >= start,
+                *cls.strategy_filters(
+                    TestOrder, strategy_ids, executed_strategy_ids
+                ),
+            )
             .group_by(key)
         )
 

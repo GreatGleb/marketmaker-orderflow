@@ -26,6 +26,9 @@ from tests.price_fixtures import price_snapshot
 from unittest.mock import patch
 
 import app.bots.demo_test_bot as m
+from tests.strategy_fixtures import (
+    LEGACY_STRATEGY_ID, execute_strategy_maps,
+)
 
 from app.db.models import TestBot
 from app.sub_services.logic.price_calculator import PriceCalculator
@@ -68,6 +71,9 @@ FIELDS = [
     "copy_bot_min_time_profitability_min", "min_timeframe_asset_volatility",
     "copybot_v3_time_in_minutes", "copybot_v3_compound_balance",
     "copybot_v3_stopped_at",
+    # Симулятор пишет стратегию парка в каждую сделку, поэтому поле
+    # обязано быть у любого конфига, который к нему попадает.
+    "strategy_id",
 ]
 
 Bot = namedtuple("Bot", FIELDS)
@@ -85,7 +91,7 @@ V3_BOT = Bot(
     min_timeframe_asset_volatility=None,
     copybot_v3_time_in_minutes=Decimal("720"),
     copybot_v3_compound_balance=True,
-    copybot_v3_stopped_at=None,
+    copybot_v3_stopped_at=None, strategy_id=LEGACY_STRATEGY_ID,
 )
 
 # Конфиг донора в том виде, в каком его кладёт воркер: числа, не строки.
@@ -144,6 +150,9 @@ class FakeCrud:
 
         return [bot] if bot else []
 
+    async def strategy_id_by_bot(self):
+        return {bot_id: LEGACY_STRATEGY_ID for bot_id in LADDER}
+
     async def set_balance(self, bot_id, balance):
         FakeCrud.saved_balances.append((bot_id, balance))
 
@@ -157,6 +166,11 @@ class FakeSession:
 
     async def __aexit__(self, *args):
         return False
+
+    async def execute(self, statement):
+        # Карту стратегий читают и симулятор, и воркер публикации
+        # доноров — обоим хватает этой сессии.
+        return execute_strategy_maps(statement)
 
 
 class FakeSessionManager:

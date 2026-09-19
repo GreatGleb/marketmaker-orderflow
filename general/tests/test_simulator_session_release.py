@@ -25,6 +25,7 @@ from unittest.mock import patch
 import app.bots.demo_test_bot as m
 from app.bots.demo_test_bot import StartTestBotsCommand
 from app.db.models import TestBot
+from tests.strategy_fixtures import execute_strategy_maps
 
 # Сколько раз стартовый цикл не найдёт ботов, прежде чем они появятся.
 EMPTY_ATTEMPTS = 2
@@ -37,6 +38,11 @@ class FakeSession:
 
     async def rollback(self):
         self.rollbacks += 1
+
+    async def execute(self, statement):
+        # Симулятор на старте читает карту стратегий той же сессией, что
+        # и парк: отдельного похода в базу на это нет.
+        return execute_strategy_maps(statement)
 
 
 class FakeSessionManager:

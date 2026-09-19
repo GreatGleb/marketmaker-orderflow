@@ -18,6 +18,13 @@
 Одно окно и только копиботы:
 
     python -m app.scripts.top_bots_report -d 7 -just_copy 1 -top_count 20
+
+Разрезов по стратегии два, и они не складываются. `-s` — чьи это боты,
+`-es` — каким алгоритмом сделка исполнена на самом деле. У копибота, чей
+донор из другой стратегии, эти ответы разные:
+
+    python -m app.scripts.top_bots_report -d 7 -s legacy
+    python -m app.scripts.top_bots_report -d 7 -es legacy
 """
 import argparse
 import asyncio
@@ -25,6 +32,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 
 from app.config import settings
+from app.crud.strategy import StrategyCrud, UnknownStrategy
 from app.crud.test_order_rollup import TestOrderRollupCrud
 from app.db.base import DatabaseSessionManager
 
@@ -121,6 +129,8 @@ async def run(
     just_not_copy_bots: str = None,
     by_referral: bool = False,
     top_count: int = 10,
+    strategy: str = None,
+    executed_strategy: str = None,
 ) -> None:
     dsm = DatabaseSessionManager.create(settings.DB_URL)
 
@@ -133,7 +143,21 @@ async def run(
             print("Сделок в базе нет — ни сырых, ни свёрнутых")
             return
 
+        # Ключи переводятся в id один раз на запуск. Неизвестный ключ —
+        # отказ, а не пустой отчёт: «ноль сделок» и «такой стратегии нет»
+        # выглядят одинаково, а значат разное.
+        try:
+            strategy_ids = await strategy_keys_to_ids(session, strategy)
+            executed_strategy_ids = await strategy_keys_to_ids(
+                session, executed_strategy
+            )
+        except UnknownStrategy as error:
+            print(f"❌ {error}")
+            return
+
         filters = {
+            "strategy_ids": strategy_ids,
+            "executed_strategy_ids": executed_strategy_ids,
             "just_copy_bots": just_copy_bots,
             "just_copy_bots_v2": just_copy_bots_v2,
             "just_copy_bots_v3": just_copy_bots_v3,
@@ -160,6 +184,16 @@ async def run(
                 filters=filters,
                 top_count=top_count,
             )
+
+
+async def strategy_keys_to_ids(session, keys: str | None):
+    """«legacy,strategy_0» -> [1, 2]; `None` — без фильтра."""
+    if not keys:
+        return None
+
+    return await StrategyCrud(session).ids_by_keys(
+        [key.strip() for key in keys.split(",") if key.strip()]
+    )
 
 
 def build_window(days=None, hours=None, minutes=None) -> timedelta | None:
@@ -212,6 +246,16 @@ def main():
                         help="Считать по донорам, а не по самим ботам")
     parser.add_argument('-top_count', '--top_count', type=int, default=10,
                         help="Количество ботов")
+    parser.add_argument('-s', '--strategy', type=str,
+                        help=(
+                            "Только боты этих стратегий, через запятую "
+                            "(например, legacy)"
+                        ))
+    parser.add_argument('-es', '--executed_strategy', type=str,
+                        help=(
+                            "Только сделки, исполненные этими стратегиями "
+                            "— у копибота её задаёт донор"
+                        ))
 
     args = parser.parse_args()
 
@@ -228,6 +272,8 @@ def main():
             just_not_copy_bots=args.just_not_copy_bots,
             by_referral=args.by_referral,
             top_count=args.top_count,
+            strategy=args.strategy,
+            executed_strategy=args.executed_strategy,
         )
     )
 

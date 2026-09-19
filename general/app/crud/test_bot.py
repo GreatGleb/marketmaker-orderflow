@@ -3,6 +3,7 @@ from sqlalchemy import select, func, case, distinct, update
 from sqlalchemy.dialects.postgresql import insert
 from datetime import datetime, timezone
 
+from app.constants.strategy import donor_scope_list, STRATEGY_LEGACY
 from app.db.models import TestBot, TestOrder
 from app.crud.base import BaseCrud
 
@@ -21,6 +22,43 @@ COPYBOT_MARKER_COLUMNS = (
     "copybot_v2_time_in_minutes",
     "copybot_v3_time_in_minutes",
 )
+
+
+def is_copybot_row(row: dict) -> bool:
+    """Строка парка описывает копибота.
+
+    Та же проверка, что и у `just_not_copy_bots`, только для словаря,
+    который ещё не стал строкой таблицы.
+    """
+    return any(row.get(column) is not None for column in COPYBOT_MARKER_COLUMNS)
+
+
+def with_strategy(rows: list[dict], strategy_id: int, donor_scope=None) -> list[dict]:
+    """Проставляет строкам парка стратегию и копиботам — пул доноров.
+
+    Сиды собирают строки из констант и про базу ничего не знают, а
+    `strategy_id` выдаёт база. Поэтому стратегия проставляется одним
+    местом перед вставкой, а не размножается по каждому сиду.
+
+    Пул по умолчанию — явный список из одной своей стратегии, а не
+    «любая». Копибот с `all` сменит алгоритм сам собой в день, когда
+    появится вторая стратегия, и сравнивать его результаты до и после
+    будет нельзя. Расширение пула — отдельное осознанное действие.
+    """
+    if donor_scope is None:
+        donor_scope = donor_scope_list(STRATEGY_LEGACY)
+
+    prepared = []
+
+    for row in rows:
+        row = {**row, "strategy_id": strategy_id}
+
+        if is_copybot_row(row):
+            row.setdefault("donor_scope", donor_scope)
+
+        prepared.append(row)
+
+    return prepared
 
 
 def active_bots_subquery(
@@ -81,6 +119,19 @@ class TestBotCrud(BaseCrud[TestBot]):
 
         result = await self.session.execute(stmt)
         return result.scalars().all()
+
+    async def strategy_id_by_bot(self) -> dict[int, int]:
+        """id бота -> id его стратегии для всего парка.
+
+        Один запрос на цикл воркера вместо джойна в каждом отборе: парк —
+        тысячи строк, а рейтинги считаются по окнам и кэшируются, и
+        тащить стратегию через каждый такой запрос дороже, чем один раз
+        прочитать карту.
+        """
+        result = await self.session.execute(
+            select(TestBot.id, TestBot.strategy_id)
+        )
+        return dict(result.all())
 
     async def bulk_create(self, items: list[dict]) -> None:
         if not items:

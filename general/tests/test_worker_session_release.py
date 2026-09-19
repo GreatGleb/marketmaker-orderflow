@@ -17,6 +17,7 @@ from unittest.mock import patch
 
 import app.workers.profitable_bot_updater as m
 from app.db.models import TestBot
+from tests.strategy_fixtures import LEGACY_STRATEGY_ID, execute_strategy_maps
 from app.workers.profitable_bot_updater import ProfitableBotUpdaterCommand
 
 CYCLES = 3
@@ -29,6 +30,9 @@ class FakeSession:
 
     async def commit(self):
         self.commits += 1
+
+    async def execute(self, statement):
+        return execute_strategy_maps(statement)
 
 
 class FakeSessionManager:
@@ -86,6 +90,10 @@ class FakeCrud:
 
     async def get_bot_by_id(self, bot_id):
         return [self.donor]
+
+    async def strategy_id_by_bot(self):
+        return {self.copybot.id: LEGACY_STRATEGY_ID,
+                self.donor.id: LEGACY_STRATEGY_ID}
 
 
 class FakeRedis:

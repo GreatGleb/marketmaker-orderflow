@@ -1,6 +1,6 @@
 # 05. Справочник полей
 
-## `TestBot` — `general/app/db/models.py:453`, таблица `test_bots`
+## `TestBot` — `general/app/db/models.py`, `class TestBot`, таблица `test_bots`
 
 | Поле | Тип | Где читается | Смысл |
 |---|---|---|---|
@@ -28,7 +28,21 @@
 | `copybot_v3_compound_balance` | bool | `simulate_bot`, `compound_order_size` | различает пару ботов v3. `false` — баланс всегда 1000, как у парка; `true` — бот ведёт счёт, в позицию идёт 99% баланса, количество округляется по шагу лота |
 | `copybot_v3_stopped_at` | timestamptz NULL | `_v3_stop`, `_v3_is_stopped` | когда на балансе перестал набираться минимальный лот. Бот остаётся `is_active`, иначе выпал бы из отчётов вместе с фактом остановки |
 | `min_timeframe_asset_volatility` | numeric NULL | `demo_test_bot.py:465` | окно в минутах, за которое берётся самая волатильная пара. Заполнено → пара из Redis вместо `symbol`. В нынешнем парке не заполнено ни у кого |
+| `strategy_id` | int NOT NULL | `with_strategy`, `strategy_id_by_bot` | стратегия, экземпляром которой является бот. У всего нынешнего парка — `legacy` |
+| `donor_scope` | jsonb NULL | `donors_within_scope` | пул стратегий-доноров копибота: `{"mode": "all"}` либо `{"mode": "list", "strategies": ["legacy"]}`. `NULL` у обычных ботов и означает «без ограничений». По умолчанию сиды ставят явный список своей стратегии: с `all` копибот сменил бы алгоритм сам собой в день подключения второй стратегии |
 | `created_at` / `updated_at` | timestamptz | — | из `BaseId` |
+
+## `Strategy` — `general/app/db/models.py`, `class Strategy`, таблица `strategies`
+
+Регистрация стратегии, а не её реализация: сам алгоритм выбирается по
+`key` (`app/constants/strategy.py`, `STRATEGY_LEGACY`), а строка нужна,
+чтобы на стратегию ссылались боты и сделки.
+
+| Поле | Тип | Смысл |
+|---|---|---|
+| `key` | str UNIQUE | технический ключ: `legacy`, дальше `strategy_0`. Код, сиды и конфиги ссылаются на него, а не на числовой `id` — тот в каждом развёртывании свой |
+| `title` | str | название для человека |
+| `allows_new_entries` | bool | разрешены ли новые входы. Снятый признак не закрывает уже открытые позиции: их доводит тот же алгоритм, с которым открывались |
 
 Метод `TestBot.clone()` (`models.py:555`) — копия строки как нового объекта;
 нужен `update_config_for_percentage`, чтобы не мутировать общий конфиг.
@@ -45,6 +59,7 @@
 | дробные | `float` | `*_percents`, `min_timeframe_asset_volatility`, `time_to_wait_...` |
 | флаги | `bool` | `use_trailing_stop`, `consider_ma_*` |
 | пара | `str` | `symbol` |
+| стратегия | `int` | `strategy_id` — по какому алгоритму копибот на самом деле торгует |
 
 `Decimal` в JSON не положить, а строку — нельзя: `'0'` истинна для `not`, и
 проверки «поле не задано» на ней ломаются. Обратно в `Decimal` поле поднимает
@@ -55,7 +70,7 @@
 `NULL` у донора превращается в `0` (кроме тиков) — для потребителей это и
 означает «не задано».
 
-## `TestOrder` — `general/app/db/models.py:370`, таблица `test_orders`
+## `TestOrder` — `general/app/db/models.py`, `class TestOrder`, таблица `test_orders`
 
 | Поле | Откуда берётся |
 |---|---|
@@ -75,6 +90,10 @@
 | `referral_bot_id` | ID донора (только у копиботов), иначе `NULL` |
 | `start_updown_ticks`, `stop_loss_ticks`, `stop_success_ticks` | фактические тики этой сделки (у процентных ботов — уже пересчитанные) |
 | `stop_reason_event` | `stop-won` / `stop-loosed` / `stop-long-lose` (`app/enums/event_type.py`) |
+| `strategy_id` | стратегия парка, которому принадлежит бот — `original_bot_config.strategy_id` |
+| `executed_strategy_id` | стратегия, по которой сделка исполнена на самом деле. У обычного бота совпадает с предыдущей, у копибота её задаёт конечный донор (`strategy_id` из конфига в Redis). Разрезы по этим двум полям не складываются: одна сделка попадает в оба |
+| `algorithm_version` | версия алгоритма на момент открытия позиции, `algorithm_version_for`. `NULL` — версия неизвестна: так помечена вся история до появления поля |
+| `donor_chain` | цепочка id доноров от копибота к обычному боту, `[v2_id, v1_id, donor_id]`; `NULL` у обычных ботов |
 
 ## Константы
 

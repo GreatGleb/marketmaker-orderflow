@@ -10,7 +10,8 @@ from sqlalchemy import select, func, text
 from app.constants.demo_seed import copybot_seed_groups, percentage_bot_rows
 from app.crud.asset_history import AssetHistoryCrud
 from app.db.base import DatabaseSessionManager
-from app.crud.test_bot import TestBotCrud
+from app.crud.strategy import StrategyCrud
+from app.crud.test_bot import TestBotCrud, with_strategy
 from app.config import settings
 import asyncio
 
@@ -238,11 +239,16 @@ async def create_bots(dry_run: bool = False):
     dsm = DatabaseSessionManager.create(settings.DB_URL)
     async with dsm.get_session() as session:
         await session.execute(text("TRUNCATE TABLE test_bots RESTART IDENTITY CASCADE;"))
+        # TRUNCATE парка не трогает `strategies`: стратегия переживает
+        # пересоздание ботов, иначе после каждого сида менялись бы id
+        # стратегии в уже записанных сделках.
+        strategy_id = await StrategyCrud(session).ensure_legacy()
         bot_crud = TestBotCrud(session)
+        rows = with_strategy(rows, strategy_id)
         for offset in range(0, len(rows), 250):
             await bot_crud.bulk_create(rows[offset:offset + 250])
         for bots in copybot_groups.values():
-            await bot_crud.bulk_create(bots)
+            await bot_crud.bulk_create(with_strategy(bots, strategy_id))
         await session.commit()
     print(f"✅ Процентных ботов создано: {len(rows)}")
     for version, bots in copybot_groups.items():

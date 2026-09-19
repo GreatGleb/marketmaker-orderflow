@@ -30,6 +30,8 @@ from app.sub_services.logic.market_setup import (
 )
 from app.sub_services.logic.price_calculator import PriceCalculator
 from app.sub_services.logic.quantity_grid import quantity_grid
+from app.constants.strategy import algorithm_version_for
+from app.crud.strategy import StrategyCrud
 from app.sub_services.logic.donor_selection import DonorChanged, DonorGuard, read_donor
 from app.sub_services.watchers.price_provider import (
     PriceCache,
@@ -99,6 +101,9 @@ class StartTestBotsCommand(Command):
         # Сколько попыток подряд упёрлись в нехватку. Обнуляется удачной
         # сделкой: подряд — значит подряд.
         self._v3_shortages: dict[int, int] = {}
+        # id стратегии -> ключ. Нужна, чтобы записать версию алгоритма в
+        # сделку: id выдаёт база, а версия привязана к ключу.
+        self._strategy_keys: dict[int, str] = {}
         # Логи всех шардов лежат в разных файлах, но при чтении их вместе
         # (или в консоли ручного запуска) без пометки не разобрать, чей это.
         self.log_prefix = f'[шард {shard}/{shards}] ' if shards > 1 else ''
@@ -163,6 +168,7 @@ class StartTestBotsCommand(Command):
                 active_bots = await TestBotCrud(session).get_active_bots(
                     shard=self.shard, shards=self.shards
                 )
+                self._strategy_keys = await StrategyCrud(session).keys_by_id()
 
                 if active_bots:
                     logging.info(
@@ -713,6 +719,11 @@ class StartTestBotsCommand(Command):
     ):
         while not stop_event.is_set():
             referral_bot_id = None
+            # Стратегия парка и та, по которой сделка исполнена. У
+            # обычного бота это одно и то же; у копибота вторую задаёт
+            # конечный донор, и она может оказаться чужой.
+            executed_strategy_id = original_bot_config.strategy_id
+            donor_chain = None
             bot_id = original_bot_config.id
             bot_config = None
 
@@ -748,6 +759,15 @@ class StartTestBotsCommand(Command):
                 )
                 bot_config = updating_config_res['config']
                 referral_bot_id = updating_config_res['referral_bot_id']
+                donor_chain = [*chain, referral_bot_id]
+                # .get(): ключ copy_bot_*, записанный воркером до этой
+                # правки, живёт в Redis до его следующего цикла и поля
+                # ещё не содержит. Тогда исполненной считается своя
+                # стратегия — прежнее поведение.
+                executed_strategy_id = (
+                    updating_config_res['selection'].get('strategy_id')
+                    or executed_strategy_id
+                )
 
                 if not bot_config:
                     await asyncio.sleep(60)
@@ -1116,6 +1136,12 @@ class StartTestBotsCommand(Command):
                 "stop_success_ticks": int(order.stop_success_ticks),
                 "stop_reason_event": order.stop_reason_event,
                 "referral_bot_id": referral_bot_id,
+                "strategy_id": original_bot_config.strategy_id,
+                "executed_strategy_id": executed_strategy_id,
+                "algorithm_version": algorithm_version_for(
+                    self._strategy_keys.get(executed_strategy_id)
+                ),
+                "donor_chain": donor_chain,
                 "created_at": datetime.now(UTC),
                 "updated_at": datetime.now(UTC),
             }

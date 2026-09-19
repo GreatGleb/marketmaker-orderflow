@@ -20,6 +20,8 @@ from app.db.models import TestBot
 from app.dependencies import get_redis
 
 from app.utils import Command
+from app.constants.strategy import donor_scope_keys
+from app.crud.strategy import StrategyCrud
 from app.sub_services.logic.donor_selection import DONOR_TTL_SECONDS, donor_payload
 
 
@@ -184,6 +186,11 @@ class ProfitableBotUpdaterCommand(Command):
                 refer_bot_dict = {
                     "id": refer_bot.id,
                     "symbol": refer_bot.symbol,
+                    # По какому алгоритму копибот на самом деле торгует.
+                    # Без этого исполненную стратегию пришлось бы
+                    # угадывать по набору параметров — а параметры у
+                    # разных стратегий могут совпасть.
+                    "strategy_id": refer_bot.strategy_id,
                     "stop_success_ticks": _as_int(
                         refer_bot.stop_success_ticks, default=None
                     ),
@@ -226,6 +233,43 @@ class ProfitableBotUpdaterCommand(Command):
             refer_bot_dict = None
 
         return refer_bot_dict
+
+    @staticmethod
+    def donors_within_scope(
+        donor_ids, scope, strategy_id_by_bot, strategy_id_by_key, copybot_id
+    ):
+        """Кандидаты, чья стратегия попадает в пул копибота.
+
+        Порядок сохраняется: список приходит отсортированным по
+        прибыльности, и фильтр не должен превращаться в переупорядочивание.
+
+        Неизвестный ключ стратегии в пуле — не повод пропустить весь
+        фильтр: лучше оставить копибота без донора, чем дать ему торговать
+        алгоритмом, которого в его пуле нет. Воркер при этом не падает,
+        иначе один кривой конфиг остановил бы публикацию всем.
+        """
+        keys = donor_scope_keys(scope)
+
+        if keys is None:
+            return donor_ids
+
+        unknown = [key for key in keys if key not in strategy_id_by_key]
+        if unknown:
+            logging.warning(
+                "Копибот %s: в пуле доноров нет таких стратегий: %s",
+                copybot_id,
+                ", ".join(sorted(unknown)),
+            )
+
+        allowed = {
+            strategy_id_by_key[key] for key in keys if key in strategy_id_by_key
+        }
+
+        return [
+            donor_id
+            for donor_id in donor_ids
+            if strategy_id_by_bot.get(donor_id) in allowed
+        ]
 
     @staticmethod
     async def update_config_for_percentage(
@@ -504,10 +548,22 @@ class ProfitableBotUpdaterCommand(Command):
                     )
                 )
 
+                # Карты читаются раз в цикл: стратегий единицы, парк —
+                # тысячи строк, а публикация идёт по каждому копиботу.
+                strategy_id_by_bot = await bot_crud.strategy_id_by_bot()
+                strategy_id_by_key = await StrategyCrud(session).ids_by_key()
+
                 for bot in bots:
+                    donor_ids = self.donors_within_scope(
+                        tf_bot_ids[bot.id],
+                        bot.donor_scope,
+                        strategy_id_by_bot,
+                        strategy_id_by_key,
+                        bot.id,
+                    )
                     refer_bot_dict = await self.get_bot_config_by_params(
                         bot_crud=bot_crud,
-                        bot_ids=tf_bot_ids[bot.id]
+                        bot_ids=donor_ids
                     )
                     logging.info(refer_bot_dict)
                     logging.info(f"copy_bot_{bot.id}")

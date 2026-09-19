@@ -28,7 +28,8 @@ from sqlalchemy import select
 
 from app.config import settings
 from app.constants.copybot import copybot_v3_rows
-from app.crud.test_bot import TestBotCrud
+from app.crud.strategy import StrategyCrud
+from app.crud.test_bot import TestBotCrud, with_strategy
 from app.db.base import DatabaseSessionManager
 from app.db.models import TestBot
 from app.scripts.simulator_flag import SimulatorIsRunning
@@ -98,7 +99,8 @@ async def seed(dry_run: bool = False) -> None:
             print(f'ℹ️  Создано не будет ничего: это прогон вхолостую.')
             return
 
-        await TestBotCrud(session).bulk_create(rows)
+        strategy_id = await StrategyCrud(session).ensure_legacy()
+        await TestBotCrud(session).bulk_create(with_strategy(rows, strategy_id))
         await session.commit()
 
         print(f'✅ Копиботов v3 создано: {len(rows)}.')

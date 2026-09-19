@@ -11,6 +11,7 @@ from tests.price_fixtures import price_snapshot
 from unittest.mock import patch
 
 import app.bots.demo_test_bot as m
+from tests.strategy_fixtures import LEGACY_STRATEGY_ID
 from app.sub_services.watchers.price_provider import PriceCache, PriceProvider
 
 FIELDS = [
@@ -24,6 +25,9 @@ FIELDS = [
     "copy_bot_min_time_profitability_min", "min_timeframe_asset_volatility",
     "copybot_v3_time_in_minutes", "copybot_v3_compound_balance",
     "copybot_v3_stopped_at",
+    # Симулятор пишет стратегию парка в каждую сделку, поэтому поле
+    # обязано быть у любого конфига, который к нему попадает.
+    "strategy_id",
 ]
 Bot = namedtuple("Bot", FIELDS)
 
@@ -38,7 +42,7 @@ BOT = Bot(
     copy_bot_min_time_profitability_min=None,
     min_timeframe_asset_volatility=None,
     copybot_v3_time_in_minutes=None, copybot_v3_compound_balance=False,
-    copybot_v3_stopped_at=None,
+    copybot_v3_stopped_at=None, strategy_id=LEGACY_STRATEGY_ID,
 )
 
 SHARED = {

@@ -4,6 +4,7 @@ from typing import Optional
 from datetime import datetime
 
 from sqlalchemy import func, types, ForeignKey, Index, inspect
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import (
     Mapped,
     mapped_column,
@@ -453,11 +454,93 @@ class TestOrder(BigId):
     referral_bot_id: Mapped[int] = mapped_column(
         ForeignKey("test_bots.id"), nullable=True
     )
+    strategy_id: Mapped[int] = mapped_column(
+        ForeignKey("strategies.id"),
+        nullable=False,
+        comment="Стратегия парка, которому принадлежит бот",
+    )
+    executed_strategy_id: Mapped[int] = mapped_column(
+        ForeignKey("strategies.id"),
+        nullable=False,
+        comment=(
+            "Стратегия, по которой сделка фактически исполнена. У обычного "
+            "бота совпадает со strategy_id, у копибота — стратегия "
+            "конечного донора"
+        ),
+    )
+    algorithm_version: Mapped[Optional[str]] = mapped_column(
+        types.String,
+        nullable=True,
+        comment=(
+            "Версия алгоритма на момент открытия позиции; NULL у сделок, "
+            "записанных до появления поля"
+        ),
+    )
+    donor_chain: Mapped[Optional[list]] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment=(
+            "Цепочка id доноров от копибота к обычному боту, например "
+            "[v2_id, v1_id]; NULL у обычных ботов"
+        ),
+    )
+    # Индексов на новых колонках нет намеренно: в `test_orders` идёт поток
+    # около 490 строк в секунду, и каждый лишний индекс — это работа на
+    # каждой вставке. Отчёты по стратегиям читают свёртки, а там свои
+    # индексы на куда меньшем объёме.
+
+
+class Strategy(BaseId):
+    """Торговая стратегия: алгоритм входа/выхода и его настройки.
+
+    Строка здесь — не реализация, а её регистрация. Сам алгоритм
+    выбирается из реестра Python по `key`; неизвестный ключ означает, что
+    бот этой стратегии запускаться не должен, а не что его надо молча
+    провести по текущему алгоритму.
+    """
+
+    __tablename__ = "strategies"
+
+    key: Mapped[str] = mapped_column(
+        types.String,
+        nullable=False,
+        unique=True,
+        comment="Технический ключ: legacy, strategy_0",
+    )
+    title: Mapped[str] = mapped_column(
+        types.String, nullable=False, comment="Человекочитаемое название"
+    )
+    allows_new_entries: Mapped[bool] = mapped_column(
+        types.Boolean,
+        nullable=False,
+        server_default="true",
+        default=True,
+        comment=(
+            "Разрешены ли новые входы. Снятый признак не закрывает уже "
+            "открытые позиции: их доводит тот же алгоритм, с которым они "
+            "открывались"
+        ),
+    )
 
 
 class TestBot(BaseId):
     __tablename__ = "test_bots"
 
+    strategy_id: Mapped[int] = mapped_column(
+        ForeignKey("strategies.id"),
+        nullable=False,
+        index=True,
+        comment="Стратегия, экземпляром которой является бот",
+    )
+    donor_scope: Mapped[Optional[dict]] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment=(
+            "Пул доноров копибота: {'mode': 'all'} либо "
+            "{'mode': 'list', 'strategies': ['legacy']}. NULL у обычных "
+            "ботов и означает отсутствие ограничений"
+        ),
+    )
     symbol: Mapped[str] = mapped_column(nullable=False)
     balance: Mapped[float] = mapped_column(
         types.Numeric(precision=20, scale=10),
@@ -751,6 +834,21 @@ class TestOrderRollup(BigId):
         nullable=True,
         comment="Бот, за которым копировали, если сделки копибота",
     )
+    strategy_id: Mapped[int] = mapped_column(
+        ForeignKey("strategies.id"),
+        nullable=False,
+        comment="Стратегия парка бота",
+    )
+    executed_strategy_id: Mapped[int] = mapped_column(
+        ForeignKey("strategies.id"),
+        nullable=False,
+        comment="Стратегия, по которой исполнены сделки блока",
+    )
+    algorithm_version: Mapped[Optional[str]] = mapped_column(
+        types.String,
+        nullable=True,
+        comment="Версия алгоритма; NULL у блоков, свёрнутых до её появления",
+    )
     asset_symbol: Mapped[str] = mapped_column(
         types.String(255), nullable=False, comment="Пара"
     )
@@ -798,12 +896,20 @@ class TestOrderRollup(BigId):
         # NULLS NOT DISTINCT (Postgres 15) — потому что referral_bot_id
         # пустой у всех некопиботов, а по умолчанию NULL не равен NULL и
         # уникальность на таких строках не работала бы вовсе.
+        # Измерения стратегии входят в ключ не ради полноты: копибот
+        # может сменить донора на бота другой стратегии внутри одного
+        # блока. Без них две такие группы схлопнулись бы в одну строку, и
+        # вторая перезаписала бы первую — часть сделок просто исчезла бы
+        # из статистики.
         Index(
             "uq_test_order_rollups_key",
             "bucket_start",
             "bot_id",
             "referral_bot_id",
             "asset_symbol",
+            "strategy_id",
+            "executed_strategy_id",
+            "algorithm_version",
             unique=True,
             postgresql_nulls_not_distinct=True,
         ),
