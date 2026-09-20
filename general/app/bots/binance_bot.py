@@ -26,6 +26,7 @@ from app.db.models import MarketOrder, TestBot, TestOrder
 from app.dependencies import get_redis, get_session, resolve_crud, redis_context
 from app.enums.trade_type import TradeType
 from app.sub_services.logic.exit_strategy import ExitStrategy
+from app.sub_services.watchers.candle_store import closes_from_raw
 from app.sub_services.logic.price_calculator import PriceCalculator
 from app.sub_services.watchers.price_provider import PriceProvider, PriceWatcher
 from app.sub_services.watchers.user_data_websocket_client import UserDataWebSocketClient
@@ -1699,9 +1700,9 @@ class BinanceBot(Command):
             logging.warning(f'Symbol: {symbol}, no klines returned.')
             return result
 
-        candle_list = json.loads(klines)
-
-        closes = [Decimal(candle) for candle in candle_list]
+        # Разбор общий с коллектором: ключ хранит свечи целиком, а до
+        # перехода на OHLC хранил только цены закрытия — читаются оба вида.
+        closes = closes_from_raw(klines)
         closes.append(current_price)
 
         for minute in range(minutes + 1):
