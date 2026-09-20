@@ -31,6 +31,7 @@ from app.strategies.base import (
     ExitDecision,
     MarketContext,
     Position,
+    signal_price_unchanged,
 )
 from app.sub_services.logic.exit_strategy import ExitStrategy
 from app.sub_services.logic.price_calculator import PriceCalculator
@@ -136,6 +137,12 @@ class LegacyAlgorithm:
             return EntryResult(timed_out=True)
 
         return EntryResult(trade_type=trade_type, price=entry_price)
+
+    async def entry_still_valid(
+        self, context: MarketContext, entry: EntryResult, current_price
+    ) -> bool:
+        # Вход рыночный: цена сигнала — цена в момент пробоя уровня.
+        return signal_price_unchanged(entry, current_price)
 
     def open_position(
         self, context: MarketContext, trade_type, entry_price

@@ -39,6 +39,7 @@ from app.strategies.base import (
     ExitDecision,
     MarketContext,
     Position,
+    signal_price_unchanged,
 )
 
 UTC = timezone.utc
@@ -214,6 +215,13 @@ class Strategy0Algorithm:
             up = not up
 
         return TradeType.BUY.value if up else TradeType.SELL.value
+
+    async def entry_still_valid(
+        self, context: MarketContext, entry: EntryResult, current_price
+    ) -> bool:
+        # Вход рыночный: `wait_for_entry` отдаёт цену того тика, на
+        # котором прострел состоялся.
+        return signal_price_unchanged(entry, current_price)
 
     def open_position(
         self, context: MarketContext, trade_type, entry_price

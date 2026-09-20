@@ -11,8 +11,9 @@ from app.constants.demo_seed import copybot_seed_groups, percentage_bot_rows
 from app.crud.asset_history import AssetHistoryCrud
 from app.db.base import DatabaseSessionManager
 from app.crud.strategy import StrategyCrud
-from app.constants.strategy import STRATEGY_0, STRATEGY_LEGACY
+from app.constants.strategy import STRATEGY_0, STRATEGY_1, STRATEGY_LEGACY
 from app.constants.strategy_0_seed import strategy_0_bot_rows
+from app.constants.strategy_1_seed import strategy_1_bot_rows
 from app.crud.strategy_pair import StrategyPairCrud
 from app.crud.test_bot import TestBotCrud, bot_identity, with_strategy
 from app.config import settings
@@ -229,8 +230,10 @@ async def create_bots(dry_run: bool = False, strategy: str = STRATEGY_LEGACY,
     `test_orders` по внешнему ключу — то есть всю историю эксперимента,
     — и не давал завести парк второй стратегии, не разрушив первый.
     """
-    if strategy == STRATEGY_0:
-        await create_strategy_0_bots(dry_run=dry_run, replace=replace)
+    if strategy in CONFIGURED_STRATEGIES:
+        await create_configured_strategy_bots(
+            strategy, dry_run=dry_run, replace=replace
+        )
         return
 
     # Данные и сетку проверяем до записи: сбой не должен трогать парк.
@@ -296,31 +299,50 @@ async def create_bots(dry_run: bool = False, strategy: str = STRATEGY_LEGACY,
             print(f"   Ботов {name} досевать не потребовалось")
 
 
+# Стратегии, чей парк описан сеткой настроек в `strategy_config`, а не
+# колонками бота. Заводятся одинаково — различаются только названием и
+# сеткой, поэтому тело сида общее.
+CONFIGURED_STRATEGIES = {
+    STRATEGY_0: ("Прострелы", strategy_0_bot_rows),
+    STRATEGY_1: ("Возврат к средней", strategy_1_bot_rows),
+}
+
+
 async def create_strategy_0_bots(dry_run: bool = False,
                                  replace: bool = False) -> None:
-    """Парк стратегии 0 по её набору пар.
+    """Парк стратегии 0. Оставлено как имя, на которое ссылаются тесты."""
+    await create_configured_strategy_bots(
+        STRATEGY_0, dry_run=dry_run, replace=replace
+    )
+
+
+async def create_configured_strategy_bots(strategy_key: str,
+                                          dry_run: bool = False,
+                                          replace: bool = False) -> None:
+    """Парк стратегии по её собственному набору пар.
 
     Пары берутся из `strategy_pairs`, а не из общего списка: у стратегии
     свой набор, и заводить ботов на чужих парах значит подписаться на
     котировки, которые ей не нужны.
     """
+    title, build_rows = CONFIGURED_STRATEGIES[strategy_key]
     dsm = DatabaseSessionManager.create(settings.DB_URL)
 
     async with dsm.get_session() as session:
         strategy_crud = StrategyCrud(session)
-        strategy_id = await strategy_crud.ensure(STRATEGY_0, "Прострелы")
+        strategy_id = await strategy_crud.ensure(strategy_key, title)
 
         symbols = await StrategyPairCrud(session).symbols_for(strategy_id)
 
         if not symbols:
             print(
-                "У стратегии strategy_0 нет ни одной пары. Задайте их:\n"
-                "  python -m app.scripts.seed_watched_pairs "
-                "--strategy strategy_0 --symbols BTCUSDT,ETHUSDT --replace"
+                f"У стратегии {strategy_key} нет ни одной пары. Задайте их:\n"
+                f"  python -m app.scripts.seed_watched_pairs "
+                f"--strategy {strategy_key} --symbols BTCUSDT,ETHUSDT --replace"
             )
             return
 
-        rows = strategy_0_bot_rows(symbols)
+        rows = build_rows(symbols)
 
         print(
             f"Пар у стратегии: {len(symbols)}, конфигураций: {len(rows)}"
@@ -349,7 +371,7 @@ async def create_strategy_0_bots(dry_run: bool = False,
     if replace:
         print(f"✅ Деактивировано прежних ботов: {deactivated}")
 
-    print(f"✅ Ботов strategy_0 создано: {len(prepared)}")
+    print(f"✅ Ботов {strategy_key} создано: {len(prepared)}")
 
 
 async def create_bots_safely(dry_run: bool = False,

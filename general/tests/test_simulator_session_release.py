@@ -162,6 +162,8 @@ async def main():
             patch.object(m, 'MarketDataBuilder', FakeMarketDataBuilder), \
             patch.object(m, 'PriceCache', FakeCache), \
             patch.object(m, 'PriceProvider', FakeProvider), \
+            patch.object(m, 'CandleCache', FakeCache), \
+            patch.object(m, 'CandleProvider', FakeProvider), \
             patch.object(m, 'BinanceBot', FakeProvider), \
             patch.object(m.asyncio, 'sleep', fake_sleep), \
             patch.object(StartTestBotsCommand, 'simulate_bot', fake_simulate_bot):

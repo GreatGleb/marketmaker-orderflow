@@ -64,7 +64,9 @@ from app.constants.open_positions import OPEN_POSITION_SYMBOLS_PREFIX
 from app.constants.strategy import (
     PAIR_POLICY_VOLATILITY_JUMPS,
     STRATEGY_LEGACY,
+    STRATEGY_TITLES,
 )
+from app.strategies.registry import known_keys
 from app.constants.volatility import MIN_QUOTE_VOLUME_24H
 from app.crud.asset_history import AssetHistoryCrud
 from app.crud.strategy import StrategyCrud
@@ -653,10 +655,24 @@ async def seed_watched_pairs(
         strategy_crud = StrategyCrud(session)
         strategy_row = await strategy_crud.get_by_key(strategy)
 
+        if strategy_row is None and strategy in known_keys():
+            # Реализованную стратегию регистрируем на месте: иначе её
+            # набор пар завести нечем — сид ботов сам требует пары, а
+            # пары требуют строку в `strategies`. Ключ сверяется с
+            # реестром алгоритмов, поэтому опечатка сюда не пройдёт и
+            # мусорной стратегии в таблице не появится.
+            await strategy_crud.ensure(
+                strategy, STRATEGY_TITLES.get(strategy, strategy)
+            )
+            await session.commit()
+            strategy_row = await strategy_crud.get_by_key(strategy)
+            logging.info(f"Стратегия {strategy!r} зарегистрирована.")
+
         if strategy_row is None:
             logging.info(
-                f"Стратегия {strategy!r} не зарегистрирована — набор пар "
-                f"собирать не для кого."
+                f"Стратегия {strategy!r} не зарегистрирована и не реализована "
+                f"— набор пар собирать не для кого. Известны: "
+                f"{', '.join(known_keys())}."
             )
             return
 

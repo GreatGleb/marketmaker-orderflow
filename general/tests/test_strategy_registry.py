@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, patch
 import app.bots.demo_test_bot as m
 
 from app.constants.strategy import (
-    LEGACY_ALGORITHM_VERSION, STRATEGY_0, STRATEGY_LEGACY,
+    LEGACY_ALGORITHM_VERSION, STRATEGY_0, STRATEGY_1, STRATEGY_LEGACY,
 )
 from app.strategies.base import Algorithm, ConfigError
 from app.strategies.registry import (
@@ -29,11 +29,20 @@ from tests.test_copybot_v3_simulation import (
 # Методы, без которых симулятор не сможет провести ни одной сделки.
 CONTRACT = (
     "prepare", "entry_levels", "wait_for_entry", "open_position", "should_exit",
+    # Без него копибот, попавший на донора этой стратегии, молча не
+    # входил бы: симулятор спрашивает, годится ли сигнал после паузы
+    # на проверку донора.
+    "entry_still_valid",
 )
 
 
 def check_registry():
-    assert known_keys() == [STRATEGY_LEGACY, STRATEGY_0], known_keys()
+    # Список фиксируется целиком: стратегия, попавшая в реестр без
+    # версии алгоритма или без строки в `strategies`, иначе доедет до
+    # боевого парка незамеченной.
+    assert known_keys() == sorted(
+        [STRATEGY_LEGACY, STRATEGY_0, STRATEGY_1]
+    ), known_keys()
 
     legacy = get_algorithm(STRATEGY_LEGACY)
 
@@ -69,7 +78,9 @@ def check_registry():
 
 
 def check_unknown_key():
-    for key in (None, "", "strategy_1", "сюрприз"):
+    # "strategy_1" здесь больше не годится — она реализована. Номер
+    # заведомо дальше любого, который появится в ближайшее время.
+    for key in (None, "", "strategy_99", "сюрприз"):
         try:
             get_algorithm(key)
         except UnknownAlgorithm as error:

@@ -24,6 +24,7 @@ from app.constants.volatility import most_volatile_symbol_key
 from app.crud.exchange_pair_spec import AssetExchangeSpecCrud
 from app.crud.test_bot import TestBotCrud
 from app.db.models import TestBot, TestOrder
+from app.enums.trade_type import TradeType
 from app.dependencies import get_redis
 from app.db.base import DatabaseSessionManager
 from app.constants.commissions import COMMISSION_OPEN
@@ -38,6 +39,7 @@ from app.crud.strategy import StrategyCrud
 from app.strategies.base import ConfigError, MarketContext
 from app.strategies.registry import UnknownAlgorithm, get_algorithm
 from app.sub_services.logic.donor_selection import DonorChanged, DonorGuard, read_donor
+from app.sub_services.watchers.candle_provider import CandleCache, CandleProvider
 from app.sub_services.watchers.price_provider import (
     PriceCache,
     PriceWatcher,
@@ -152,6 +154,14 @@ class StartTestBotsCommand(Command):
         price_cache.start()
 
         price_provider = PriceProvider(redis=redis, cache=price_cache)
+
+        # Свечи меняются раз в минуту, поэтому свой кэш с редким
+        # обновлением: он же держит посчитанные ATR, чтобы Уайлдер не
+        # считался заново на каждом тике каждому боту.
+        candle_cache = CandleCache(redis=redis)
+        candle_cache.start()
+
+        candle_provider = CandleProvider(redis=redis, cache=candle_cache)
         binance_bot = BinanceBot(is_need_prod_for_data=True, redis=redis)
 
         await asyncio.sleep(60)
@@ -252,6 +262,7 @@ class StartTestBotsCommand(Command):
                             stop_event=self.stop_event,
                             price_provider=price_provider,
                             binance_bot=binance_bot,
+                            candle_provider=candle_provider,
                         )
                     except Exception as e:
                         error_traceback = traceback.format_exc()
@@ -758,10 +769,12 @@ class StartTestBotsCommand(Command):
             return scope_allows(bots[0].donor_scope, strategy_key)
 
     async def simulate_bot(self, redis, original_bot_config, shared_data,
-                           stop_event, price_provider, binance_bot):
+                           stop_event, price_provider, binance_bot,
+                           candle_provider=None):
         try:
             await self._simulate_bot(redis, original_bot_config, shared_data,
-                                     stop_event, price_provider, binance_bot)
+                                     stop_event, price_provider, binance_bot,
+                                     candle_provider)
         except DonorChanged:
             # Позиция ещё не открыта. Следующий вызов из _run_loop заново
             # выберет донора; старые уровни и ожидающие задачи не сохраняются.
@@ -775,6 +788,7 @@ class StartTestBotsCommand(Command):
         stop_event,
         price_provider,
         binance_bot,
+        candle_provider=None,
     ):
         while not stop_event.is_set():
             referral_bot_id = None
@@ -827,6 +841,7 @@ class StartTestBotsCommand(Command):
                 # в ответе нет ни 'selection', ни осмысленного донора —
                 # сделки всё равно не будет.
                 donor_chain = [*chain, referral_bot_id]
+
                 # Стратегию исполнения задаёт донор, и только он. Своей
                 # у копибота нет: его собственная работа кончается на
                 # выборе донора, дальше он торгует чужим конфигом.
@@ -855,7 +870,6 @@ class StartTestBotsCommand(Command):
                     )
                     await asyncio.sleep(60)
                     return
-
 
                 # Пул проверяется по фактически исполняемой стратегии, а
                 # не по принадлежности промежуточных звеньев: копибот
@@ -927,6 +941,12 @@ class StartTestBotsCommand(Command):
             if commission_rate is None:
                 commission_rate = COMMISSION_OPEN
 
+            # У стратегий с лимитным входом (`entry_is_maker`) открытие
+            # исполняется заявкой в стакане, то есть по ставке maker.
+            # Закрытие у них всё равно рыночное, поэтому ставка одна —
+            # только для входа.
+            maker_commission_rate = data.get("maker_commission_rate")
+
             if bot_id == 1:
                 logging.info('bot_id 1 started work')
 
@@ -979,6 +999,8 @@ class StartTestBotsCommand(Command):
                 price_watcher=price_watcher,
                 binance_bot=binance_bot,
                 before_entry=before_entry,
+                candle_provider=candle_provider,
+                maker_commission_rate=maker_commission_rate,
                 strategy_config=strategy_config,
             )
 
@@ -986,6 +1008,11 @@ class StartTestBotsCommand(Command):
             context.bot_config = bot_config
 
             while True:
+                # Состояние прошлого круга к новой сделке отношения не
+                # имеет: ATR, по которому считался отступ, за это время
+                # изменился.
+                context.strategy_state.clear()
+
                 initial_price = await before_entry(price_provider.get_price(symbol=symbol))
 
                 levels = await algorithm.entry_levels(context, initial_price)
@@ -1045,11 +1072,19 @@ class StartTestBotsCommand(Command):
 
             if donor_guard:
                 await donor_guard.check(final=True)
-                # Проверка донора ждала Redis/SQL: за это время цена сигнала
-                # могла измениться или истечь. Старый сигнал не переносим
-                # на новую цену; следующий проход заново ждёт входа.
+                # Проверка донора ждала Redis/SQL: за это время цена
+                # сигнала могла измениться или истечь. Годится ли он
+                # после этого, решает стратегия, а не симулятор: у
+                # рыночного входа цена сигнала обязана совпасть с
+                # текущей, у лимитного она и не должна — заявка
+                # срабатывает как раз на пробитии своей цены, и общее
+                # правило «цена та же» запретило бы копиботам сделки
+                # таких стратегий вовсе.
                 current_price = await price_provider._read_price(symbol)
-                if current_price is None or current_price != entry_price:
+
+                if not await algorithm.entry_still_valid(
+                    context, entry, current_price
+                ):
                     logging.info("Цена сигнала изменилась до входа бота %s", bot_id)
                     return
 
@@ -1079,8 +1114,13 @@ class StartTestBotsCommand(Command):
             if is_it_copy or bot_id == 1:
                 logging.info(f'wait for should_exit for {bot_id}')
 
+            # Отсчёт удержания начинается здесь — после того, как
+            # позиция открыта. Не с момента выставления заявки: у
+            # стратегий с лимитным входом она висит минутами, и тайм-стоп
+            # истекал бы ещё до сделки.
             just30sec_start_time = time.time()
             self._open_symbols[bot_id] = symbol
+            exit_slippage = None
 
             while not stop_event.is_set():
                 updated_price = await price_provider.get_price(symbol=symbol)
@@ -1097,6 +1137,7 @@ class StartTestBotsCommand(Command):
                     # времени удержания, обычные стопы её не заполняют.
                     if decision.reason:
                         order.stop_reason_event = decision.reason
+                    exit_slippage = decision.slippage
                     break
 
                 await asyncio.sleep(0.1)
@@ -1108,6 +1149,19 @@ class StartTestBotsCommand(Command):
             self._open_symbols.pop(bot_id, None)
 
             close_price = await price_provider.get_price(symbol=symbol)
+
+            if exit_slippage:
+                # Выход рыночный: он исполняется хуже наблюдаемой цены.
+                # Направление знает симулятор, величину — стратегия,
+                # поэтому знак ставится здесь. Ниже нуля цена не уходит:
+                # на такой сделке считать уже нечего.
+                slip = Decimal(str(exit_slippage))
+                close_price = Decimal(str(close_price))
+
+                if trade_type == TradeType.BUY.value:
+                    close_price = max(close_price - slip, Decimal("0"))
+                else:
+                    close_price = close_price + slip
 
             balance = bot_config.balance
 
@@ -1128,6 +1182,11 @@ class StartTestBotsCommand(Command):
                 open_price=open_price,
                 close_price=close_price,
                 commission_rate=commission_rate,
+                commission_open_rate=(
+                    maker_commission_rate
+                    if getattr(algorithm, "entry_is_maker", False)
+                    else None
+                ),
                 referral_bot_id=referral_bot_id,
                 strategy_id=original_bot_config.strategy_id,
                 executed_strategy_id=executed_strategy_id,

@@ -48,6 +48,7 @@ def build_trade(
     open_price,
     close_price,
     commission_rate,
+    commission_open_rate=None,
     referral_bot_id: Optional[int],
     strategy_id: int,
     executed_strategy_id: int,
@@ -60,13 +61,23 @@ def build_trade(
     копибота v3 количество округлено по шагу лота, и в расчёт уходит
     именно номинал. Иначе PnL считался бы по дробному количеству,
     которого на бирже не бывает.
+
+    `commission_open_rate` задаётся только стратегиями с лимитным
+    входом: там открытие исполняется заявкой в стакане, то есть по
+    ставке maker, а закрытие всё равно рыночное. По умолчанию обе
+    стороны считаются по `commission_rate` — как было и как верно для
+    рыночного входа.
     """
+    commission_open = (
+        commission_rate if commission_open_rate is None else commission_open_rate
+    )
+
     pnl = PriceCalculator.calculate_pnl(
         balance=balance,
         close_price=close_price,
         open_price=open_price,
         trade_type=trade_type,
-        commission_open=commission_rate,
+        commission_open=commission_open,
         commission_close=commission_rate,
     )
 
@@ -76,7 +87,7 @@ def build_trade(
         balance=balance,
         open_price=open_price,
         close_price=close_price,
-        commission_open=commission_rate,
+        commission_open=commission_open,
         commission_close=commission_rate,
     )
 
