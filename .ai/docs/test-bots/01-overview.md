@@ -26,7 +26,7 @@ N минут. Сами сделки живут 72 часа, статистика
 | supervisor program | модуль | autostart | роль |
 |---|---|---|---|
 | `symbols_history` | `app.scripts.watch_ws_and_save` | **true** | питатель цен: Binance → Redis `price:*` + таблица `asset_history` |
-| `candles_history` | `app.scripts.watch_binance_candles` | false | питатель свечей: Binance kline 1m → Redis `candles:*` (нужен только MA-ботам) |
+| `candles_history` | `app.scripts.watch_binance_candles` | **true** (с 2026-09-20) | питатель свечей: минутные OHLC → Redis `candles:*`. Источник задаёт `CANDLES_SOURCE`: `ws` — поток фьючерсов, `spot_rest` — спотовый REST |
 | `test_bots` | `app.scripts.start_test_bots` | **true** | сам симулятор. Группа из `TEST_BOTS_SHARDS` процессов (`test_bots:test_bots_00`, ...), каждый ведёт ботов с `id % TEST_BOTS_SHARDS == номер шарда` |
 | `insert_test_orders` | `app.workers.scripts.bull_insert_test_orders` | **true** | потребитель очереди `order_queue` → `INSERT INTO test_orders` |
 | `set_profitable_bot` | `app.workers.scripts.set_profitable_bot` | **true** | считает лидеров прибыльности → Redis `copy_bot_{id}` (нужен копиботам v1) |
@@ -74,10 +74,15 @@ N минут. Сами сделки живут 72 часа, статистика
 | `general/app/strategies/` | **алгоритмы стратегий**: контракт (`base.py`), реестр (`registry.py`), текущий алгоритм (`legacy/algorithm.py`). Вход и выход живут здесь, а не в симуляторе |
 | `general/app/scripts/new_bots.py` | **генератор ботов**: перебор параметров → `test_bots`. Досевает недостающих по ключу конфигурации; `--replace` деактивирует прежних ботов стратегии, `TRUNCATE` больше не делает |
 | `general/app/scripts/top_bots_report.py` | CLI-отчёт «топ прибыльных ботов» |
+| `general/app/scripts/pair_profile_report.py` | CLI-отчёт «профиль пары»: ATR и его процентиль, доля свечей с тенями длиннее тела, выносы в сутки, оборот. Историю тянет по REST в момент запуска |
+| `general/app/scripts/pair_screener.py` | скрининг **всего** фьючерсного пула под стратегию 1: оборот и спред по одному запросу на биржу, затем частота выносов, доля возвратов, плотность сделок и запас цели над издержками |
 | `general/app/scripts/seed_commission_rates.py` | заполняет ставки maker/taker по парам из Binance |
 | `general/app/workers/bulk_insert_orders.py` | потребитель `order_queue` |
 | `general/app/scripts/watch_ws_and_save.py` | питатель цен (три режима: `ws` / `rest` / `spot_ws`) |
-| `general/app/scripts/watch_binance_candles.py` | питатель свечей для MA |
+| `general/app/scripts/watch_binance_candles.py` | питатель свечей (`ws` / `spot_rest`): минутные OHLC по парам активных ботов и всему `watched_pair` |
+| `general/app/sub_services/watchers/candle_store.py` | формат свечей в Redis и расчёты по ним: ATR, процентиль, тени, выносы |
+| `general/app/sub_services/watchers/candle_provider.py` | `CandleCache` / `CandleProvider` — свечи и ATR в горячем цикле, один `MGET` на процесс |
+| `general/app/sub_services/watchers/candle_history.py` | история свечей по REST страницами — для отчётов, не для цикла |
 | `general/app/scripts/supervisor_control.py` | `paused()` — остановить процессы supervisord на время опасной операции и вернуть как было |
 | `general/app/scripts/simulator_flag.py` | флаг «симулятор работает» в Redis: по нему `paused()` видит процесс, запущенный руками, и отказывается работать под ним |
 | `general/app/utils.py` | `Command` — базовый класс: прогоняет метод `command()` через DI FastAPI вне HTTP-запроса |

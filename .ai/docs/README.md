@@ -15,7 +15,9 @@
 
 Разделение стратегий: [план и что по нему
 сделано](test-bots/12-multi-strategy-plan.md), сама стратегия
-прострелов — [13-strategy-0.md](test-bots/13-strategy-0.md).
+прострелов — [13-strategy-0.md](test-bots/13-strategy-0.md),
+возврат к средней —
+[14-strategy-1-squeeze-grid.md](test-bots/14-strategy-1-squeeze-grid.md).
 
 ## Соглашения
 

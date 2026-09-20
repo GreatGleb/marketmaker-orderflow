@@ -62,7 +62,7 @@ docker exec -it orderflow_general python -m app.scripts.seed_commission_rates -s
 ```bash
 docker exec -it orderflow_general supervisorctl status
 docker exec -it orderflow_general supervisorctl restart test_bots:*
-docker exec -it orderflow_general supervisorctl start candles_history   # для MA-ботов
+docker exec -it orderflow_general supervisorctl restart candles_history  # свечи для MA
 docker exec -it orderflow_general tail -f /var/log/test_bots_00.log
 ```
 
@@ -145,6 +145,13 @@ docker exec -it orderflow_general python -m app.scripts.new_bots
   напечатает `❌ Ошибка после 0 созданных волатильных ботов` и парк выйдет
   без них, как это и произошло с нынешним (см. [04-bot-types.md](04-bot-types.md));
 * MA-боты и сетка процентов на фиксированной паре — закомментированы.
+
+Копиботы заводятся **один раз, без `--strategy`**, и обслуживают все
+стратегии сразу: пул доноров у них `{"mode": "all"}`, а торгуют они
+алгоритмом того бота, чей конфиг унаследовали. Заводить свой набор
+копиботов новой стратегии не нужно и не следует — получились бы две
+независимые лестницы копирования над одним парком доноров. Подробности
+— раздел 5б в [04-bot-types.md](04-bot-types.md).
 
 После пересоздания перезапустите симулятор — иначе он работает по старому
 снимку: `supervisorctl restart test_bots:*`.
@@ -231,28 +238,33 @@ docker exec -it orderflow_general python -m app.scripts.referral_match_report --
 
 ## Проверка живости (диагностика по порядку)
 
-В командах ниже используются стандартные база `postgres` и Redis DB 0.
-При отдельном эксперименте берите имя базы из `DB_URL` (`psql -d ИМЯ`)
-и номер Redis из `REDIS_URL` (`redis-cli -n НОМЕР`). Состояние другого
-эксперимента ничего не говорит о живости текущего.
+⚠️ **Номер базы Redis задаётся в `REDIS_URL` и по умолчанию не нулевой.**
+В рабочей установке это `redis://redis:6379/3`, а `redis-cli` без `-n`
+смотрит DB 0 — там лежат ключи прежних запусков. Отсюда ловушка: команда
+без `-n` показывает пустоту или чужие данные, и живой стек выглядит
+мёртвым. Сверяйте номер с `REDIS_URL` и передавайте его явно.
+
+Имя базы Postgres при отдельном эксперименте тоже берите из `DB_URL`
+(`psql -d ИМЯ`). Состояние другого эксперимента ничего не говорит о
+живости текущего.
 
 ```bash
 # 1. Цены идут?
-docker exec -it orderflow_redis redis-cli keys 'price_snapshot:*' | head
-docker exec -it orderflow_redis redis-cli get price_snapshot:BIOUSDT
+docker exec -it orderflow_redis redis-cli -n 3 --scan --pattern 'price_snapshot:*' | head
+docker exec -it orderflow_redis redis-cli -n 3 get price_snapshot:BIOUSDT
 
 # 2. Очередь не забита? (значит потребитель работает)
-docker exec -it orderflow_redis redis-cli llen order_queue
+docker exec -it orderflow_redis redis-cli -n 3 llen order_queue
 
 # 3. Сделки пишутся?
 docker exec -it orderflow_postgres psql -U postgres -c \
   "select count(*), max(created_at) from test_orders;"
 
 # 4. Копиботы получили доноров?
-docker exec -it orderflow_redis redis-cli keys 'copy_bot_*' | head
+docker exec -it orderflow_redis redis-cli -n 3 --scan --pattern 'copy_bot_*' | head
 
-# 5. Свечи для MA (если нужны)
-docker exec -it orderflow_redis redis-cli keys 'candles:*' | head
+# 5. Свечи (MA-боты, ATR)
+docker exec -it orderflow_redis redis-cli -n 3 --scan --pattern 'candles:*' | head
 
 # 6. Ставки комиссии засеяны?
 docker exec -it orderflow_postgres psql -U postgres -c \

@@ -31,7 +31,7 @@
 | `strategy_id` | int NOT NULL | `with_strategy`, `strategy_id_by_bot` | стратегия, экземпляром которой является бот. У всего нынешнего парка — `legacy` |
 | `bot_kind` | str NOT NULL | `active_bots_subquery`, `bot_kind_for_row` | вид бота: `ordinary`, `copy_v1`, `copy_v2`, `copy_v3`. Раньше выводился из того, какая колонка-маркер не NULL; маркеры остались окнами оценки прибыльности |
 | `strategy_config` | jsonb NULL | `Algorithm.parse_config` | настройки, специфичные для алгоритма, с ключом `schema_version`. У `legacy` пусто: его параметры лежат колонками |
-| `donor_scope` | jsonb NULL | `donors_within_scope` | пул стратегий-доноров копибота: `{"mode": "all"}` либо `{"mode": "list", "strategies": ["legacy"]}`. `NULL` у обычных ботов и означает «без ограничений». По умолчанию сиды ставят явный список своей стратегии: с `all` копибот сменил бы алгоритм сам собой в день подключения второй стратегии |
+| `donor_scope` | jsonb NULL | `donors_within_scope` | пул стратегий-доноров копибота: `{"mode": "all"}` либо `{"mode": "list", "strategies": ["legacy"]}`. `NULL` у обычных ботов и означает «без ограничений». С 2026-09-20 сиды ставят `all`: копибот — уровень копирования, а не торговая стратегия, и торгует алгоритмом донора. Явный список остаётся воротами, которыми копибота сужают вручную |
 | `created_at` / `updated_at` | timestamptz | — | из `BaseId` |
 
 ## `Strategy` — `general/app/db/models.py`, `class Strategy`, таблица `strategies`

@@ -12,7 +12,7 @@
                 ▼                                      ▼
              ┌──────────────────┐          MarketDataBuilder.build()
              │      REDIS       │◄─── candles:{SYMBOL} ── watch_binance_candles
-             └──────────────────┘                       (autostart=false)
+             └──────────────────┘                       (ws | spot_rest)
                 │  ▲
    снимки цен    │  │  copy_bot_{id}   ◄─── set_profitable_bot (ProfitableBotUpdaterCommand)
                 ▼  │
@@ -49,7 +49,7 @@
 |---|---|---|---|---|
 | `price_snapshot:{SYMBOL}` | string (JSON: price, event_time_ms, source) | `price_snapshot.publish_prices`, атомарный Lua | `PriceCache._refresh_once`, `PriceProvider._read_price` | цена с временем события; просроченную бот не получает |
 | `price:{SYMBOL}` | string | тот же Lua вместе со снимком | ручная диагностика | числовая копия; сама по себе не разрешает торговлю |
-| `candles:{SYMBOL}` | string (JSON-массив цен закрытия) | `watch_binance_candles.py:41` | `BinanceBot.get_prev_minutes_ma` (`binance_bot.py:1673`) | закрытия минутных свечей для MA |
+| `candles:{SYMBOL}` | string (JSON-массив свечей `{t,o,h,l,c,v}`) | `save_candle_to_redis` / `poll_symbol` | `CandleCache._refresh_once`, `BinanceBot.get_prev_minutes_ma` | минутные свечи: закрытия для MA, размах для волатильности. Формат и разбор — `app/sub_services/watchers/candle_store.py`; старый массив одних закрытий ещё читается |
 | `order_queue` | list | `demo_test_bot.py:750` (`RPUSH`) | `bulk_insert_orders.py` (`LPOP`) | завершённые виртуальные сделки. Константа — `app/constants/order.py` |
 | `copy_bot_{bot_id}` | string (JSON конфига + `published_at`), TTL 90 с | `ProfitableBotUpdaterCommand.command` | `update_config_from_referral_bot`, `DonorGuard` | выбор донора v1; при отсутствии кандидата ключ удаляется |
 | `asset_history:stop` | string (флаг) | вручную / служебные скрипты | `watch_ws_and_save.py` | пауза записи в `asset_history` (обслуживание таблицы) |
