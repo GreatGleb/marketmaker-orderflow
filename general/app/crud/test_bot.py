@@ -13,8 +13,7 @@ from app.constants.strategy import (
     BOT_KIND_COPY_V3,
     BOT_KIND_ORDINARY,
     COPY_BOT_KINDS,
-    donor_scope_list,
-    STRATEGY_LEGACY,
+    DONOR_SCOPE_ALL,
 )
 from app.db.models import TestBot, TestOrder
 from app.crud.base import BaseCrud
@@ -138,13 +137,24 @@ def with_strategy(rows: list[dict], strategy_id: int, donor_scope=None) -> list[
     `strategy_id` выдаёт база. Поэтому стратегия проставляется одним
     местом перед вставкой, а не размножается по каждому сиду.
 
-    Пул по умолчанию — явный список из одной своей стратегии, а не
-    «любая». Копибот с `all` сменит алгоритм сам собой в день, когда
-    появится вторая стратегия, и сравнивать его результаты до и после
-    будет нельзя. Расширение пула — отдельное осознанное действие.
+    Пул по умолчанию — «любая стратегия» (2026-09-20). До этого дня
+    здесь стоял явный список из одной своей стратегии: пока стратегия
+    была одна, `all` означал бы, что копибот сменит алгоритм сам собой
+    в день подключения второй, и сравнивать его результаты до и после
+    стало бы нельзя. Теперь смена сделана осознанно и датирована —
+    копибот это уровень копирования, а не торговая стратегия, и пул из
+    одной закрывал бы ему всё, кроме `legacy`.
+
+    Сопоставимость от этого всё равно рвётся: сделки копиботов до
+    2026-09-20 сделаны только по `legacy`, после — по алгоритму любого
+    донора. Разделять их надо не по дате, а по `executed_strategy_id`
+    в `test_orders` — он для того и заведён.
+
+    Явный список по-прежнему передаётся аргументом: он нужен там, где
+    исполнитель умеет ровно один алгоритм (боевой `binance_bot`).
     """
     if donor_scope is None:
-        donor_scope = donor_scope_list(STRATEGY_LEGACY)
+        donor_scope = DONOR_SCOPE_ALL
 
     prepared = []
 
@@ -235,16 +245,26 @@ class TestBotCrud(BaseCrud[TestBot]):
         )
         return result.rowcount
 
-    async def balance_by_bot(self, bot_ids) -> dict[int, float]:
-        """Номинал сделки у перечисленных ботов."""
-        bot_ids = list(bot_ids)
+    async def balance_by_bot(self, bot_ids=None) -> dict[int, float]:
+        """Номинал сделки: у перечисленных ботов или у всего парка.
 
-        if not bot_ids:
-            return {}
+        `None` — весь парк, одним запросом. Так её читает воркер
+        публикации доноров: пул у копиботов «любая стратегия», списки
+        кандидатов у восьмидесяти копиботов почти одинаковы и длиной в
+        тысячи id, и запрос на каждого означал бы восемьдесят `IN` по
+        всему парку каждые тридцать секунд вместо одного чтения.
+        """
+        query = select(TestBot.id, TestBot.balance)
 
-        result = await self.session.execute(
-            select(TestBot.id, TestBot.balance).where(TestBot.id.in_(bot_ids))
-        )
+        if bot_ids is not None:
+            bot_ids = list(bot_ids)
+
+            if not bot_ids:
+                return {}
+
+            query = query.where(TestBot.id.in_(bot_ids))
+
+        result = await self.session.execute(query)
         return {bot_id: float(balance) for bot_id, balance in result.all()}
 
     async def strategy_id_by_bot(self) -> dict[int, int]:

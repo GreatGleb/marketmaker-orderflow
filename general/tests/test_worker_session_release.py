@@ -91,7 +91,11 @@ class FakeCrud:
     async def get_bot_by_id(self, bot_id):
         return [self.donor]
 
-    async def balance_by_bot(self, bot_ids):
+    async def balance_by_bot(self, bot_ids=None):
+        # None — весь парк: так её читает воркер, раз в цикл.
+        if bot_ids is None:
+            bot_ids = [self.copybot.id, self.donor.id]
+
         return {bot_id: 1000.0 for bot_id in bot_ids}
 
     async def strategy_id_by_bot(self):

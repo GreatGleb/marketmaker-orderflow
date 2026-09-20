@@ -100,9 +100,15 @@ V3_BOT = Bot(
 )
 
 # Конфиг донора в том виде, в каком его кладёт воркер: числа, не строки.
+#
+# `strategy_id` обязателен: своей стратегии у копибота нет, и конфиг без
+# неё он торговать откажется — подставить свою значило бы записать в
+# историю сделку, которой этот алгоритм не совершал.
 DONOR_CONFIG = {
     "id": DONOR_ID,
     "symbol": SYMBOL,
+    "strategy_id": LEGACY_STRATEGY_ID,
+    "strategy_config": None,
     "stop_success_ticks": 20,
     "stop_loss_ticks": 30,
     "start_updown_ticks": 1,
@@ -161,8 +167,12 @@ class FakeCrud:
 
         return [bot] if bot else []
 
-    async def balance_by_bot(self, bot_ids):
-        return {bot_id: 1000.0 for bot_id in bot_ids}
+    async def balance_by_bot(self, bot_ids=None):
+        # None — весь парк: так её читает воркер, раз в цикл.
+        return {
+            bot_id: 1000.0
+            for bot_id in (LADDER if bot_ids is None else bot_ids)
+        }
 
     async def strategy_id_by_bot(self):
         return {bot_id: LEGACY_STRATEGY_ID for bot_id in LADDER}

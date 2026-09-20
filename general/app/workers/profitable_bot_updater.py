@@ -274,19 +274,27 @@ class ProfitableBotUpdaterCommand(Command):
         ]
 
     @staticmethod
-    def warn_about_mixed_nominals(donor_ids, balance_by_bot, copybot_id):
+    def warn_about_mixed_nominals(
+        donor_ids, balance_by_bot, copybot_id, warned=None
+    ):
         """Предупреждает, когда в общем пуле разный номинал сделки.
 
         Рейтинг доноров считается по абсолютной прибыли, а она линейна
         по номиналу: бот с балансом вдвое больше выигрывает у лучшего по
-        качеству, ничего не делая лучше. Пока пул состоит из одной
-        стратегии, номинал у всех одинаковый (сиды ставят 1000) и
-        вопроса нет. Как только в пуле окажется стратегия с другим
-        номиналом, метрику придётся выбирать явно — нормировать на
-        баланс или сравнивать только сопоставимых.
+        качеству, ничего не делая лучше. Сейчас номинал у всех парков
+        одинаковый — и `legacy`, и стратегии 0 и 1 сидятся с балансом
+        1000, — поэтому вопроса нет. Как только появится парк с другим
+        номиналом, метрику придётся выбирать явно: нормировать на баланс
+        или сравнивать только сопоставимых.
 
         Молча нормировать здесь нельзя: это пересортировка кандидатов,
         а порядок задаёт первый шаг отбора (.ai/rules/experiments.md).
+
+        `warned` — набор уже названных наборов номиналов на один цикл
+        воркера. Пул у копиботов теперь «любая стратегия», списки
+        кандидатов у них почти совпадают, и без этого одно и то же
+        предупреждение печаталось бы восемьдесят раз каждые тридцать
+        секунд — то есть перестало бы читаться.
         """
         nominals = {
             balance_by_bot[donor_id]
@@ -294,15 +302,25 @@ class ProfitableBotUpdaterCommand(Command):
             if donor_id in balance_by_bot
         }
 
-        if len(nominals) > 1:
-            logging.warning(
-                "Копибот %s: в пуле доноры с разным номиналом сделки (%s). "
-                "Рейтинг считается по абсолютной прибыли, поэтому крупный "
-                "номинал получает преимущество — метрику сравнения нужно "
-                "задать явно.",
-                copybot_id,
-                ", ".join(str(value) for value in sorted(nominals)),
-            )
+        if len(nominals) <= 1:
+            return
+
+        key = tuple(sorted(nominals))
+
+        if warned is not None:
+            if key in warned:
+                return
+
+            warned.add(key)
+
+        logging.warning(
+            "Копибот %s: в пуле доноры с разным номиналом сделки (%s). "
+            "Рейтинг считается по абсолютной прибыли, поэтому крупный "
+            "номинал получает преимущество — метрику сравнения нужно "
+            "задать явно.",
+            copybot_id,
+            ", ".join(str(value) for value in key),
+        )
 
     @staticmethod
     async def update_config_for_percentage(
@@ -585,6 +603,14 @@ class ProfitableBotUpdaterCommand(Command):
                 # тысячи строк, а публикация идёт по каждому копиботу.
                 strategy_id_by_bot = await bot_crud.strategy_id_by_bot()
                 strategy_id_by_key = await StrategyCrud(session).ids_by_key()
+                # Номиналы — тоже раз в цикл и по всему парку: у
+                # копиботов с пулом «любая стратегия» списки кандидатов
+                # почти одинаковы и длиной в тысячи id, и запрос на
+                # каждого стоил бы восьмидесяти `IN` по всему парку.
+                balance_by_bot = await bot_crud.balance_by_bot()
+                # Одинаковые предупреждения о номиналах внутри цикла
+                # печатаются один раз.
+                warned_nominals = set()
 
                 for bot in bots:
                     donor_ids = self.donors_within_scope(
@@ -600,8 +626,9 @@ class ProfitableBotUpdaterCommand(Command):
                         # сопоставимы ли кандидаты по номиналу.
                         self.warn_about_mixed_nominals(
                             donor_ids,
-                            await bot_crud.balance_by_bot(donor_ids),
+                            balance_by_bot,
                             bot.id,
+                            warned=warned_nominals,
                         )
                     refer_bot_dict = await self.get_bot_config_by_params(
                         bot_crud=bot_crud,

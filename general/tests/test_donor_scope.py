@@ -89,17 +89,22 @@ def check_rows():
 
     for row in prepared[1:]:
         assert is_copybot_row(row), "копибот определяется колонкой-маркером"
-        assert row["donor_scope"] == donor_scope_list(STRATEGY_LEGACY), (
-            "по умолчанию пул явный: иначе копибот сменит алгоритм сам "
-            "собой в день, когда появится вторая стратегия"
+        assert row["donor_scope"] == DONOR_SCOPE_ALL, (
+            "по умолчанию пул — любая стратегия: копибот это уровень "
+            "копирования, а не торговая стратегия, и запирать его на "
+            "парк, в котором он заведён, незачем"
         )
 
     # Исходные строки не тронуты: сиды строят их из общих констант и
     # переиспользуют между группами.
     assert "strategy_id" not in rows[0]
 
-    explicit = with_strategy(rows, OTHER_ID, donor_scope=DONOR_SCOPE_ALL)
-    assert explicit[1]["donor_scope"] == DONOR_SCOPE_ALL
+    # Явный список никуда не делся: он нужен исполнителю, который умеет
+    # ровно один алгоритм (боевой `binance_bot`).
+    explicit = with_strategy(
+        rows, OTHER_ID, donor_scope=donor_scope_list(STRATEGY_LEGACY)
+    )
+    assert explicit[1]["donor_scope"] == donor_scope_list(STRATEGY_LEGACY)
 
     print("  строки парка: стратегия всем, пул — только копиботам")
 

@@ -17,8 +17,10 @@ from sqlalchemy import distinct, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.constants.strategy import STRATEGY_LEGACY, donor_scope_list
 from app.crud.asset_history import AssetHistoryCrud
 from app.crud.exchange_pair_spec import AssetExchangeSpecCrud
+from app.crud.strategy import StrategyCrud
 from app.crud.test_bot import TestBotCrud
 from app.crud.test_orders import TestOrderCrud
 from app.db.base import DatabaseSessionManager
@@ -151,9 +153,33 @@ class BinanceBot(Command):
                 logging.info(f'tf_bot_ids {tf_bot_ids}')
 
                 logging.info('finished get_profitable_bots_id_by_timeframes')
+
+                # Пул донора — только `legacy`, и это не копия пула
+                # копибота (у того теперь «любая стратегия»).
+                #
+                # Причина: боевой бот умеет ровно один алгоритм — тот,
+                # что зашит в этот класс. Реестра стратегий он не
+                # читает, `strategy_config` донора не разбирает. Возьми
+                # он донора стратегии 0 или 1 — конфиг приехал бы с
+                # нулями во всех тиковых и процентных полях (параметры
+                # тех стратегий лежат в `strategy_config`), и бот
+                # торговал бы настоящими деньгами по уровням, которых
+                # донор не ставил. Молча: ни ошибки, ни записи в лог.
+                #
+                # Снять ограничение можно после того, как боевой бот
+                # начнёт выбирать алгоритм через `app/strategies`, —
+                # раздел 4.6 в .ai/docs/test-bots/09-roadmap.md.
+                donor_ids = ProfitableBotUpdaterCommand.donors_within_scope(
+                    tf_bot_ids[copy_bot.copy_bot_min_time_profitability_min],
+                    donor_scope_list(STRATEGY_LEGACY),
+                    await bot_crud.strategy_id_by_bot(),
+                    await StrategyCrud(session).ids_by_key(),
+                    copy_bot.id,
+                )
+
                 refer_bot = await ProfitableBotUpdaterCommand.get_bot_config_by_params(
                     bot_crud=bot_crud,
-                    bot_ids=tf_bot_ids[copy_bot.copy_bot_min_time_profitability_min]
+                    bot_ids=donor_ids
                 )
                 logging.info('finished get_bot_config_by_params')
 
