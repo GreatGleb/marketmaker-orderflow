@@ -2,6 +2,18 @@
 
 CONTAINER_NAME="orderflow_general"
 
+# Compose v1 (`docker-compose`) в Ubuntu 24.04 уже не поставляется: там только
+# плагин (`docker compose`). Жёсткий вызов через дефис ронял init на свежем
+# сервере на первом же шаге, поэтому берём то, что есть.
+if docker compose version >/dev/null 2>&1; then
+    COMPOSE="docker compose"
+elif command -v docker-compose >/dev/null 2>&1; then
+    COMPOSE="docker-compose"
+else
+    echo "Не найден ни 'docker compose', ни 'docker-compose'." >&2
+    exit 1
+fi
+
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
@@ -54,16 +66,16 @@ fi
 case "$1" in
     start)
         echo -e "${GREEN}Собираю и запускаю проект в фоновом режиме (docker-compose up --build -d)...${NC}"
-        docker-compose up --build -d
+        $COMPOSE up --build -d
         ;;
     stop)
         echo -e "${YELLOW}Останавливаю проект (docker-compose down)...${NC}"
-        docker-compose down
+        $COMPOSE down
         ;;
     restart)
         echo -e "${YELLOW}Перезапускаю проект...${NC}"
-        docker-compose down
-        docker-compose up --build -d
+        $COMPOSE down
+        $COMPOSE up --build -d
         ;;
     init)
         echo -e "${GREEN}Полная настройка проекта. Это займёт до 20 минут.${NC}"
@@ -74,7 +86,7 @@ case "$1" in
         fi
 
         echo -e "${CYAN}[1/4] Собираю и запускаю контейнеры...${NC}"
-        docker-compose up --build -d || exit 1
+        $COMPOSE up --build -d || exit 1
 
         echo -e "${CYAN}[2/4] Жду базу данных...${NC}"
         for _ in $(seq 1 60); do
@@ -107,7 +119,7 @@ case "$1" in
         ;;
     logs)
         echo -e "${CYAN}Показываю логи... (Нажмите Ctrl+C для выхода)${NC}"
-        docker-compose logs -f
+        $COMPOSE logs -f
         ;;
     shell | bash)
         echo -e "${CYAN}Открываю shell в контейнере '$CONTAINER_NAME'...${NC}"
