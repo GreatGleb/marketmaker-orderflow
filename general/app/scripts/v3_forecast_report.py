@@ -32,6 +32,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
+from app.constants.copybot import COPYBOT_V3_START_BALANCE
 from app.config import settings
 from app.crud.strategy import StrategyCrud, UnknownStrategy
 from app.crud.test_bot import TestBotCrud
@@ -132,12 +133,23 @@ async def print_bot(
 ) -> None:
     print(f"\n  {bot_title(bot)}")
 
+    ruins = int(getattr(bot, "copybot_v3_ruins", 0) or 0)
+
+    if ruins:
+        # Главный результат прогноза: столько раз реальный бот слил бы депозит
+        # и заводил новый. Одна дата остановки этого не показывала — кривая
+        # просто обрывалась, и было не отличить «слил однажды» от «сливает
+        # каждые два дня».
+        last = getattr(bot, "copybot_v3_last_ruin_at", None)
+        when = f", последний раз {last:%Y-%m-%d %H:%M}" if last else ""
+        print(f"    💀 разорений: {ruins}{when} — счёт возвращался к "
+              f"{COPYBOT_V3_START_BALANCE:.0f}")
+
     if bot.copybot_v3_stopped_at:
-        # Главный результат прогноза, если он случился: реальный бот в этот
-        # момент перестал бы торговать.
         print(
-            f"    🛑 остановлен {bot.copybot_v3_stopped_at:%Y-%m-%d %H:%M} — "
-            f"на балансе перестал набираться минимальный лот"
+            f"    🛑 остановлен насовсем "
+            f"{bot.copybot_v3_stopped_at:%Y-%m-%d %H:%M} — после "
+            f"восстановления счёта не прошло ни одной сделки"
         )
 
     if stats is None or not int(stats.orders_count or 0):

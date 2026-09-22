@@ -41,6 +41,12 @@ DONOR_HISTORY_MINUTES = 24 * 60
 # ещё предстоит.
 COPYBOT_V3_WINDOW_MINUTES = 720
 
+# Счёт, с которого начинает компаундирующий v3 и к которому он возвращается
+# после разорения. Одно число на сид и на восстановление: разойдутся — и
+# «разорился N раз» перестанет значить «прошёл дистанцию N раз с одной и той
+# же стартовой позиции».
+COPYBOT_V3_START_BALANCE = Decimal("1000.0")
+
 # Ботов заводят парой, и различает их только флаг компаундинга.
 #
 # Без флага баланс всегда 1000, как у всего парка: такой бот сравним с
@@ -57,7 +63,7 @@ def copybot_v3_rows() -> list[dict]:
     return [
         {
             "symbol": '',
-            "balance": Decimal("1000.0"),
+            "balance": COPYBOT_V3_START_BALANCE,
             "copybot_v3_time_in_minutes": COPYBOT_V3_WINDOW_MINUTES,
             "copybot_v3_compound_balance": compound,
         }

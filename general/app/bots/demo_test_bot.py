@@ -20,6 +20,7 @@ from app.constants.open_positions import (
     OPEN_POSITION_SYMBOLS_TTL_SECONDS,
     open_position_symbols_key,
 )
+from app.constants.copybot import COPYBOT_V3_START_BALANCE
 from app.constants.volatility import most_volatile_symbol_key
 from app.crud.exchange_pair_spec import AssetExchangeSpecCrud
 from app.crud.test_bot import TestBotCrud
@@ -107,6 +108,11 @@ class StartTestBotsCommand(Command):
         # Сколько попыток подряд упёрлись в нехватку. Обнуляется удачной
         # сделкой: подряд — значит подряд.
         self._v3_shortages: dict[int, int] = {}
+        # Кто успел совершить хотя бы одну сделку после последнего
+        # восстановления счёта. Без этого разорение без единой сделки
+        # вернуло бы стартовый баланс, упёрлось в ту же нехватку и
+        # закрутило бы цикл «восстановил — разорился» вхолостую.
+        self._v3_traded_since_ruin: set[int] = set()
         # id стратегии -> ключ. Нужна, чтобы записать версию алгоритма в
         # сделку: id выдаёт база, а версия привязана к ключу.
         self._strategy_keys: dict[int, str] = {}
@@ -224,6 +230,19 @@ class StartTestBotsCommand(Command):
                             f'и торговать не будут: '
                             f'{sorted(self._v3_stopped)}.'
                         )
+
+                    # «Торговал после восстановления» в базе не хранится:
+                    # признак нужен только чтобы поймать разорение вхолостую
+                    # внутри одного запуска. После перезапуска считаем, что
+                    # торговал — иначе бот, проживший неделю, был бы похоронен
+                    # на первом же разорении. Цена ошибки — одно лишнее
+                    # восстановление на запуск, и то лишь у бота, который и
+                    # правда не может набрать лот.
+                    self._v3_traded_since_ruin = {
+                        bot.id
+                        for bot in active_bots_tuples
+                        if getattr(bot, 'copybot_v3_compound_balance', False)
+                    }
 
                     shared_data = await MarketDataBuilder(session).build()
 
@@ -583,7 +602,51 @@ class StartTestBotsCommand(Command):
             )
             return
 
-        await self._v3_stop(bot_id=bot_id, reason=str(refusal))
+        await self._v3_ruin(bot_id=bot_id, reason=str(refusal))
+
+    async def _v3_ruin(self, bot_id: int, reason: str) -> None:
+        """Счёт кончился: вернуть стартовый баланс и начать заново.
+
+        Разорение — не конец прогноза, а его результат: боевой бот в этот
+        момент слил бы депозит и завёл новый. Поэтому считаем, сколько раз
+        это случилось, и продолжаем — по числу разорений за неделю о боте
+        видно больше, чем по одной дате, на которой кривая обрывалась.
+
+        Исключение — разорение без единой сделки после прошлого
+        восстановления. Значит стартового счёта не хватает на лот в принципе,
+        и возвращать его снова незачем: такой бот останавливается насовсем.
+        """
+        if bot_id in self._v3_stopped:
+            return
+
+        if bot_id not in self._v3_traded_since_ruin:
+            await self._v3_stop(
+                bot_id=bot_id,
+                reason=(
+                    f'{reason}; счёт восстанавливали, но ни одной сделки '
+                    f'после этого не случилось'
+                ),
+            )
+            return
+
+        balance = COPYBOT_V3_START_BALANCE
+
+        self._v3_balances[bot_id] = balance
+        self._v3_shortages.pop(bot_id, None)
+        self._v3_traded_since_ruin.discard(bot_id)
+
+        dsm = DatabaseSessionManager.create(settings.DB_URL)
+
+        async with dsm.get_session() as session:
+            await TestBotCrud(session).mark_v3_ruin(
+                bot_id=bot_id, balance=balance
+            )
+
+        logging.info(
+            f'💀 Копибот v3 {bot_id} разорился: {reason}. '
+            f'Счёт возвращён к {balance:.4f}, торгует дальше — '
+            f'в отчёте разорение будет посчитано.'
+        )
 
     async def _v3_stop(self, bot_id: int, reason: str) -> None:
         """Остановить бота: на балансе больше не набирается лот.
@@ -1206,8 +1269,10 @@ class StartTestBotsCommand(Command):
                 # сделки уезжают в очередь и вставляются пачками.
                 account_balance = account_balance + pnl
                 self._v3_balances[bot_id] = account_balance
-                # Сделка прошла — значит серия неудач прервана.
+                # Сделка прошла — значит серия неудач прервана, а счёт
+                # после восстановления отработал хотя бы раз.
                 self._v3_shortages.pop(bot_id, None)
+                self._v3_traded_since_ruin.add(bot_id)
 
                 dsm = DatabaseSessionManager.create(settings.DB_URL)
 

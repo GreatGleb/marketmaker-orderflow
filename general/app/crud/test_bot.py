@@ -400,6 +400,25 @@ class TestBotCrud(BaseCrud[TestBot]):
         )
         await self.session.commit()
 
+    async def mark_v3_ruin(self, bot_id: int, balance, ruined_at=None) -> None:
+        """Счёт кончился: вернуть стартовый баланс и засчитать разорение.
+
+        Одним запросом, потому что баланс и счётчик — одно событие: упади
+        процесс между двумя апдейтами, и бот либо торговал бы с восстановленным
+        счётом без отметки в отчёте, либо числился разорившимся с нулём на
+        счету.
+        """
+        await self.session.execute(
+            update(TestBot)
+            .where(TestBot.id == bot_id)
+            .values(
+                balance=balance,
+                copybot_v3_ruins=TestBot.copybot_v3_ruins + 1,
+                copybot_v3_last_ruin_at=ruined_at or datetime.now(UTC),
+            )
+        )
+        await self.session.commit()
+
     async def get_bot_with_volatility_by_id(self, bot_id: int):
         stmt = select(TestBot).where(
             TestBot.id == bot_id,

@@ -734,9 +734,29 @@ class TestBot(BaseId):
         types.DateTime(timezone=True),
         nullable=True,
         comment=(
-            "When the balance stopped covering the minimum lot. The bot stays "
-            "active so that it keeps showing up in reports"
+            "Terminal stop: the balance was restored and the bot still could "
+            "not place a single trade. The bot stays active so that it keeps "
+            "showing up in reports"
         ),
+    )
+    # Разорение больше не конец: счёт возвращается к стартовому, и бот идёт
+    # заново. Само число попыток и есть результат прогноза — «слил счёт
+    # четырежды за неделю» говорит о боевом боте больше, чем одна дата
+    # остановки, после которой кривая просто обрывалась.
+    copybot_v3_ruins: Mapped[int] = mapped_column(
+        types.Integer,
+        nullable=False,
+        server_default="0",
+        default=0,
+        comment=(
+            "How many times the account was wiped out and restored to the "
+            "starting balance"
+        ),
+    )
+    copybot_v3_last_ruin_at: Mapped[Optional[datetime]] = mapped_column(
+        types.DateTime(timezone=True),
+        nullable=True,
+        comment="When the account was last wiped out and restored",
     )
 
     def clone(self):
