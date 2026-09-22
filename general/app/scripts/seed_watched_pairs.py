@@ -344,15 +344,26 @@ async def rank_from_binance(session, top, reference=None):
     return [symbol for symbol, _, _ in chosen]
 
 
-def restart_price_feed() -> None:
-    """Перезапускает питатель цен, чтобы он подхватил новый список пар.
+def restart_feeders() -> None:
+    """Перезапускает питатели, чтобы они подхватили новый список пар.
 
-    В режиме spot_ws подписка на стримы формируется один раз при подключении
-    (watch_ws_and_save.py, run_spot_ws_listener), поэтому без перезапуска
-    новые пары останутся без котировок. В режимах ws и rest фильтр перечитывается на каждом сбросе
-    в БД, и перезапуск там просто безвреден.
+    Оба коллектора формируют подписку один раз при подключении и потом
+    список не перечитывают:
+
+    * цены — `watch_ws_and_save.run_spot_ws_listener` (режим spot_ws; в
+      режимах ws и rest фильтр читается на каждом сбросе в БД, и
+      перезапуск там просто безвреден);
+    * свечи — `watch_binance_candles.run_websocket_listener`, который
+      собирает URL через `build_ws_url` до входа в цикл.
+
+    Свечной питатель забыли здесь при первом развёртывании на чистом
+    сервере: он стартовал с пустой базой, подписался ни на что и остался
+    так навсегда. Внешне всё выглядело здоровым — процесс `RUNNING`, цены
+    идут, — но `candles:*` в Redis не появлялись, а боты стратегии 1 без
+    свечей не могут посчитать ATR и молча не входят.
     """
     restart("symbols_history")
+    restart("candles_history")
 
 
 async def watch_and_rank(candidates, top, watch_minutes, jump_threshold):
@@ -448,7 +459,7 @@ async def bootstrap(session, top, candidates_count, watch_minutes,
         f"(добавлено {added}, убрано {removed})."
     )
 
-    restart_price_feed()
+    restart_feeders()
 
     return await watch_and_rank(
         candidates=candidates, top=top, watch_minutes=watch_minutes,
@@ -691,7 +702,7 @@ async def seed_watched_pairs(
                 f"удалено {removed}."
             )
             if added or removed:
-                restart_price_feed()
+                restart_feeders()
             return
 
         if policy != PAIR_POLICY_VOLATILITY_JUMPS:
@@ -760,7 +771,7 @@ async def seed_watched_pairs(
             # spot_ws подписка формируется один раз при подключении. Разгон
             # питатель уже перезапускал сам, но повторный перезапуск здесь
             # безвреден — симулятор всё равно ещё стоит.
-            restart_price_feed()
+            restart_feeders()
 
         if not replace and removed == 0:
             logging.info(

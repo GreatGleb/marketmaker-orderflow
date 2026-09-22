@@ -253,7 +253,7 @@ async def check_rank_and_empty_rebuild():
         assert await sw.watch_and_rank(['BAD', 'GOOD'], 1, 0, .5) == ['GOOD']
     with patch.object(sw, 'rank_from_binance', AsyncMock(return_value=['GOOD'])), \
          patch.object(sw, 'apply_watched_pairs', AsyncMock(return_value=(1, 0))) as apply, \
-         patch.object(sw, 'restart_price_feed'), \
+         patch.object(sw, 'restart_feeders'), \
          patch.object(sw, 'watch_and_rank', AsyncMock(return_value=['GOOD'])):
         assert await sw.bootstrap(session, 1, 2, 0, .5, strategy_id=1) == ['GOOD']
         # Кандидаты разгона попадают в набор той стратегии, ради которой
@@ -269,7 +269,7 @@ async def check_rank_and_empty_rebuild():
          patch.object(sw, 'rank_by_jumps', AsyncMock(return_value=[])), \
          patch.object(sw, 'bootstrap', AsyncMock(return_value=None)), \
          patch.object(sw, 'apply_watched_pairs', AsyncMock(return_value=(0, 1))) as apply, \
-         patch.object(sw, 'restart_price_feed') as restart:
+         patch.object(sw, 'restart_feeders') as restart:
         session.execute = AsyncMock(return_value=Result([SimpleNamespace(
             id=1, key='legacy', pair_policy='volatility_jumps',
         )]))
