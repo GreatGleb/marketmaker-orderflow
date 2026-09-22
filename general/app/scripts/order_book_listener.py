@@ -9,7 +9,9 @@ from app.crud.asset_order_book import AssetOrderBookCrud
 from app.crud.watched_pair import WatchedPairCrud
 
 
-WS_URL = "wss://fstream.binance.com/stream?streams="
+# depth относится к категории /public — см. комментарий к WS_URL в
+# watch_ws_and_save.py.
+WS_URL = "wss://fstream.binance.com/public/stream?streams="
 
 
 def build_stream_url(symbols: list[str]) -> str:

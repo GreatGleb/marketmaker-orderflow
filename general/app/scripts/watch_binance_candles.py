@@ -92,7 +92,10 @@ async def build_ws_url(session):
 
     streams = [f"{symbol.lower()}@kline_{INTERVAL}" for symbol in all_symbols]
     stream_path = "/".join(streams)
-    return f"wss://fstream.binance.com/stream?streams={stream_path}", all_symbols, count_of_saved_candles
+    # kline относится к категории /market — см. комментарий к WS_URL в
+    # watch_ws_and_save.py.
+    url = f"wss://fstream.binance.com/market/stream?streams={stream_path}"
+    return url, all_symbols, count_of_saved_candles
 
 
 async def save_candle_to_redis(redis, binance_bot, symbol: str, candle: dict, count_of_saved_candles: int):

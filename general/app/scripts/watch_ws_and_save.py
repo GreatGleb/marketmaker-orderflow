@@ -18,7 +18,13 @@ from app.dependencies import redis_context
 from app.scripts.seed_binance_data import seed_binance_data
 from app.sub_services.watchers.price_snapshot import parse_snapshot, publish_prices
 
-WS_URL = "wss://fstream.binance.com/ws/!ticker@arr"
+# Binance 2026-04-23 разделил базовые URL фьючерсных вебсокетов по типам
+# потока: /public (bookTicker, depth), /market (!ticker@arr, aggTrade,
+# kline, markPrice), /private (listenKey). Старый /ws соединение
+# принимает и SUBSCRIBE подтверждает, но данные по нему не идут —
+# выглядит как молчание биржи, а не как ошибка. Подробности:
+# .ai/docs/test-bots/08-gotchas.md.
+WS_URL = "wss://fstream.binance.com/market/ws/!ticker@arr"
 REST_URL = "https://fapi.binance.com/fapi/v1/ticker/24hr"
 SPOT_WS_URL = "wss://stream.binance.com:9443/stream"
 SPOT_EXCHANGE_INFO_URL = "https://api.binance.com/api/v3/exchangeInfo"
