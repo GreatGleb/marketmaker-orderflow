@@ -68,6 +68,10 @@ services:
     build: general
     container_name: orderflow_general
     command: ./boot.sh
+    # Без этого стек переживает перезагрузку сервера наполовину: база и
+    # Redis возвращаются сами, а симулятор, питатели и воркеры — нет.
+    # Снаружи выглядит здоровым, а сделки и цены просто перестают идти.
+    restart: unless-stopped
     volumes:
       - ./general:/opt/services/app/src:Z
     env_file:
@@ -75,8 +79,13 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-        - db
-        - redis
+        # boot.sh первым делом гонит `alembic upgrade head` и ждать базу не
+        # умеет. Без условия по healthcheck первый старт на чистой машине
+        # проигрывает гонку и падает.
+        db:
+          condition: service_healthy
+        redis:
+          condition: service_started
     networks:
         - orderflow_network
         - redis_network
@@ -84,6 +93,7 @@ services:
   general-celery-worker:
     build: general
     container_name: orderflow_celery_worker
+    restart: unless-stopped
     command: celery -A app.tasks worker -l info
     volumes:
       - ./general:/opt/services/app/src:Z
@@ -102,6 +112,7 @@ services:
   general-celery-beat:
     build: general
     container_name: orderflow_celery_beat
+    restart: unless-stopped
     command: celery -A app.tasks beat -l info
     volumes:
       - ./general:/opt/services/app/src:Z
