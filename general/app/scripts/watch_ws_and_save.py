@@ -5,7 +5,7 @@ import logging
 
 import httpx
 import websockets
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,6 +25,13 @@ from app.sub_services.watchers.price_snapshot import parse_snapshot, publish_pri
 # выглядит как молчание биржи, а не как ошибка. Подробности:
 # .ai/docs/test-bots/08-gotchas.md.
 WS_URL = "wss://fstream.binance.com/market/ws/!ticker@arr"
+# Фьючерсные потоки разнесены по двум базовым URL, и подписаться на оба с
+# одного сокета нельзя: замер 2026-09-23 показал, что при смешанной
+# подписке на /public приходят только bookTicker, а @ticker молча
+# проглатывается — ровно тот отказ, что описан в пункте 29 08-gotchas.md.
+# Поэтому два соединения: цены с одного, 24-часовая статистика с другого.
+FUTURES_BOOK_WS_URL = "wss://fstream.binance.com/public/stream"
+FUTURES_TICKER_WS_URL = "wss://fstream.binance.com/market/stream"
 REST_URL = "https://fapi.binance.com/fapi/v1/ticker/24hr"
 SPOT_WS_URL = "wss://stream.binance.com:9443/stream"
 SPOT_EXCHANGE_INFO_URL = "https://api.binance.com/api/v3/exchangeInfo"
@@ -39,6 +46,57 @@ logging.basicConfig(
     level=logging.INFO
 )
 
+# Ключи книги в записи истории. Присутствуют всегда, даже пустые:
+# `AssetHistoryCrud.bulk_create` вставляет пачку одним многострочным
+# INSERT, а набор колонок берётся из первой строки. Разнородная пачка
+# ломается двумя разными способами, и оба плохи:
+#
+# * первая строка БЕЗ этих ключей — INSERT компилируется, и края спреда
+#   у всех остальных строк пачки **молча** уходят в NULL;
+# * первая строка С ключами, а дальше без — `CompileError`, который
+#   `save_filtered_assets` ловит своим `except Exception` и откатывает
+#   транзакцию: теряется вся пачка котировок целиком.
+#
+# Проверено на SQLAlchemy 2.0.41, см. `check_batch_is_homogeneous` в
+# tests/test_book_top.py.
+BOOK_FIELDS = (
+    "best_bid_price", "best_bid_qty", "best_ask_price", "best_ask_qty",
+)
+
+
+def _positive(value) -> Decimal | None:
+    try:
+        number = Decimal(str(value))
+    except (TypeError, InvalidOperation):
+        return None
+
+    return number if number.is_finite() and number > 0 else None
+
+
+def book_top(item: dict) -> dict:
+    """Лучшие цены и объёмы книги из тикера, если источник их отдаёт.
+
+    Пустой результат — норма: фьючерсный `!ticker@arr` и REST
+    `/fapi/v1/ticker/24hr` полей bid/ask не содержат. Перевёрнутую или
+    нулевую книгу отбрасываем целиком: половина такой пары хуже, чем
+    ничего, — по ней посчитают отрицательный спред.
+    """
+    empty = dict.fromkeys(BOOK_FIELDS)
+
+    bid = _positive(item.get("b"))
+    ask = _positive(item.get("a"))
+
+    if bid is None or ask is None or ask <= bid:
+        return empty
+
+    return {
+        "best_bid_price": bid,
+        "best_ask_price": ask,
+        "best_bid_qty": _positive(item.get("B")),
+        "best_ask_qty": _positive(item.get("A")),
+    }
+
+
 async def _wait_when_db_table_will_free(redis):
     while True:
         is_stopped = await redis.get(f"asset_history:stop")
@@ -50,7 +108,17 @@ async def _wait_when_db_table_will_free(redis):
     return True
 
 
-async def save_filtered_assets(session: AsyncSession, redis, data: list[dict], is_need_to_use_just_waiting_list_of_assets, source: str = "BINANCE"):
+async def save_filtered_assets(session: AsyncSession, redis, data: list[dict], is_need_to_use_just_waiting_list_of_assets, source: str = "BINANCE", publish: bool = True):
+    """Пишет котировки в историю, попутно публикуя их в Redis.
+
+    `publish=False` — для питателей, которые публикуют сами и на своей
+    частоте: фьючерсный слушатель обновляет Redis каждые 50 мс, а историю
+    пишет раз в секунду, и повторная публикация тех же событий вернула бы
+    «не принято» (срок и монотонность проверяются по времени события) —
+    записи молча отфильтровались бы, и история осталась бы пустой.
+    Ответственность за то, что в историю идут только принятые события
+    (пункт 25 в 08-gotchas.md), переходит на вызывающего.
+    """
     try:
         history_crud = AssetHistoryCrud(session)
         watched_crud = WatchedPairCrud(session)
@@ -127,6 +195,16 @@ async def save_filtered_assets(session: AsyncSession, redis, data: list[dict], i
             "statistics_close_time": item.get("C"),
         }
 
+        book = book_top(item)
+        record_data.update(book)
+        # Симулятор берёт цену из Redis, а не из БД, поэтому проверке
+        # post-only и теневому замеру исполнения нужен снимок, а не
+        # история. Читатели снимка разбирают его через parse_snapshot и
+        # лишние ключи игнорируют.
+        if book["best_bid_price"] is not None:
+            snapshot["bid"] = str(book["best_bid_price"])
+            snapshot["ask"] = str(book["best_ask_price"])
+
         # if symbol == 'BTCUSDT':
         #     records.append(record_data)
         #     await redis.set(f"price:{symbol}", last_price)
@@ -134,9 +212,10 @@ async def save_filtered_assets(session: AsyncSession, redis, data: list[dict], i
         records.append(record_data)
         snapshots.append(snapshot)
 
-    accepted = await publish_prices(redis, snapshots)
-    rejected += sum(not ok for ok in accepted)
-    records = [record for record, ok in zip(records, accepted) if ok]
+    if publish:
+        accepted = await publish_prices(redis, snapshots)
+        rejected += sum(not ok for ok in accepted)
+        records = [record for record, ok in zip(records, accepted) if ok]
     if rejected:
         logging.info(f"Котировки: отклонено {rejected} устаревших, повторных или неверных событий.")
     if not records:
@@ -407,6 +486,10 @@ async def run_spot_ws_listener():
                             continue
                         item["c"] = str((Decimal(bid) + Decimal(ask)) / 2)
                         item["E"] = int(time.time() * 1000)
+                        # Края спреда свежее тех, что пришли с @ticker
+                        # раз в секунду, и перетирают их осознанно.
+                        item["b"], item["a"] = bid, ask
+                        item["B"], item["A"] = data.get("B"), data.get("A")
                     else:
                         item["c"] = data.get("p")
                         item["E"] = data.get("E")
@@ -467,11 +550,254 @@ async def run_spot_ws_listener():
                 await asyncio.sleep(3)
 
 
+def merge_book_and_ticker(symbol: str, book: dict | None, ticker: dict | None) -> dict | None:
+    """Одна котировка из двух потоков: края книги плюс 24-часовая статистика.
+
+    `None` — если книги ещё нет: писать строку без цены незачем.
+    Статистики может не быть, и это не повод пропускать котировку — она
+    приезжает раз в секунду отдельным соединением и в первые мгновения
+    после подписки отстаёт. Пара в этот момент пишется с пустыми
+    колонками оборота, но с ценой и книгой.
+    """
+    if not book:
+        return None
+
+    bid, ask = book.get("b"), book.get("a")
+
+    if bid is None or ask is None:
+        return None
+
+    item = dict(ticker or {})
+    item["s"] = symbol
+    # Цена остаётся серединой спреда — той же величиной, по которой
+    # посчитаны все накопленные сделки. Края кладём рядом, а не вместо.
+    item["c"] = str((Decimal(bid) + Decimal(ask)) / 2)
+    item["E"] = book.get("E")
+    item["b"], item["B"] = bid, book.get("B")
+    item["a"], item["A"] = ask, book.get("A")
+
+    return item
+
+
+async def _watched_symbols(session, use_watched_filter: bool) -> list[str]:
+    """Пары для подписки. Ждёт, а не выходит: на чистой базе список пуст.
+
+    Выйти здесь нельзя по той же причине, что и в спотовом слушателе:
+    supervisord после трёх перезапусков пометит процесс FATAL и цены не
+    пойдут даже после того, как список наполнят.
+    """
+    watched_crud = WatchedPairCrud(session)
+    asset_crud = AssetExchangeSpecCrud(session)
+
+    while True:
+        if use_watched_filter:
+            symbols = sorted((await watched_crud.get_symbol_to_id_map()).keys())
+        else:
+            # Писать можно только туда, где есть asset_exchange_id.
+            symbols = sorted((await asset_crud.get_all_symbols_with_id_map()).keys())
+
+        if symbols:
+            return symbols
+
+        logging.info(
+            f"Подписываться не на что: watched_pair пуст. Жду "
+            f"{EMPTY_SYMBOLS_RETRY_SECONDS} с. Наполнить список: "
+            f"python -m app.scripts.seed_watched_pairs"
+        )
+        await asyncio.sleep(EMPTY_SYMBOLS_RETRY_SECONDS)
+
+
+async def _subscribe(ws, streams: list[str]) -> None:
+    """Подписка чанками: длинный URL Binance не примет, а на входящие
+    команды у него лимит 5 в секунду."""
+    for index in range(0, len(streams), SUBSCRIBE_CHUNK):
+        await ws.send(json.dumps({
+            "method": "SUBSCRIBE",
+            "params": streams[index:index + SUBSCRIBE_CHUNK],
+            "id": index // SUBSCRIBE_CHUNK + 1,
+        }))
+        await asyncio.sleep(0.3)
+
+
+async def run_futures_ws_listener():
+    """Фьючерсный `@bookTicker`: края книги и тиковая частота.
+
+    Зачем отдельный режим, когда есть `!ticker@arr`. Тот отдаёт снимок
+    24-часового тикера примерно раз в секунду и **не содержит bid/ask
+    вовсе** — значит ни спреда, ни проверки post-only по нему не
+    построить, а прострел короче секунды в него не попадает в принципе.
+    `@bookTicker` даёт и края книги, и каждое их изменение.
+
+    Redis и база живут на разных частотах, и это главное решение здесь.
+    Замер 2026-09-23: 834 тика в секунду на 55 парах. Писать каждый в
+    `asset_history` — 72 млн строк в сутки, чего не выдержит ни диск, ни
+    ретеншн. При этом симулятор читает цену **из Redis**, а не из базы, и
+    его собственный кэш обновляется раз в 50 мс (`PriceCache`), стратегии
+    опрашивают раз в 100 мс. Отсюда:
+
+    * **в Redis — самое свежее по каждой паре раз в 50 мс.** Чаще
+      бессмысленно: в ключе всё равно живёт одно значение, монотонность
+      отбросит промежуточные;
+    * **в историю — одна строка на пару в секунду.** Это та же плотность,
+      что давал `!ticker@arr`, то есть ни диск, ни статистика
+      волатильности не замечают подмены, но в строке появляются bid и ask.
+    """
+    publish_interval = settings.MARKET_DATA_PUBLISH_SEC
+    history_interval = settings.MARKET_DATA_HISTORY_SEC
+    # Только watched_pair, режима «все пары» здесь нет намеренно: на 900
+    # символах @bookTicker — это десятки тысяч фреймов в секунду, и ни
+    # одна из них, кроме отобранных, всё равно не торгуется.
+    use_watched_filter = True
+
+    dsm = DatabaseSessionManager.create(settings.DB_URL)
+
+    async with dsm.get_session() as session:
+        symbols = await _watched_symbols(session, use_watched_filter)
+
+        logging.info(
+            f"Источник данных: фьючерсный WS Binance, {len(symbols)} пар, "
+            f"частота от @bookTicker, last_price = середина спреда, "
+            f"публикация в Redis раз в {publish_interval} с, история раз в "
+            f"{history_interval} с."
+        )
+
+        # Последнее состояние по каждой паре. Не очередь, а именно
+        # «последнее»: промежуточные тики никому не нужны — в Redis живёт
+        # одно значение, а в историю идёт одна строка за интервал.
+        latest_book: dict[str, dict] = {}
+        latest_ticker: dict[str, dict] = {}
+        # Опубликованное и принятое — то, что имеет право попасть в
+        # историю (пункт 25 в 08-gotchas.md).
+        pending_history: dict[str, dict] = {}
+        # Время последнего отправленного события по паре. Без этого ночью,
+        # когда книга стоит, каждые 50 мс улетали бы 55 EVAL-ов, и все до
+        # одного Redis отбросил бы по монотонности. Авторитетная проверка
+        # всё равно там — здесь только экономия трафика.
+        published_at: dict[str, int] = {}
+
+        def merged(symbol: str) -> dict | None:
+            return merge_book_and_ticker(
+                symbol, latest_book.get(symbol), latest_ticker.get(symbol)
+            )
+
+        async def book_reader(ws):
+            while True:
+                payload = json.loads(await ws.recv())
+                data = payload.get("data") or {}
+                symbol = data.get("s")
+
+                if symbol:
+                    latest_book[symbol] = data
+
+        async def ticker_reader(ws):
+            while True:
+                payload = json.loads(await ws.recv())
+                data = payload.get("data") or {}
+                symbol = data.get("s")
+
+                if symbol:
+                    latest_ticker[symbol] = data
+
+        async def connection(url: str, streams: list[str], reader, label: str):
+            """Своё переподключение на каждый сокет: падение одного из двух
+            не должно ронять второй."""
+            while True:
+                try:
+                    async with websockets.connect(
+                        url, open_timeout=25, max_queue=None
+                    ) as ws:
+                        await _subscribe(ws, streams)
+                        logging.info(
+                            f"✅ {label}: подписано стримов {len(streams)}."
+                        )
+                        await reader(ws)
+                except websockets.exceptions.ConnectionClosedOK:
+                    logging.info(f"⚠️ {label}: соединение закрыто. Переподключаюсь...")
+                except websockets.exceptions.ConnectionClosedError as e:
+                    logging.info(f"❌ {label}: соединение оборвано: {e}. Переподключаюсь...")
+                except Exception as e:
+                    logging.info(f"❌ {label}: ошибка: {e}. Переподключаюсь...")
+                finally:
+                    await asyncio.sleep(3)
+
+        async def publisher():
+            while True:
+                await asyncio.sleep(publish_interval)
+
+                items = []
+
+                for symbol in symbols:
+                    item = merged(symbol)
+
+                    if not item or not isinstance(item.get("E"), int):
+                        continue
+
+                    if item["E"] <= published_at.get(symbol, 0):
+                        continue
+
+                    items.append(item)
+
+                if not items:
+                    continue
+
+                snapshots = []
+                for item in items:
+                    book = book_top(item)
+                    snapshot = {
+                        "symbol": item["s"], "price": item["c"],
+                        "event_time_ms": item["E"], "source": "BINANCE",
+                    }
+                    if book["best_bid_price"] is not None:
+                        snapshot["bid"] = str(book["best_bid_price"])
+                        snapshot["ask"] = str(book["best_ask_price"])
+                    snapshots.append(snapshot)
+
+                async with redis_context() as redis:
+                    accepted = await publish_prices(redis, snapshots)
+
+                # В историю пойдёт только то, что Redis принял: событие
+                # свежее и новее предыдущего. Остальное — повтор того же
+                # состояния книги, писать его незачем.
+                for item, ok in zip(items, accepted):
+                    published_at[item["s"]] = item["E"]
+
+                    if ok:
+                        pending_history[item["s"]] = item
+
+        async def historian():
+            while True:
+                await asyncio.sleep(history_interval)
+
+                if not pending_history:
+                    continue
+
+                batch = list(pending_history.values())
+                pending_history.clear()
+
+                async with redis_context() as redis:
+                    await save_filtered_assets(
+                        session, redis, batch, use_watched_filter,
+                        source="BINANCE", publish=False,
+                    )
+
+        book_streams = [f"{symbol.lower()}@bookTicker" for symbol in symbols]
+        ticker_streams = [f"{symbol.lower()}@ticker" for symbol in symbols]
+
+        await asyncio.gather(
+            connection(FUTURES_BOOK_WS_URL, book_streams, book_reader, "bookTicker"),
+            connection(FUTURES_TICKER_WS_URL, ticker_streams, ticker_reader, "ticker"),
+            publisher(),
+            historian(),
+        )
+
+
 if __name__ == "__main__":
     source = (settings.MARKET_DATA_SOURCE or "ws").strip().lower()
 
     if source == "rest":
         asyncio.run(run_rest_poller())
+    elif source == "futures_ws":
+        asyncio.run(run_futures_ws_listener())
     elif source == "spot_ws":
         asyncio.run(run_spot_ws_listener())
     else:

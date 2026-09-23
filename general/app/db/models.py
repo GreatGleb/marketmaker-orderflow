@@ -265,6 +265,29 @@ class AssetHistory(BigId):
         types.Numeric, nullable=True, comment="24h low price (l)"
     )
 
+    # Лучшие цены книги. До 2026-09-23 поток bookTicker схлопывался в
+    # середину спреда, и все симулированные сделки считались так, будто
+    # покупка и продажа проходят ровно посередине. Половина спреда за ногу
+    # — систематическая поправка ко всем накопленным числам, и без этих
+    # колонок её нечем измерить. Пусто там, где источник их не отдаёт:
+    # фьючерсный !ticker@arr и REST /fapi/v1/ticker/24hr полей bid/ask не
+    # содержат вовсе.
+    best_bid_price: Mapped[Optional[float]] = mapped_column(
+        types.Numeric, nullable=True, comment="Best bid price (b)"
+    )
+
+    best_bid_qty: Mapped[Optional[float]] = mapped_column(
+        types.Numeric, nullable=True, comment="Best bid quantity (B)"
+    )
+
+    best_ask_price: Mapped[Optional[float]] = mapped_column(
+        types.Numeric, nullable=True, comment="Best ask price (a)"
+    )
+
+    best_ask_qty: Mapped[Optional[float]] = mapped_column(
+        types.Numeric, nullable=True, comment="Best ask quantity (A)"
+    )
+
     event_time: Mapped[datetime] = mapped_column(
         types.DateTime(timezone=True),
         nullable=False,

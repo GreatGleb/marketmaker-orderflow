@@ -31,10 +31,25 @@ class Settings(BaseSettings):
         default=Decimal("9"), gt=0, allow_inf_nan=False
     )
 
-    # Источник рыночных данных: "ws" — поток Binance (как было),
-    # "rest" — поллинг /fapi/v1/ticker/24hr (когда push-поток недоступен).
+    # Источник рыночных данных:
+    #   ws         - фьючерсный !ticker@arr, исходное поведение. Снимок
+    #                раз в секунду, bid/ask в нём нет вовсе
+    #   futures_ws - фьючерсный @bookTicker: края книги и тиковая частота
+    #   rest       - поллинг /fapi/v1/ticker/24hr (когда push недоступен)
+    #   spot_ws    - спотовый поток, если фьючерсный молчит
     MARKET_DATA_SOURCE: str = "ws"
     MARKET_DATA_REST_INTERVAL_SEC: float = 2.0
+
+    # futures_ws: как часто обновлять цену в Redis, сек. Чаще, чем
+    # обновляется кэш симулятора (PriceCache.REFRESH_INTERVAL_SECONDS =
+    # 0.05), смысла нет — в ключе всё равно живёт одно значение.
+    MARKET_DATA_PUBLISH_SEC: float = 0.05
+    # futures_ws: как часто писать строку в asset_history, сек. Одна
+    # строка на пару за интервал. При 834 тиках в секунду на 55 парах
+    # запись каждого тика дала бы 72 млн строк в сутки; секунда держит ту
+    # же плотность, что давал !ticker@arr, и не трогает ни диск, ни
+    # статистику волатильности.
+    MARKET_DATA_HISTORY_SEC: float = 1.0
 
     # spot_ws: по каким парам подписываться.
     #   watched - только пары из watched_pair (по умолчанию)
