@@ -26,8 +26,15 @@ from app.strategies.strategy_0.algorithm import (
     ENTRY_REVERSAL,
 )
 
-WINDOW_SECONDS = (2, 5, 10, 30)
-MOVE_PERCENTS = (Decimal("0.3"), Decimal("0.5"), Decimal("1.0"))
+# Секунда и 2% добавлены 2026-09-23 по постановке трейдера: он просит
+# 0.5-2% за 1-3 секунды, а прежняя сетка начиналась с двух секунд и
+# заканчивалась процентом. Парк с ними ещё не заводился, так что
+# сопоставимость ничему не обнуляется: до этой даты сделок у стратегии 0
+# нет вовсе. Сетка растёт с 648 конфигураций до 1080.
+WINDOW_SECONDS = (1, 2, 5, 10, 30)
+MOVE_PERCENTS = (
+    Decimal("0.3"), Decimal("0.5"), Decimal("1.0"), Decimal("2.0"),
+)
 ENTRY_MODES = (ENTRY_CONTINUATION, ENTRY_REVERSAL)
 TAKE_PERCENTS = (Decimal("0.2"), Decimal("0.4"), Decimal("0.8"))
 STOP_PERCENTS = (Decimal("0.2"), Decimal("0.4"), Decimal("0.8"))
