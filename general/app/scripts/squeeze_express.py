@@ -169,6 +169,23 @@ def cluster_bootstrap(values: np.ndarray, clusters: np.ndarray, rng):
     return np.percentile(means, 2.5), np.percentile(means, 97.5)
 
 
+def day_t_stat(values: pd.Series, days: pd.Series) -> tuple[float, int, int]:
+    """t среднего по календарным дням: день — одно наблюдение.
+
+    Грубее интервала по дням пары, зато не зависит от того, сколько пар
+    сквизнуло в один день: общий для рынка каскад (падение BTC тащит
+    вселенную) даёт десятки дней пары, но один день. Возвращает t, число
+    дней и сколько из них в плюсе.
+    """
+    daily = values.groupby(days.to_numpy()).mean()
+
+    if len(daily) < 2 or daily.std(ddof=1) == 0:
+        return np.nan, len(daily), int((daily > 0).sum())
+
+    t = daily.mean() / (daily.std(ddof=1) / np.sqrt(len(daily)))
+    return t, len(daily), int((daily > 0).sum())
+
+
 def summary(events: pd.DataFrame, spreads: dict[str, float]) -> pd.DataFrame:
     rng = np.random.default_rng(0)
     pair_cost = COMMISSION_TAKER_ROUND_TRIP + events["symbol"].map(
@@ -195,6 +212,7 @@ def summary(events: pd.DataFrame, spreads: dict[str, float]) -> pd.DataFrame:
             # Устойчивость к выбросам: среднее без десяти лучших сделок.
             trimmed = net_market.sort_values().iloc[:-10].mean() \
                 if len(net_market) > 20 else np.nan
+            t_days, days, days_up = day_t_stat(net_market, group["day"])
             rows.append({
                 "окно": f"{window}с",
                 "порог": f">={move}%",
@@ -209,6 +227,8 @@ def summary(events: pd.DataFrame, spreads: dict[str, float]) -> pd.DataFrame:
                 "нетто 0.15": net_market.mean(),
                 "ДИ 0.15": f"[{low:+.3f}; {high:+.3f}]",
                 "без топ-10": trimmed,
+                "t дни 0.15": t_days,
+                "дней +/всего": f"{days_up}/{days}",
                 "винрейт 0.15": (net_market > 0).mean(),
                 "TP/SL/тайм": "{:.0f}/{:.0f}/{:.0f}".format(
                     *(100 * (exits == k).mean()
