@@ -11,3 +11,7 @@ __pycache__/
 python-scripts-*.json
 *.http
 celerybeat-schedule
+
+# Запасной каталог архива стакана, если BINANCE_HISTORY_DIR не задан
+# в корневом .env. Сами данные лежат вне репозитория.
+.binance-history/

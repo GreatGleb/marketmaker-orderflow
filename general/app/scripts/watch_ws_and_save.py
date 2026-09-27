@@ -36,6 +36,14 @@ REST_URL = "https://fapi.binance.com/fapi/v1/ticker/24hr"
 SPOT_WS_URL = "wss://stream.binance.com:9443/stream"
 SPOT_EXCHANGE_INFO_URL = "https://api.binance.com/api/v3/exchangeInfo"
 SUBSCRIBE_CHUNK = 150
+# Переподключение: с чего начинать, докуда расти и какое соединение
+# считать удачным. Пока рвёт сеть, а не биржа, длинная пауза только
+# увеличивает дыру в котировках.
+RECONNECT_MIN_SEC = 0.5
+RECONNECT_MAX_SEC = 8.0
+RECONNECT_HEALTHY_SEC = 15.0
+# По сколько стримов держать на одном сокете — см. `split_streams`.
+STREAMS_PER_SOCKET = 5
 # Если БД не успевает, буфер не должен расти в память бесконечно.
 MAX_SPOT_BUFFER = 20000
 # Как часто перепроверять список пар, если подписываться пока не на что.
@@ -579,6 +587,22 @@ def merge_book_and_ticker(symbol: str, book: dict | None, ticker: dict | None) -
     return item
 
 
+def split_streams(streams: list[str], per_socket: int) -> list[list[str]]:
+    """Стримы по сокетам; `per_socket <= 0` — все одним, как было раньше.
+
+    Тот же приём и по той же причине, что в `order_book_listener.py`:
+    потолок скорости и частота обрывов у Binance считаются на
+    соединение, а не на стрим.
+    """
+    if per_socket <= 0 or not streams:
+        return [streams] if streams else []
+
+    return [
+        streams[index:index + per_socket]
+        for index in range(0, len(streams), per_socket)
+    ]
+
+
 async def _watched_symbols(session, use_watched_filter: bool) -> list[str]:
     """Пары для подписки. Ждёт, а не выходит: на чистой базе список пуст.
 
@@ -700,8 +724,18 @@ async def run_futures_ws_listener():
 
         async def connection(url: str, streams: list[str], reader, label: str):
             """Своё переподключение на каждый сокет: падение одного из двух
-            не должно ронять второй."""
+            не должно ронять второй.
+
+            Пауза растёт только после соединений, умерших сразу.
+            Фиксированные три секунды обходились дорого: в ночь на
+            2026-09-24 сокеты рвались 946 раз за 11 часов из-за плохого
+            Wi-Fi, и на сон ушло 47 минут котировок.
+            """
+            pause = RECONNECT_MIN_SEC
+
             while True:
+                opened_at = time.time()
+
                 try:
                     async with websockets.connect(
                         url, open_timeout=25, max_queue=None
@@ -718,8 +752,23 @@ async def run_futures_ws_listener():
                 except Exception as e:
                     logging.info(f"❌ {label}: ошибка: {e}. Переподключаюсь...")
                 finally:
-                    await asyncio.sleep(3)
+                    if time.time() - opened_at >= RECONNECT_HEALTHY_SEC:
+                        pause = RECONNECT_MIN_SEC
+                    else:
+                        pause = min(pause * 2, RECONNECT_MAX_SEC)
 
+                    await asyncio.sleep(pause)
+
+        # Один Redis на весь процесс, а не `redis_context()` на каждом
+        # такте. `RedisSessionManager` отдаёт клиента через
+        # `Redis.from_pool`, а тот на закрытии рвёт **весь** пул —
+        # общий, singleton по адресу. Публикация ходит раз в 50 мс,
+        # история раз в секунду, и выход публикации из контекста
+        # обрывал соединение под работающим `pipe.execute()` историка:
+        # `ConnectionError: Connection closed by server`, процесс падал
+        # и supervisord поднимал его заново. Замер 2026-09-24: девять
+        # перезапусков за семь минут, около четверти котировок мимо
+        # истории.
         async def publisher():
             while True:
                 await asyncio.sleep(publish_interval)
@@ -752,8 +801,7 @@ async def run_futures_ws_listener():
                         snapshot["ask"] = str(book["best_ask_price"])
                     snapshots.append(snapshot)
 
-                async with redis_context() as redis:
-                    accepted = await publish_prices(redis, snapshots)
+                accepted = await publish_prices(redis, snapshots)
 
                 # В историю пойдёт только то, что Redis принял: событие
                 # свежее и новее предыдущего. Остальное — повтор того же
@@ -774,21 +822,40 @@ async def run_futures_ws_listener():
                 batch = list(pending_history.values())
                 pending_history.clear()
 
-                async with redis_context() as redis:
-                    await save_filtered_assets(
-                        session, redis, batch, use_watched_filter,
-                        source="BINANCE", publish=False,
-                    )
+                await save_filtered_assets(
+                    session, redis, batch, use_watched_filter,
+                    source="BINANCE", publish=False,
+                )
 
         book_streams = [f"{symbol.lower()}@bookTicker" for symbol in symbols]
         ticker_streams = [f"{symbol.lower()}@ticker" for symbol in symbols]
 
-        await asyncio.gather(
-            connection(FUTURES_BOOK_WS_URL, book_streams, book_reader, "bookTicker"),
-            connection(FUTURES_TICKER_WS_URL, ticker_streams, ticker_reader, "ticker"),
-            publisher(),
-            historian(),
+        # Стримы раскладываются по сокетам, а не вешаются все на один.
+        # Замер 2026-09-24 на плохом канале: одно соединение упирается в
+        # потолок около двадцати сообщений в секунду **независимо от
+        # числа стримов** и рвётся тем чаще, чем их больше. Те же стримы
+        # по отдельным сокетам вернули и скорость (20 → 210 сообщений в
+        # секунду у слушателя стакана), и устойчивость.
+        book_groups = split_streams(book_streams, STREAMS_PER_SOCKET)
+        ticker_groups = split_streams(ticker_streams, STREAMS_PER_SOCKET)
+
+        logging.info(
+            f"Сокетов: {len(book_groups)} под bookTicker и "
+            f"{len(ticker_groups)} под ticker, по {STREAMS_PER_SOCKET} "
+            f"стримов."
         )
+
+        async with redis_context() as redis:
+            await asyncio.gather(
+                *(connection(FUTURES_BOOK_WS_URL, group, book_reader,
+                             f"bookTicker {number}")
+                  for number, group in enumerate(book_groups, start=1)),
+                *(connection(FUTURES_TICKER_WS_URL, group, ticker_reader,
+                             f"ticker {number}")
+                  for number, group in enumerate(ticker_groups, start=1)),
+                publisher(),
+                historian(),
+            )
 
 
 if __name__ == "__main__":

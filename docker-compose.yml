@@ -74,6 +74,11 @@ services:
     restart: unless-stopped
     volumes:
       - ./general:/opt/services/app/src:Z
+      # Архив стакана: суточные файлы, а не строки в Postgres (раздел 5.3
+      # плана). Хостовый каталог задаётся BINANCE_HISTORY_DIR в корневом
+      # .env — тем же, из которого берётся REDIS_PORT. Внутри контейнера
+      # путь постоянный, он же умолчание ORDER_BOOK_ARCHIVE_DIR.
+      - ${BINANCE_HISTORY_DIR:-./.binance-history}:/data/binance-history:Z
     env_file:
       - general/.env
     ports:
