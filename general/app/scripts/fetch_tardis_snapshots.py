@@ -213,8 +213,8 @@ def verify_one(task) -> dict:
             for chunk in iter(lambda: handle.read(CHUNK_BYTES), b""):
                 data = decompressor.decompress(chunk)
 
-                if len(head) < 4096:
-                    head += data[:4096]
+                if len(head) < 65536:
+                    head += data[:65536]
 
                 lines += data.count(b"\n")
                 tail = (tail + data)[-4096:]
@@ -231,16 +231,20 @@ def verify_one(task) -> dict:
         return row
 
     body = head.split(b"\n")
-    last = [line for line in tail.split(b"\n") if line][-1]
+    tail_lines = [line for line in tail.split(b"\n") if line]
     rows = lines - 1
 
-    if rows <= 0 or len(body) < 2:
+    if rows <= 0 or len(body) < 2 or not tail_lines:
         row["status"] = "пусто"
         return row
 
-    # Третья колонка — timestamp биржи в микросекундах.
-    first_us = int(body[1].split(b",")[2])
-    last_us = int(last.split(b",")[2])
+    try:
+        # Третья колонка — timestamp биржи в микросекундах.
+        first_us = int(body[1].split(b",")[2])
+        last_us = int(tail_lines[-1].split(b",")[2])
+    except (IndexError, ValueError) as exc:
+        row["status"] = f"не разобрать метку времени: {exc}"
+        return row
     day_start = datetime.fromisoformat(day).replace(tzinfo=timezone.utc)
     start_us = int(day_start.timestamp() * 1_000_000)
 

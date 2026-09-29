@@ -66,6 +66,7 @@ data.binance.vision выкладывает их на следующие сутк
 import argparse
 import gzip
 import json
+import math
 import os
 import zipfile
 import zlib
@@ -86,11 +87,21 @@ from app.scripts.impulse_express import (
 )
 
 ORDER_BOOK_DIR = "order_book/{symbol}"
+# Tardis `book_snapshot_25` (`fetch_tardis_snapshots.py`): снимок на каждое
+# изменение книги, 25 уровней, метки в микросекундах.
+TARDIS_BOOK_PATH = (
+    "tardis/binance-futures/book_snapshot_25/{y}/{m}/{d}/{symbol}.csv.gz"
+)
+TARDIS_VERIFY_FILE = "tardis/verify_book_snapshot_25.csv"
 PRE_WINDOW_MS = 500
 OBI_LEVELS = (5, 10)
 # Снимок старше этого на T0 — книги на момент признака у нас нет. Секунда
 # плюс запас: архив пишет раз в секунду, а обрывы сокетов дают дыры.
 MAX_BOOK_AGE_MS = 1500
+# У Tardis долгая пауза между снимками значит «книга не менялась», и
+# старый снимок остаётся верным. Предел — только от дыр в самой записи.
+TARDIS_MAX_BOOK_AGE_MS = 600_000
+BOOK_AGE_LIMITS = {"own": MAX_BOOK_AGE_MS, "tardis": TARDIS_MAX_BOOK_AGE_MS}
 BASELINE_SEC = 300
 
 ENTRY_LAG_MS = 200
@@ -98,7 +109,15 @@ HOLDS_SECONDS = (30, 180)
 EVENT_COOLDOWN_SECONDS = 180
 
 CONTROLS_PER_DAY = 200
+CONTROLS_PER_EVENT = 5
 CONTROL_EXCLUSION_SEC = 60
+# «Спокойный» контрольный момент: цена не сдвинулась на столько за окно
+# импульса ни до момента, ни сразу после. Без фильтра в контроль попадают
+# мелкие импульсы, и разница с событиями размывается.
+CALM_MOVE_PERCENT = 0.5
+# День пары, где книга началась позже этого, — день листинга: другое
+# явление, и базовой линии перед ним нет.
+LISTING_START_SEC = 600
 
 DAY_MS = BUCKETS_PER_DAY * GRID_MS
 
@@ -164,6 +183,44 @@ def load_book(path: Path) -> pd.DataFrame | None:
     )
 
 
+def load_book_tardis(path: Path) -> pd.DataFrame | None:
+    """Снимки Tardis `book_snapshot_25` в том же виде, что `load_book`.
+
+    Время приводится к миллисекундам отбрасыванием дробной части: снимок
+    в T0 − 0.4 мс остаётся строго раньше T0, снимок в T0 + 0.3 мс — нет.
+    """
+    depth = max(OBI_LEVELS)
+    columns = ["timestamp", "asks[0].price", "bids[0].price"]
+    columns += [f"{side}[{i}].amount" for side in ("asks", "bids")
+                for i in range(depth)]
+    frame = pd.read_csv(path, usecols=columns)
+
+    if frame.empty:
+        return None
+
+    out = {"time": (frame["timestamp"].to_numpy() // 1000).astype(np.int64)}
+
+    for levels in OBI_LEVELS:
+        bid = frame[[f"bids[{i}].amount" for i in range(levels)]].sum(axis=1)
+        ask = frame[[f"asks[{i}].amount" for i in range(levels)]].sum(axis=1)
+        total = (bid + ask).to_numpy()
+        with np.errstate(invalid="ignore", divide="ignore"):
+            out[f"obi_l{levels}"] = np.where(
+                total > 0, (bid - ask).to_numpy() / total, np.nan
+            )
+
+    best_ask = frame["asks[0].price"].to_numpy()
+    best_bid = frame["bids[0].price"].to_numpy()
+    out["spread_bps"] = (best_ask - best_bid) / ((best_ask + best_bid) / 2) * 1e4
+
+    return pd.DataFrame(out).sort_values("time", kind="stable").reset_index(
+        drop=True
+    )
+
+
+BOOK_LOADERS = {"own": load_book, "tardis": load_book_tardis}
+
+
 # --- Признаки ---------------------------------------------------------------
 
 def impulse_start_ms(day_start: int, trigger: int, window_seconds: float) -> int:
@@ -172,7 +229,9 @@ def impulse_start_ms(day_start: int, trigger: int, window_seconds: float) -> int
     return day_start + (trigger - span + 1) * GRID_MS
 
 
-def book_features(book: pd.DataFrame | None, t0: int) -> dict:
+def book_features(
+    book: pd.DataFrame | None, t0: int, max_age_ms: int = MAX_BOOK_AGE_MS,
+) -> dict:
     """OBI снимка на T0 и его изменение за окно. Только `E < t0`."""
     empty = {f"obi_l{n}": np.nan for n in OBI_LEVELS}
     empty.update({f"obi_l{n}_delta": np.nan for n in OBI_LEVELS})
@@ -185,7 +244,7 @@ def book_features(book: pd.DataFrame | None, t0: int) -> dict:
     # Строго раньше T0: снимок с E == T0 уже мог видеть начало движения.
     end = np.searchsorted(times, t0, side="left") - 1
 
-    if end < 0 or t0 - times[end] > MAX_BOOK_AGE_MS:
+    if end < 0 or t0 - times[end] > max_age_ms:
         return empty
 
     start = np.searchsorted(times, t0 - PRE_WINDOW_MS, side="left") - 1
@@ -237,8 +296,15 @@ def trade_sums(trades: pd.DataFrame) -> dict:
     }
 
 
-def control_buckets(events: np.ndarray, reach: int, count: int, rng) -> np.ndarray:
-    """Случайные такты дня не ближе `CONTROL_EXCLUSION_SEC` к событиям."""
+def control_buckets(
+    events: np.ndarray, reach: int, count: int, rng,
+    calm: np.ndarray | None = None,
+) -> np.ndarray:
+    """Случайные такты дня не ближе `CONTROL_EXCLUSION_SEC` к событиям.
+
+    `calm` — маска допустимых тактов (см. `calm_mask`); без неё годится
+    любой такт вне окрестности событий.
+    """
     allowed = np.ones(BUCKETS_PER_DAY, dtype=bool)
     allowed[:BASELINE_SEC * BUCKETS_PER_SECOND] = False
     allowed[BUCKETS_PER_DAY - reach:] = False
@@ -246,6 +312,9 @@ def control_buckets(events: np.ndarray, reach: int, count: int, rng) -> np.ndarr
 
     for bucket in events:
         allowed[max(bucket - radius, 0):bucket + radius] = False
+
+    if calm is not None:
+        allowed &= calm
 
     pool = np.flatnonzero(allowed)
 
@@ -255,18 +324,40 @@ def control_buckets(events: np.ndarray, reach: int, count: int, rng) -> np.ndarr
     return np.sort(rng.choice(pool, size=min(count, pool.size), replace=False))
 
 
+def calm_mask(change: np.ndarray, span: int, limit: float) -> np.ndarray:
+    """Такты, где цена не прошла `limit` % ни за окно до, ни за окно после.
+
+    `change[b]` — ход за окно, кончающееся в `b`; окно после — это
+    `change[b + span]`.
+    """
+    moved = np.abs(np.nan_to_num(change, nan=np.inf)) >= limit
+    after = np.ones_like(moved)
+    after[:-span] = moved[span:]
+    return ~(moved | after)
+
+
 # --- День пары --------------------------------------------------------------
 
-def process_day(task):
-    symbol, day, trades_path, book_path, window, move, controls = task
-    grid = day_grid(trades_path)
-    trades = load_trades(trades_path)
+def process_day(task: dict):
+    """События всех порогов и контроль одного дня пары.
+
+    `task`: symbol, day, trades_path, book_path, window, moves, source,
+    control_mode (`per_day` — `controls` моментов на день, как было;
+    `per_event` — `controls` на событие младшего порога, только в
+    спокойные моменты), controls, gap_ms.
+    """
+    symbol, day = task["symbol"], task["day"]
+    window, moves = task["window"], sorted(task["moves"])
+    grid = day_grid(task["trades_path"])
+    trades = load_trades(task["trades_path"])
 
     if grid is None or trades is None:
         return []
 
     last = grid[0]
-    book = load_book(book_path)
+    source = task.get("source", "own")
+    max_age = BOOK_AGE_LIMITS[source]
+    gap = task.get("gap_ms", 0)
     cum = trade_sums(trades)
     day_start = int(pd.Timestamp(day, tz="UTC").value // 1_000_000)
     span = int(window * BUCKETS_PER_SECOND)
@@ -277,21 +368,41 @@ def process_day(task):
         change = np.full(BUCKETS_PER_DAY, np.nan)
         change[span:] = (last[span:] / last[:-span] - 1) * 100
 
-    fired = np.abs(np.nan_to_num(change)) >= move
-    fired[:BASELINE_SEC * BUCKETS_PER_SECOND] = False
-    fired[BUCKETS_PER_DAY - reach:] = False
-    events = first_crossings(fired, EVENT_COOLDOWN_SECONDS * BUCKETS_PER_SECOND)
+    samples = []
+    all_events = []
+
+    for move in moves:
+        fired = np.abs(np.nan_to_num(change)) >= move
+        fired[:BASELINE_SEC * BUCKETS_PER_SECOND] = False
+        fired[BUCKETS_PER_DAY - reach:] = False
+        events = first_crossings(
+            fired, EVENT_COOLDOWN_SECONDS * BUCKETS_PER_SECOND
+        )
+        all_events.append(events)
+        samples += [(int(b), "event", move) for b in events]
 
     # crc32, а не hash(): тот солится заново в каждом процессе, и контроль
     # не воспроизводился бы от запуска к запуску.
     rng = np.random.default_rng(zlib.crc32(f"{symbol}|{day}".encode()))
+    events_any = np.unique(np.concatenate(all_events)) if all_events else []
+
+    if task.get("control_mode", "per_day") == "per_event":
+        # Контроль привязан к событиям: без них день пары ничего не даёт,
+        # а книга Tardis — самое дорогое в счёте, её не читаем зря.
+        if not samples:
+            return []
+
+        count = task["controls"] * len(all_events[0])
+        calm = calm_mask(change, span, task.get("calm_move", CALM_MOVE_PERCENT))
+    else:
+        count, calm = task["controls"], None
+
+    samples += [(int(b), "control", np.nan) for b in control_buckets(
+        events_any, reach, count, rng, calm)]
+    book = BOOK_LOADERS[source](task["book_path"])
     rows = []
 
-    samples = [(int(b), "event") for b in events]
-    samples += [(int(b), "control")
-                for b in control_buckets(events, reach, controls, rng)]
-
-    for bucket, kind in samples:
+    for bucket, kind, move in samples:
         if kind == "event":
             direction = 1 if change[bucket] > 0 else -1
             t0 = impulse_start_ms(day_start, bucket, window)
@@ -301,12 +412,15 @@ def process_day(task):
             # кончается там же, где у события.
             t0 = day_start + (bucket + 1) * GRID_MS
 
+        # `gap_ms` сдвигает окно признаков раньше T0: так проверяется, не
+        # несёт ли признак начало самого движения.
+        at = t0 - gap
         row = {"symbol": symbol, "day": day, "kind": kind,
-               "bucket": bucket, "t0_ms": t0,
+               "move_threshold": move, "bucket": bucket, "t0_ms": t0,
                "direction": direction,
                "impulse": abs(change[bucket]) if kind == "event" else np.nan}
-        row.update(book_features(book, t0))
-        row.update(trade_features(trades, cum, t0))
+        row.update(book_features(book, at, max_age))
+        row.update(trade_features(trades, cum, at))
 
         entry_at = bucket + lag
         entry = last[entry_at]
@@ -323,10 +437,53 @@ def process_day(task):
     return rows
 
 
-def available_days(root: Path, days: list[str]) -> list[tuple]:
-    """Дни пар, у которых есть и `aggTrades`, и архив стакана."""
-    book_root = root / ORDER_BOOK_DIR.format(symbol="")
+def available_days(
+    root: Path, days: list[str], source: str = "own",
+    pairs: set[tuple[str, str]] | None = None, skip_listing: bool = False,
+) -> list[tuple]:
+    """Дни пар, у которых есть и `aggTrades`, и архив стакана.
+
+    `pairs` — только эти (символ, день); `skip_listing` — выбросить дни
+    листинга по `TARDIS_VERIFY_FILE` (книга началась позже
+    `LISTING_START_SEC`).
+    """
     tasks = []
+
+    if source == "tardis":
+        listing = set()
+        verify = root / TARDIS_VERIFY_FILE
+
+        if skip_listing and verify.exists():
+            table = pd.read_csv(verify)
+            late = table[table["starts_after_s"] > LISTING_START_SEC]
+            listing = set(zip(late["symbol"], late["day"]))
+
+        for day in days:
+            y, m, d = day.split("-")
+            folder = root / TARDIS_BOOK_PATH.format(y=y, m=m, d=d, symbol="x"
+                                                     ).rsplit("/", 1)[0]
+
+            if not folder.exists():
+                continue
+
+            for book in sorted(folder.glob("*.csv.gz")):
+                symbol = book.name[:-len(".csv.gz")]
+
+                if pairs is not None and (symbol, day) not in pairs:
+                    continue
+
+                if (symbol, day) in listing:
+                    continue
+
+                trades = (root / AGG_TRADES_DIR.format(symbol=symbol)
+                          / f"{symbol}-aggTrades-{day}.zip")
+
+                if trades.exists():
+                    tasks.append((symbol, day, trades, book))
+
+        return tasks
+
+    book_root = root / ORDER_BOOK_DIR.format(symbol="")
 
     if not book_root.exists():
         return tasks
@@ -335,6 +492,9 @@ def available_days(root: Path, days: list[str]) -> list[tuple]:
         symbol = folder.name
 
         for day in days:
+            if pairs is not None and (symbol, day) not in pairs:
+                continue
+
             book = folder / f"{symbol}-depth20-{day}.jsonl.gz"
             trades = (root / AGG_TRADES_DIR.format(symbol=symbol)
                       / f"{symbol}-aggTrades-{day}.zip")
@@ -396,29 +556,206 @@ def summary(frame: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _betacf(a: float, b: float, x: float) -> float:
+    """Цепная дробь неполной бета-функции (метод Лентца)."""
+    tiny = 1e-300
+    c, d = 1.0, 1.0 - (a + b) * x / (a + 1)
+    d = 1 / (d if abs(d) > tiny else tiny)
+    h = d
+
+    for m in range(1, 300):
+        m2 = 2 * m
+        for numerator in (
+            m * (b - m) * x / ((a + m2 - 1) * (a + m2)),
+            -(a + m) * (a + b + m) * x / ((a + m2) * (a + m2 + 1)),
+        ):
+            d = 1 + numerator * d
+            d = 1 / (d if abs(d) > tiny else tiny)
+            c = 1 + numerator / c
+            c = c if abs(c) > tiny else tiny
+            h *= d * c
+
+        if abs(d * c - 1) < 1e-14:
+            break
+
+    return h
+
+
+def betainc(a: float, b: float, x: float) -> float:
+    """Регуляризованная неполная бета-функция I_x(a, b)."""
+    if x <= 0:
+        return 0.0
+
+    if x >= 1:
+        return 1.0
+
+    front = np.exp(
+        math.lgamma(a + b) - math.lgamma(a) - math.lgamma(b)
+        + a * math.log(x) + b * math.log(1 - x)
+    )
+
+    if x < (a + 1) / (a + b + 2):
+        return front * _betacf(a, b, x) / a
+
+    return 1 - front * _betacf(b, a, 1 - x) / b
+
+
+def t_two_sided_p(t: float, df: int) -> float:
+    """Двусторонний p-value t-распределения; scipy в образе нет."""
+    if not np.isfinite(t) or df <= 0:
+        return np.nan
+
+    return betainc(df / 2, 0.5, df / (df + t * t))
+
+
+def cluster_diff(values: np.ndarray, is_event: np.ndarray,
+                 clusters: np.ndarray) -> dict:
+    """Разность средних событие − контроль с ошибкой, кластеризованной по дню.
+
+    МНК `y = a + b·D` с сэндвичем CR1: наблюдения одного дня
+    коррелированы (общий режим рынка, каскады сквизов), и ошибка по
+    отдельным наблюдениям была бы в разы уже, чем данные позволяют.
+    Степени свободы — число кластеров минус один, t-распределение.
+    """
+    keep = ~np.isnan(values)
+    y, d, g = values[keep], is_event[keep].astype(float), clusters[keep]
+    codes, inverse = np.unique(g, return_inverse=True)
+    n, k, groups = len(y), 2, len(codes)
+
+    if groups < 2 or d.sum() == 0 or d.sum() == n:
+        return {"разность": np.nan, "SE кл.": np.nan, "t": np.nan,
+                "p": np.nan, "кластеров": groups}
+
+    x = np.column_stack((np.ones(n), d))
+    xtx_inv = np.linalg.inv(x.T @ x)
+    beta = xtx_inv @ x.T @ y
+    residual = y - x @ beta
+    scores = np.zeros((groups, k))
+    np.add.at(scores, inverse, x * residual[:, None])
+    meat = scores.T @ scores
+    correction = groups / (groups - 1) * (n - 1) / (n - k)
+    variance = correction * xtx_inv @ meat @ xtx_inv
+    se = float(np.sqrt(variance[1, 1]))
+    t = float(beta[1] / se) if se > 0 else np.nan
+
+    return {"разность": float(beta[1]), "SE кл.": se, "t": t,
+            "p": t_two_sided_p(t, groups - 1), "кластеров": groups}
+
+
+STAT_FEATURES = ("obi_l5", "obi_l10", "obi_l5_delta", "obi_l10_delta",
+                 "cvd_share", "cvd_quote", "volume_burst")
+
+
+def cluster_summary(frame: pd.DataFrame) -> pd.DataFrame:
+    """Импульсы против контроля: описательные и t по дням, по порогу и знаку."""
+    control = frame[frame["kind"] == "control"]
+    rows = []
+    thresholds = sorted(frame.loc[frame["kind"] == "event",
+                                  "move_threshold"].dropna().unique())
+
+    for move in thresholds:
+        for direction, name in ((1, "вверх"), (-1, "вниз")):
+            events = frame[(frame["kind"] == "event")
+                           & (frame["move_threshold"] == move)
+                           & (frame["direction"] == direction)]
+            # Контроль — из тех же дней пар, где были события этой группы.
+            keys = set(zip(events["symbol"], events["day"]))
+            matched = control[[k in keys for k in
+                               zip(control["symbol"], control["day"])]]
+            both = pd.concat([events, matched])
+            is_event = (both["kind"] == "event").to_numpy()
+            days = both["day"].to_numpy()
+
+            for feature in STAT_FEATURES:
+                values = both[feature].to_numpy(dtype=float)
+                ev = values[is_event]
+                ct = values[~is_event]
+                ev, ct = ev[~np.isnan(ev)], ct[~np.isnan(ct)]
+                row = {
+                    "порог": f">={move:g}%", "импульс": name,
+                    "признак": feature,
+                    "n соб.": ev.size,
+                    "n контр.": ct.size,
+                    "среднее соб.": np.nanmean(ev) if ev.size else np.nan,
+                    "среднее контр.": np.nanmean(ct) if ct.size else np.nan,
+                    "медиана соб.": np.nanmedian(ev) if ev.size else np.nan,
+                    "медиана контр.": np.nanmedian(ct) if ct.size else np.nan,
+                    "σ соб.": np.nanstd(ev, ddof=1) if ev.size > 1 else np.nan,
+                    "σ контр.": np.nanstd(ct, ddof=1) if ct.size > 1 else np.nan,
+                }
+                row.update(cluster_diff(values, is_event, days))
+                row["AUC"] = auc(ev, ct)
+                rows.append(row)
+
+    return pd.DataFrame(rows)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--days", required=True,
                         help="через запятую, ГГГГ-ММ-ДД")
+    parser.add_argument("--source", choices=sorted(BOOK_LOADERS),
+                        default="own",
+                        help="own — свой архив depth20, tardis — "
+                             "book_snapshot_25 из fetch_tardis_snapshots")
     parser.add_argument("--window", type=float, default=2.0,
                         help="окно импульса, с")
     parser.add_argument("--move", type=float, default=2.0,
                         help="порог импульса, %%")
-    parser.add_argument("--controls", type=int, default=CONTROLS_PER_DAY)
+    parser.add_argument("--moves",
+                        help="несколько порогов через запятую вместо --move")
+    parser.add_argument("--control-mode", choices=("per_day", "per_event"),
+                        default="per_day")
+    parser.add_argument("--controls", type=int,
+                        help=f"per_day: моментов на день (по умолчанию "
+                             f"{CONTROLS_PER_DAY}); per_event: на событие "
+                             f"({CONTROLS_PER_EVENT})")
+    parser.add_argument("--calm-move", type=float, default=CALM_MOVE_PERCENT)
+    parser.add_argument("--gap-ms", type=int, default=0,
+                        help="сдвинуть окно признаков раньше T0")
+    parser.add_argument("--pairs-file",
+                        help="CSV с колонками day,symbol: только эти дни пар")
+    parser.add_argument("--skip-listing", action="store_true",
+                        help="выбросить дни листинга (только tardis)")
+    parser.add_argument("--tag", default="", help="суффикс имени выгрузки")
     parser.add_argument("--workers", type=int, default=6)
     args = parser.parse_args()
 
     root = Path(os.environ.get("BINANCE_HISTORY_DIR", DEFAULT_HISTORY_DIR))
     days = [d.strip() for d in args.days.split(",") if d.strip()]
-    found = available_days(root, days)
-    tasks = [(*task, args.window, args.move, args.controls) for task in found]
-    print(f"Дней пар со сделками и стаканом: {len(tasks)}", flush=True)
+    moves = ([float(m) for m in args.moves.split(",")] if args.moves
+             else [args.move])
+    controls = args.controls or (
+        CONTROLS_PER_EVENT if args.control_mode == "per_event"
+        else CONTROLS_PER_DAY
+    )
+    pairs = None
+
+    if args.pairs_file:
+        table = pd.read_csv(args.pairs_file)
+        pairs = set(zip(table["symbol"], table["day"]))
+
+    found = available_days(root, days, args.source, pairs, args.skip_listing)
+    tasks = [{
+        "symbol": symbol, "day": day, "trades_path": trades,
+        "book_path": book, "window": args.window, "moves": moves,
+        "source": args.source, "control_mode": args.control_mode,
+        "controls": controls, "calm_move": args.calm_move,
+        "gap_ms": args.gap_ms,
+    } for symbol, day, trades, book in found]
+    print(f"Дней пар со сделками и стаканом ({args.source}): {len(tasks)}",
+          flush=True)
 
     rows = []
 
     with ProcessPoolExecutor(args.workers) as pool:
-        for day_rows in pool.map(process_day, tasks, chunksize=2):
+        for done, day_rows in enumerate(
+            pool.map(process_day, tasks, chunksize=2), 1,
+        ):
             rows.extend(day_rows)
+
+            if done % 100 == 0:
+                print(f"  {done}/{len(tasks)}", flush=True)
 
     frame = pd.DataFrame(rows)
 
@@ -426,26 +763,38 @@ def main():
         print("Событий нет.")
         return
 
-    tag = f"{args.window:g}s_{args.move:g}pct"
+    tag = f"{args.window:g}s_" + "_".join(f"{m:g}" for m in moves) + "pct"
+
+    if args.source != "own":
+        tag += f"_{args.source}"
+
+    if args.gap_ms:
+        tag += f"_gap{args.gap_ms}"
+
+    tag += f"_{args.tag}" if args.tag else ""
     out = root / "analysis" / f"orderflow_pre_impulse_{tag}"
     frame.to_csv(f"{out}_samples.csv.gz", index=False)
     table = summary(frame)
     table.to_csv(f"{out}.csv", index=False)
+    stats = cluster_summary(frame)
+    stats.to_csv(f"{out}_clustered.csv", index=False)
 
     events = frame[frame["kind"] == "event"]
     print(f"Событий {len(events)} (вверх {int((events['direction'] > 0).sum())},"
           f" вниз {int((events['direction'] < 0).sum())}), контрольных "
-          f"моментов {int((frame['kind'] == 'control').sum())}.")
-    print(f"Книга свежее {MAX_BOOK_AGE_MS} мс на T0 у "
+          f"моментов {int((frame['kind'] == 'control').sum())}, дней "
+          f"{frame['day'].nunique()}.")
+    print(f"Книга не старше {BOOK_AGE_LIMITS[args.source]} мс на T0 у "
           f"{events['book_age_ms'].notna().mean():.0%} событий; медианный "
           f"возраст {events['book_age_ms'].median():.0f} мс; снимок не "
           f"сменился за окно у {events['book_same'].mean():.0%}.")
 
-    pd.set_option("display.width", 200)
-    pd.set_option("display.float_format", lambda v: f"{v:+.3f}")
-    print(f"\nПризнаки в [T0 − {PRE_WINDOW_MS} мс, T0), события против "
-          f"контроля:")
-    print(table.to_string(index=False))
+    pd.set_option("display.width", 250)
+    pd.set_option("display.max_columns", 30)
+    pd.set_option("display.float_format", lambda v: f"{v:+.4f}")
+    print(f"\nПризнаки в [T0 − {args.gap_ms + PRE_WINDOW_MS} мс, "
+          f"T0 − {args.gap_ms} мс), импульсы против контроля, t по дням:")
+    print(stats.to_string(index=False))
 
 
 if __name__ == "__main__":

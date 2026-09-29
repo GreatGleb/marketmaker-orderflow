@@ -8,6 +8,10 @@
 движение, которое уже идёт (раздел 9.4 плана: так дельта совпадала со
 знаком движения в 97% случаев).
 """
+import gzip
+import tempfile
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 
@@ -19,7 +23,11 @@ from app.scripts.orderflow_pre_impulse import (
     PRE_WINDOW_MS,
     auc,
     book_features,
+    calm_mask,
+    cluster_diff,
     control_buckets,
+    load_book_tardis,
+    t_two_sided_p,
     impulse_start_ms,
     trade_features,
     trade_sums,
@@ -101,6 +109,72 @@ def test_auc_extremes():
     assert auc(np.array([1.0]), np.array([1.0])) == 0.5
 
 
+def test_t_p_value_matches_tables():
+    # Табличные квантили: t(23) 0.975 = 2.0687, t(23) 0.995 = 2.8073.
+    assert abs(t_two_sided_p(2.0687, 23) - 0.05) < 1e-3
+    assert abs(t_two_sided_p(2.8073, 23) - 0.01) < 1e-3
+    assert abs(t_two_sided_p(-2.0687, 23) - 0.05) < 1e-3
+    assert t_two_sided_p(0.0, 23) == 1.0
+    assert abs(t_two_sided_p(1.96, 10_000) - 0.05) < 1e-3
+
+
+def test_cluster_diff_is_difference_of_means():
+    rng = np.random.default_rng(1)
+    days = np.repeat(np.arange(24), 50)
+    is_event = np.tile(np.r_[np.ones(10), np.zeros(40)], 24).astype(bool)
+    values = rng.normal(0, 1, days.size) + 0.5 * is_event
+    out = cluster_diff(values, is_event, days)
+    expected = values[is_event].mean() - values[~is_event].mean()
+    assert abs(out["разность"] - expected) < 1e-12
+    assert out["кластеров"] == 24
+    assert out["t"] > 3 and out["p"] < 0.01
+
+
+def test_cluster_diff_sees_day_effect():
+    # Сдвиг, общий для всего дня, у событий и контроля одинаков — t около
+    # нуля. Сдвиг только у событий одного дня — не значим при 24 днях.
+    days = np.repeat(np.arange(24), 20)
+    is_event = np.tile(np.r_[np.ones(5), np.zeros(15)], 24).astype(bool)
+    values = np.where(is_event & (days == 0), 10.0, 0.0) + 0.01 * np.arange(
+        days.size) % 1
+    out = cluster_diff(values, is_event, days)
+    assert out["p"] > 0.1
+
+
+def test_tardis_book_is_parsed_like_own():
+    header = ["exchange", "symbol", "timestamp", "local_timestamp"]
+    for i in range(25):
+        header += [f"asks[{i}].price", f"asks[{i}].amount",
+                   f"bids[{i}].price", f"bids[{i}].amount"]
+    row = ["binance-futures", "X", "1000400", "1000500"]
+    for i in range(25):
+        # bid 3 на уровень, ask 1: OBI = (3 − 1) / 4 = 0.5 на любой глубине.
+        row += [str(100.1 + i), "1", str(99.9 - i), "3"]
+    with tempfile.TemporaryDirectory() as folder:
+        path = Path(folder) / "X.csv.gz"
+        with gzip.open(path, "wt") as handle:
+            handle.write(",".join(header) + "\n" + ",".join(row) + "\n")
+        book = load_book_tardis(path)
+    # 1 000 400 мкс -> 1000 мс, отброшенная дробь.
+    assert book["time"].tolist() == [1000]
+    assert abs(book["obi_l5"].iat[0] - 0.5) < 1e-12
+    assert abs(book["obi_l10"].iat[0] - 0.5) < 1e-12
+    assert abs(book["spread_bps"].iat[0] - 0.2 / 100 * 1e4) < 1e-9
+    # Снимок в 1000 мс для T0 = 1000 — в будущем, для T0 = 1001 — годен.
+    assert np.isnan(book_features(book, 1000, 600_000)["obi_l5"])
+    assert book_features(book, 1001, 600_000)["obi_l5"] == 0.5
+
+
+def test_calm_mask_excludes_moves_before_and_after():
+    change = np.zeros(100)
+    change[50] = 1.0
+    calm = calm_mask(change, 20, 0.5)
+    # Окно, кончающееся в 50, и окно после 30 (кончается в 50) — не спокойны.
+    assert not calm[50] and not calm[30]
+    assert calm[29] and calm[51]
+    assert not calm[-1]
+
+
 def main():
     test_impulse_start_is_end_of_base_bucket()
     test_book_snapshot_at_t0_is_excluded()
@@ -109,6 +183,11 @@ def main():
     test_trades_window_is_half_open()
     test_controls_keep_distance_from_events()
     test_auc_extremes()
+    test_t_p_value_matches_tables()
+    test_cluster_diff_is_difference_of_means()
+    test_cluster_diff_sees_day_effect()
+    test_tardis_book_is_parsed_like_own()
+    test_calm_mask_excludes_moves_before_and_after()
     print("Проверки признаков до импульса прошли.")
 
 
