@@ -271,7 +271,9 @@ def month_prefix(since: date, until: date) -> str:
 async def build_plan(
     client: httpx.AsyncClient, symbol: str, dataset: str,
     since: date, until: date, pause: float,
+    only_days: set[date] | None = None,
 ) -> Plan:
+    """`only_days` — отдельные даты внутри [since, until], см. `--days`."""
     plan = Plan(symbol, dataset)
     month = month_prefix(since, until)
     catalog = await list_prefix(
@@ -294,6 +296,9 @@ async def build_plan(
         day = date_from_key(key)
 
         if day is None or not since <= day <= until:
+            continue
+
+        if only_days is not None and day not in only_days:
             continue
 
         plan.files.append((key, size))
@@ -415,7 +420,8 @@ async def fetch_dataset(
     return fetched, skipped, failures
 
 
-def print_plan(plans, since: date, until: date, datasets) -> int:
+def print_plan(plans, since: date, until: date, datasets,
+               expected: int | None = None) -> int:
     """Объём и состав выгрузки. Печатается всегда, качается — по флагу.
 
     Построчно пары показываются только пока их немного: на девятистах
@@ -425,7 +431,7 @@ def print_plan(plans, since: date, until: date, datasets) -> int:
     total = 0
     missing: list[str] = []
     partial: list[tuple[str, int, date | None]] = []
-    expected = (until - since).days + 1
+    expected = expected or (until - since).days + 1
     per_dataset = {dataset: [0, 0] for dataset in datasets}
     detailed = len(plans) <= 80
 
@@ -490,6 +496,11 @@ async def main() -> int:
         "--month", help="месяц YYYY-MM; по умолчанию последний полный"
     )
     parser.add_argument(
+        "--days",
+        help="отдельные даты YYYY-MM-DD через запятую вместо --month. "
+             "Каталог пары при этом читается целиком, а не за месяц",
+    )
+    parser.add_argument(
         "--symbols",
         help="список через запятую вместо watched_pair; `all` — все "
              "торгуемые бессрочные контракты USDⓈ-M",
@@ -515,9 +526,18 @@ async def main() -> int:
     )
     args = parser.parse_args()
 
-    since, until = (
-        month_bounds(args.month) if args.month else last_full_month(date.today())
-    )
+    only_days = None
+
+    if args.days:
+        only_days = {
+            date.fromisoformat(d.strip()) for d in args.days.split(",") if d.strip()
+        }
+        since, until = min(only_days), max(only_days)
+    else:
+        since, until = (
+            month_bounds(args.month) if args.month
+            else last_full_month(date.today())
+        )
 
     root = Path(
         os.environ.get("BINANCE_HISTORY_DIR", DEFAULT_HISTORY_DIR)
@@ -557,7 +577,8 @@ async def main() -> int:
             async with semaphore:
                 try:
                     plan = await build_plan(
-                        client, symbol, dataset, since, until, args.pause
+                        client, symbol, dataset, since, until, args.pause,
+                        only_days,
                     )
                 except Exception as error:
                     # Пара, чей каталог не прочитался, не должна ронять
@@ -575,7 +596,10 @@ async def main() -> int:
         ))
 
         plans = {symbol: plans[symbol] for symbol in symbols}
-        total = print_plan(plans, since, until, datasets)
+        total = print_plan(
+            plans, since, until, datasets,
+            len(only_days) if only_days else None,
+        )
 
         if catalog_failures:
             print(f"\nКаталог не прочитался ({len(catalog_failures)}):")
