@@ -77,19 +77,27 @@ AGG_TRADES_DIR = "data/futures/um/daily/aggTrades/{symbol}"
 MONTH = "2026-08"
 
 
+def read_day_trades(path: Path, extra_columns=()) -> pd.DataFrame:
+    """Сделки суточного архива: цена, время и `extra_columns` (float)."""
+    dtypes = {"price": np.float64, "transact_time": np.int64}
+    dtypes.update({column: np.float64 for column in extra_columns})
+
+    with zipfile.ZipFile(path) as archive:
+        with archive.open(archive.namelist()[0]) as handle:
+            return pd.read_csv(handle, usecols=list(dtypes), dtype=dtypes)
+
+
 def day_grid(path: Path):
     """Сетка 100 мс за сутки: последняя цена, максимум и минимум такта.
 
     Пустой такт получает последнюю известную цену во все три поля:
     сделок не было, значит, и касания уровней тоже.
     """
-    with zipfile.ZipFile(path) as archive:
-        with archive.open(archive.namelist()[0]) as handle:
-            frame = pd.read_csv(
-                handle, usecols=["price", "transact_time"],
-                dtype={"price": np.float64, "transact_time": np.int64},
-            )
+    return grid_from_trades(read_day_trades(path))
 
+
+def grid_from_trades(frame: pd.DataFrame):
+    """Сетка `day_grid` из уже прочитанных сделок; None, если их нет."""
     if frame.empty:
         return None
 

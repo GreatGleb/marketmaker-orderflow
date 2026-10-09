@@ -393,7 +393,9 @@ def process_day(task: dict):
             return []
 
         count = task["controls"] * len(all_events[0])
-        calm = calm_mask(change, span, task.get("calm_move", CALM_MOVE_PERCENT))
+        limit = task.get("calm_move", CALM_MOVE_PERCENT)
+        # Ноль или меньше — без фильтра: честные случайные моменты дня.
+        calm = calm_mask(change, span, limit) if limit > 0 else None
     else:
         count, calm = task["controls"], None
 
@@ -710,7 +712,8 @@ def main():
                         help=f"per_day: моментов на день (по умолчанию "
                              f"{CONTROLS_PER_DAY}); per_event: на событие "
                              f"({CONTROLS_PER_EVENT})")
-    parser.add_argument("--calm-move", type=float, default=CALM_MOVE_PERCENT)
+    parser.add_argument("--calm-move", type=float, default=CALM_MOVE_PERCENT,
+                        help="порог «спокойного» контроля, %%; 0 — без фильтра")
     parser.add_argument("--gap-ms", type=int, default=0,
                         help="сдвинуть окно признаков раньше T0")
     parser.add_argument("--pairs-file",

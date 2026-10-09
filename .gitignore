@@ -15,3 +15,7 @@ celerybeat-schedule
 # Запасной каталог архива стакана, если BINANCE_HISTORY_DIR не задан
 # в корневом .env. Сами данные лежат вне репозитория.
 .binance-history/
+
+# Выгрузки data.binance.vision в корне репозитория (июнь–июль aggTrades,
+# десятки гигабайт). В git не кладутся, описание — в README внутри.
+/data/
